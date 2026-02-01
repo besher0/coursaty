@@ -1,0 +1,376 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserType {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum CourseType {
+  PRACTICAL
+  THEORETICAL
+  PROGRAM
+  FREE
+}
+
+enum CodeStatus {
+  ACTIVE
+  USED
+  INACTIVE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+model User {
+  id           BigInt   @id @default(autoincrement())
+  phone        String   @unique
+  password     String
+  userableId   BigInt
+  userableType UserType
+  fcmToken     String?
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+
+  videoInteractions VideoInteraction[]
+
+  @@index([userableId, userableType])
+}
+
+model Student {
+  id           BigInt   @id @default(autoincrement())
+  name         String
+  universityNumber String? @unique
+  gender       Gender   @default(MALE)
+  universityId BigInt
+  collegeId    BigInt
+  departmentId BigInt
+  yearId       BigInt
+  createdAt    DateTime @default(now())
+
+  university University @relation(fields: [universityId], references: [id])
+  college    College    @relation(fields: [collegeId], references: [id])
+  department Department @relation(fields: [departmentId], references: [id])
+  year       Year       @relation(fields: [yearId], references: [id])
+  subscriptions StudentSubscription[]
+  teacherLikes   TeacherLike[]
+  usedCodes       Code[] @relation("UsedCodes")
+
+  @@index([universityId])
+  @@index([collegeId])
+}
+
+model Teacher {
+  id                 BigInt   @id @default(autoincrement())
+  name               String
+  description        String?
+  image              String?
+  likesCount         Int      @default(0)
+  teacherPercentage  Decimal  @default(0.0)
+  createdAt          DateTime @default(now())
+
+  courses       Course[]
+  teacherLikes  TeacherLike[]
+}
+
+model Admin {
+  id        BigInt   @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+}
+
+model University {
+  id        BigInt   @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+  colleges  College[]
+  courses   Course[]
+  pointsOfSales PointOfSale[]
+  students  Student[]
+}
+
+model College {
+  id           BigInt   @id @default(autoincrement())
+  universityId BigInt
+  name         String
+
+  university University @relation(fields: [universityId], references: [id])
+  departments Department[]
+  years       Year[]
+  subjects    Subject[]
+  courses     Course[]
+  advertisements Advertisement[]
+  students   Student[]
+
+  @@index([universityId])
+}
+
+model Advertisement {
+  id        BigInt   @id @default(autoincrement())
+  collegeId BigInt
+  title     String
+  imageUrl  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  college College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+
+  @@index([collegeId])
+}
+
+model Department {
+  id         BigInt   @id @default(autoincrement())
+  collegeId  BigInt
+  name       String
+
+  college  College  @relation(fields: [collegeId], references: [id])
+  years    Year[]
+  subjects Subject[]
+  students Student[]
+
+  @@index([collegeId])
+}
+
+model Year {
+  id            BigInt   @id @default(autoincrement())
+  collegeId     BigInt
+  departmentId  BigInt?
+  yearName      String
+  yearNumber    Int
+
+  college    College    @relation(fields: [collegeId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  students    Student[]
+  courses     Course[]
+
+  @@index([collegeId])
+  @@index([departmentId])
+}
+
+model Season {
+  id           BigInt   @id @default(autoincrement())
+  seasonName   String
+  seasonNumber Int
+  courses      Course[]
+}
+
+model Subject {
+  id           BigInt   @id @default(autoincrement())
+  collegeId    BigInt
+  departmentId BigInt?
+  subjectName  String
+
+  college    College    @relation(fields: [collegeId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  courses    Course[]
+
+  @@index([collegeId])
+  @@index([departmentId])
+}
+
+model Course {
+  id                    BigInt    @id @default(autoincrement())
+  teacherId             BigInt
+  subjectId             BigInt?
+  yearId                BigInt?
+  seasonId              BigInt?
+  universityId          BigInt?
+  collegeId             BigInt?
+  name                  String
+  description           String?
+  price                 Decimal   @db.Decimal(10, 2)
+  courseType            CourseType @default(THEORETICAL)
+  introVideoUrl         String?
+  discussionGroupUrl    String?
+  createdAt             DateTime  @default(now())
+
+  teacher        Teacher   @relation(fields: [teacherId], references: [id])
+  subject        Subject?  @relation(fields: [subjectId], references: [id])
+  year           Year?     @relation(fields: [yearId], references: [id])
+  season         Season?   @relation(fields: [seasonId], references: [id])
+  university     University? @relation(fields: [universityId], references: [id])
+  college        College?    @relation(fields: [collegeId], references: [id])
+  lectures       Lecture[]
+  codeGroups     CodeGroup[]
+  subscriptions  StudentSubscription[]
+
+  @@index([teacherId])
+  @@index([subjectId])
+  @@index([yearId])
+  @@index([seasonId])
+  @@index([universityId])
+  @@index([collegeId])
+}
+
+model Lecture {
+  id         BigInt   @id @default(autoincrement())
+  courseId   BigInt
+  title      String
+  sortOrder  Int?
+
+  course      Course      @relation(fields: [courseId], references: [id])
+  videos      Video[]
+  files       LectureFile[]
+  automations Automation[]
+
+  @@index([courseId])
+}
+
+model Video {
+  id              BigInt   @id @default(autoincrement())
+  lectureId       BigInt
+  videoName       String
+  videoUrl        String
+  durationSeconds Int?
+  viewsCount      Int      @default(0)
+
+  lecture       Lecture            @relation(fields: [lectureId], references: [id])
+  interactions  VideoInteraction[]
+
+  @@index([lectureId])
+}
+
+model VideoInteraction {
+  id        BigInt   @id @default(autoincrement())
+  videoId   BigInt
+  userId    BigInt
+  isLiked   Boolean  @default(false)
+  rating    Int?
+  comment   String?
+  createdAt DateTime @default(now())
+
+  video Video @relation(fields: [videoId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([videoId])
+  @@index([userId])
+}
+
+model TeacherLike {
+  id        BigInt   @id @default(autoincrement())
+  teacherId BigInt
+  studentId BigInt
+
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@unique([teacherId, studentId])
+  @@index([studentId])
+}
+
+model LectureFile {
+  id        BigInt   @id @default(autoincrement())
+  lectureId BigInt
+  fileName  String
+  fileUrl   String
+  fileType  String?
+
+  lecture Lecture @relation(fields: [lectureId], references: [id])
+
+  @@index([lectureId])
+}
+
+model Automation {
+  id             BigInt   @id @default(autoincrement())
+  lectureId      BigInt
+  title          String
+  questionsCount Int      @default(0)
+
+  lecture   Lecture    @relation(fields: [lectureId], references: [id])
+  questions Question[]
+
+  @@index([lectureId])
+}
+
+model Question {
+  id           BigInt   @id @default(autoincrement())
+  automationId BigInt
+  questionText String
+  questionType String   @default("multiple_choice") // multiple_choice, true_false, short_answer
+  points       Int      @default(1)
+  sortOrder    Int?
+
+  automation Automation       @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  options    QuestionOption[]
+
+  @@index([automationId])
+}
+
+model QuestionOption {
+  id         BigInt  @id @default(autoincrement())
+  questionId BigInt
+  optionText String
+  isCorrect  Boolean @default(false)
+  sortOrder  Int?
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+}
+
+model CodeGroup {
+  id                  BigInt   @id @default(autoincrement())
+  courseId            BigInt
+  batchName           String
+  discountPercentage  Decimal  @db.Decimal(5, 2) @default(0.00)
+  createdAt           DateTime @default(now())
+
+  course Course @relation(fields: [courseId], references: [id])
+  codes  Code[]
+
+  @@index([courseId])
+}
+
+model Code {
+  id              BigInt   @id @default(autoincrement())
+  codeGroupId     BigInt
+  codeValue       String   @unique
+  status          CodeStatus @default(ACTIVE)
+  allowedUniversityNumber String?
+  usageLimit      Int?
+  usageCount      Int      @default(0)
+  usedByStudentId BigInt?
+  usedAt          DateTime?
+
+  codeGroup CodeGroup @relation(fields: [codeGroupId], references: [id])
+  usedBy    Student?  @relation("UsedCodes", fields: [usedByStudentId], references: [id])
+
+  @@index([codeGroupId])
+  @@index([usedByStudentId])
+}
+
+model StudentSubscription {
+  id         BigInt   @id @default(autoincrement())
+  studentId  BigInt
+  courseId   BigInt
+  finalPrice Decimal  @db.Decimal(10, 2)
+  createdAt  DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id])
+  course  Course  @relation(fields: [courseId], references: [id])
+
+  @@unique([studentId, courseId])
+  @@index([courseId])
+}
+model PointOfSale {
+  id           BigInt   @id @default(autoincrement())
+  universityId BigInt
+  name         String
+  address      String
+  image        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  university University @relation(fields: [universityId], references: [id])
+
+  @@index([universityId])
+}
