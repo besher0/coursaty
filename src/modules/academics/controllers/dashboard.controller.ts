@@ -19,7 +19,7 @@ export class DashboardController {
     return this.dashboardService.getStudentCollegeInfo(req.user);
   }
 
-  @Get('courses-by-college')
+  @Get('courses-by-subjects')
   @ApiOperation({ summary: 'Get courses organized by college, year, and season' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('STUDENT')

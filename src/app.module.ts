@@ -14,6 +14,7 @@ import { StudentsModule } from './modules/students/students.module';
 import { TeachersModule } from './modules/teachers/teachers.module';
 import { PointOfSalesModule } from './modules/point-of-sales/point-of-sales.module';
 import { AdvertisementsModule } from './modules/advertisements/advertisements.module';
+import { AdminsModule } from './modules/admins/admins.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AdvertisementsModule } from './modules/advertisements/advertisements.mo
     LecturesModule,
     StudentsModule,
     TeachersModule,
+    AdminsModule,
     PointOfSalesModule,
     AdvertisementsModule,
   ],

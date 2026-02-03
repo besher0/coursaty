@@ -37,6 +37,7 @@ model User {
   password     String
   userableId   BigInt
   userableType UserType
+  gender       Gender   @default(MALE)
   fcmToken     String?
   status       String   @default("active")
   createdAt    DateTime @default(now())
@@ -50,7 +51,6 @@ model Student {
   id           BigInt   @id @default(autoincrement())
   name         String
   universityNumber String? @unique
-  gender       Gender   @default(MALE)
   universityId BigInt
   collegeId    BigInt
   departmentId BigInt
@@ -366,6 +366,8 @@ model PointOfSale {
   universityId BigInt
   name         String
   address      String
+  phone        String?
+  description  String?
   image        String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

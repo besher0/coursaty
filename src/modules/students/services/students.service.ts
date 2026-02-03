@@ -11,7 +11,6 @@ export class StudentsService {
       data: {
         name: dto.name,
         universityNumber: dto.universityNumber,
-        gender: dto.gender,
         universityId: BigInt(dto.universityId),
         collegeId: BigInt(dto.collegeId),
         departmentId: BigInt(dto.departmentId),
