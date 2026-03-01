@@ -4,14 +4,14 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { LecturesService } from '../services/lectures.service';
 import { CreateLectureDto } from '../dtos/create-lecture.dto';
 import { CreateLectureFileDto } from '../dtos/create-lecture-file.dto';
+import { UpdateLectureFileDto } from '../dtos/update-lecture-file.dto';
 import { UpdateLectureDto } from '../dtos/update-lecture.dto';
-import { CreateAutomationDto } from '../dtos/create-automation.dto';
-import { UpdateAutomationDto } from '../dtos/update-automation.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
 import { UpdateVideoDto } from '../dtos/update-video.dto';
 import { CreateVideoDto } from '../dtos/create-video.dto';
+import { UploadVideoDto } from '../dtos/upload-video.dto';
 import { CreateQuestionDto } from '../dtos/create-question.dto';
 import { UpdateQuestionDto } from '../dtos/update-question.dto';
 
@@ -35,6 +35,13 @@ export class LecturesController {
   @UseGuards(JwtAuthGuard)
   list(@Param('courseId', ParseIntPipe) courseId: number, @Req() req: any) {
     return this.lectures.listLectures(courseId, req.user);
+  }
+
+  @Get(':lectureId/details')
+  @ApiOperation({ summary: 'Get lecture details with files, videos, and automated questions' })
+  @UseGuards(JwtAuthGuard)
+  getDetails(@Param('lectureId', ParseIntPipe) lectureId: number, @Req() req: any) {
+    return this.lectures.getLectureDetails(lectureId, req.user);
   }
 
   @Patch(':lectureId')
@@ -87,36 +94,14 @@ export class LecturesController {
     return this.lectures.deleteLectureFile(id, req.user);
   }
 
-  @Post(':lectureId/automations')
-  @ApiOperation({ summary: 'Create automation for lecture' })
+  @Patch('files/:id')
+  @ApiOperation({ summary: 'Update lecture file metadata (owner or admin only)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  createAutomation(@Param('lectureId', ParseIntPipe) lectureId: number, @Body() dto: CreateAutomationDto, @Req() req: any) {
-    return this.lectures.createAutomation({ ...dto, lectureId }, req.user);
+  updateFile(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateLectureFileDto, @Req() req: any) {
+    return this.lectures.updateLectureFile(id, dto, req.user);
   }
 
-  @Get(':lectureId/automations')
-  @ApiOperation({ summary: 'List automations for lecture' })
-  @UseGuards(JwtAuthGuard)
-  listAutomations(@Param('lectureId', ParseIntPipe) lectureId: number, @Req() req: any) {
-    return this.lectures.listAutomations(lectureId, req.user);
-  }
-
-  @Patch('automations/:id')
-  @ApiOperation({ summary: 'Update automation' })
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('TEACHER', 'ADMIN')
-  updateAutomation(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateAutomationDto, @Req() req: any) {
-    return this.lectures.updateAutomation(id, dto, req.user);
-  }
-
-  @Delete('automations/:id')
-  @ApiOperation({ summary: 'Delete automation' })
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
-  removeAutomation(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
-    return this.lectures.deleteAutomation(id, req.user);
-  }
 
   @Post('videos')
   @ApiOperation({ summary: 'Create video for lecture' })
@@ -124,6 +109,30 @@ export class LecturesController {
   @Roles('TEACHER', 'ADMIN')
   createVideo(@Body() dto: CreateVideoDto, @Req() req: any) {
     return this.lectures.createVideo(dto, req.user);
+  }
+
+  @Post(':lectureId/videos/upload')
+  @ApiOperation({ summary: 'Upload lecture video to Bunny Stream' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        videoName: { type: 'string' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  uploadVideo(
+    @Param('lectureId', ParseIntPipe) lectureId: number,
+    @UploadedFile() file: any,
+    @Body() body: UploadVideoDto,
+    @Req() req: any,
+  ) {
+    return this.lectures.uploadLectureVideo(lectureId, file, body, req.user);
   }
 
   @Patch('videos/:id')
@@ -142,19 +151,19 @@ export class LecturesController {
     return this.lectures.deleteVideo(id, req.user);
   }
 
-  @Post('questions')
-  @ApiOperation({ summary: 'Create question with options for automation' })
+  @Post(':lectureId/questions')
+  @ApiOperation({ summary: 'Create question with options for lecture' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  createQuestion(@Body() dto: CreateQuestionDto, @Req() req: any) {
-    return this.lectures.createQuestion(dto, req.user);
+  createQuestion(@Param('lectureId', ParseIntPipe) lectureId: number, @Body() dto: CreateQuestionDto, @Req() req: any) {
+    return this.lectures.createQuestion({ ...dto, lectureId }, req.user);
   }
 
-  @Get('automations/:automationId/questions')
-  @ApiOperation({ summary: 'List questions for automation' })
+  @Get(':lectureId/questions')
+  @ApiOperation({ summary: 'List questions for lecture' })
   @UseGuards(JwtAuthGuard)
-  listQuestions(@Param('automationId', ParseIntPipe) automationId: number, @Req() req: any) {
-    return this.lectures.listQuestions(automationId, req.user);
+  listQuestions(@Param('lectureId', ParseIntPipe) lectureId: number, @Req() req: any) {
+    return this.lectures.listQuestions(lectureId, req.user);
   }
 
   @Patch('questions/:id')

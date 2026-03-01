@@ -1,15 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsInt, IsISO8601, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateCodeDto {
   @ApiProperty()
   @IsNumber()
   codeGroupId: number;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ description: 'If omitted, codeValue will be generated automatically' })
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  codeValue: string;
+  codeValue?: string;
 
   @ApiPropertyOptional({ description: 'Bind code to a specific student university number' })
   @IsOptional()
@@ -22,4 +23,15 @@ export class CreateCodeDto {
   @IsNumber()
   @Min(1)
   usageLimit?: number;
+
+  @ApiPropertyOptional({ description: 'Valid for N days starting from code creation date' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  validForDays?: number;
+
+  @ApiPropertyOptional({ description: 'Absolute expiry date (ISO)' })
+  @IsOptional()
+  @IsISO8601()
+  validUntil?: string;
 }

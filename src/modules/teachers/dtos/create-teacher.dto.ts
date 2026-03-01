@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class CreateTeacherDto {
   @ApiProperty()
@@ -16,8 +16,4 @@ export class CreateTeacherDto {
   @IsString()
   image?: string;
 
-  @ApiProperty({ required: false, description: 'Percentage as number (e.g., 15.5)' })
-  @IsOptional()
-  @IsNumber()
-  teacherPercentage?: number;
 }

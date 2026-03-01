@@ -32,4 +32,9 @@ export class CreatePointOfSaleDto {
   @IsOptional()
   @IsString()
   image?: string;
+
+  @ApiPropertyOptional({ example: 's3://bucket/path/pos-1.png', description: 'Image location' })
+  @IsOptional()
+  @IsString()
+  imageLocation?: string;
 }

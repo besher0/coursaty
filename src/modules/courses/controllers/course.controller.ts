@@ -4,6 +4,9 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { CourseService } from '../services/course.service';
 import { CreateCourseDto } from '../dtos/create-course.dto';
 import { UpdateCourseDto } from '../dtos/update-course.dto';
+import { ApproveCourseDto } from '../dtos/approve-course.dto';
+import { CreateCourseCategoryDto } from '../dtos/create-course-category.dto';
+import { UpdateCourseCategoryDto } from '../dtos/update-course-category.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Roles } from '../../auth/roles.decorator';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -19,8 +22,45 @@ export class CourseController {
   @ApiOkResponse({ description: 'Course created' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  async createCourse(@Body() dto: CreateCourseDto) {
-    return this.courseService.createCourse(dto);
+  async createCourse(@Body() dto: CreateCourseDto, @Req() req: any) {
+    return this.courseService.createCourse(dto, req.user);
+  }
+
+  @Get('categories')
+  @ApiOperation({ summary: 'List course categories' })
+  @ApiOkResponse({ description: 'Course categories' })
+  listCourseCategories() {
+    return this.courseService.getCourseCategories();
+  }
+
+  @Post('categories')
+  @ApiOperation({ summary: 'Create course category' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  createCourseCategory(@Body() dto: CreateCourseCategoryDto) {
+    return this.courseService.createCourseCategory(dto.name, dto.sortOrder, dto.requiresAcademicLinks, dto.isProgram);
+  }
+
+  @Patch('categories/:id')
+  @ApiOperation({ summary: 'Update course category' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  updateCourseCategory(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCourseCategoryDto) {
+    return this.courseService.updateCourseCategory(
+      id,
+      dto.name,
+      dto.sortOrder,
+      dto.requiresAcademicLinks,
+      dto.isProgram,
+    );
+  }
+
+  @Delete('categories/:id')
+  @ApiOperation({ summary: 'Delete course category' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  deleteCourseCategory(@Param('id', ParseIntPipe) id: number) {
+    return this.courseService.deleteCourseCategory(id);
   }
 
   @Get(':id')
@@ -28,6 +68,13 @@ export class CourseController {
   @UseGuards(JwtAuthGuard)
   async getCourse(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
     return this.courseService.getCourseWithCounts(id, req.user);
+  }
+
+  @Get(':id/details')
+  @ApiOperation({ summary: 'Get course details and lectures' })
+  @UseGuards(JwtAuthGuard)
+  async getCourseDetails(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    return this.courseService.getCourseDetails(id, req.user);
   }
 
   @Get()
@@ -42,6 +89,22 @@ export class CourseController {
   @Roles('TEACHER', 'ADMIN')
   updateCourse(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCourseDto, @Req() req: any) {
     return this.courseService.updateCourse(id, dto, req.user);
+  }
+
+  @Patch(':id/approve')
+  @ApiOperation({ summary: 'Approve course and set teacher percentage' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  approveCourse(@Param('id', ParseIntPipe) id: number, @Body() dto: ApproveCourseDto, @Req() req: any) {
+    return this.courseService.approveCourse(id, dto.teacherPercentage, req.user);
+  }
+
+  @Patch(':id/reject')
+  @ApiOperation({ summary: 'Reject course' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  rejectCourse(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    return this.courseService.rejectCourse(id, req.user);
   }
 
   @Delete(':id')

@@ -11,6 +11,16 @@ export class CreateLectureDto {
   @IsNotEmpty()
   title: string;
 
+  @ApiPropertyOptional({ description: 'Lecture description' })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional({ description: 'Lecture image URL' })
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()

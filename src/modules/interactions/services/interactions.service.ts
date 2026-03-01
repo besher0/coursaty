@@ -93,7 +93,7 @@ export class InteractionsService {
   private async ensureVideoAccess(videoId: number, user: { userId: string | number; type: string }) {
     const video = await this.prisma.video.findUnique({
       where: { id: BigInt(videoId) },
-      include: { lecture: { select: { courseId: true } } },
+      include: { lecture: { select: { courseId: true, course: { select: { expiresAt: true } } } } },
     });
     if (!video) throw new NotFoundException('Video not found');
 
@@ -112,6 +112,10 @@ export class InteractionsService {
 
     const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
     if (!dbUser) throw new ForbiddenException('User not found');
+
+    if (video.lecture.course?.expiresAt && video.lecture.course.expiresAt.getTime() <= Date.now()) {
+      throw new ForbiddenException('Course access expired');
+    }
 
     const subscription = await this.prisma.studentSubscription.findUnique({
       where: {

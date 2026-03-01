@@ -5,6 +5,7 @@ import { CollegesController } from './controllers/colleges.controller';
 import { DepartmentsController } from './controllers/departments.controller';
 import { SubjectsController } from './controllers/subjects.controller';
 import { YearsController } from './controllers/years.controller';
+import { AcademicYearsController } from './controllers/academic-years.controller';
 import { SeasonsController } from './controllers/seasons.controller';
 import { DashboardController } from './controllers/dashboard.controller';
 import { AcademicsService } from './services/academics.service';
@@ -18,6 +19,7 @@ import { DashboardService } from './services/dashboard.service';
     DepartmentsController,
     SubjectsController,
     YearsController,
+    AcademicYearsController,
     SeasonsController,
     DashboardController,
   ],

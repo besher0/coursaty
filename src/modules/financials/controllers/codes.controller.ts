@@ -26,6 +26,8 @@ export class CodesController {
       body.codeValue,
       body.allowedUniversityNumber,
       body.usageLimit,
+      body.validForDays,
+      body.validUntil,
     );
   }
 
@@ -50,7 +52,7 @@ export class CodesController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateCodeDto) {
-    return this.financials.updateCode(id, body.status as $Enums.CodeStatus);
+    return this.financials.updateCode(id, body);
   }
 
   @Delete(':id')

@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsNumber, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
-import { CourseType } from '../../../common/enums/course-type.enum';
+import { IsBoolean, IsDateString, IsNumber, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
 
 export class CreateCourseDto {
   @ApiProperty()
@@ -13,22 +12,27 @@ export class CreateCourseDto {
   @IsString()
   description?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ description: 'Course image URL' })
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @ApiPropertyOptional({ description: 'Required only for ADMIN; TEACHER taken from token' })
+  @IsOptional()
   @IsNumber()
   @IsPositive()
-  teacherId: number;
+  teacherId?: number;
+
+  @ApiProperty({ description: 'Required subject/program ID' })
+  @IsNumber()
+  @IsPositive()
+  subjectId: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
   @IsPositive()
-  subjectId?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  yearId?: number;
+  collegeYearId?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -48,15 +52,37 @@ export class CreateCourseDto {
   @IsPositive()
   collegeId?: number;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  departmentId?: number;
+
+  @ApiProperty({ description: 'Course category ID' })
+  @IsNumber()
+  @IsPositive()
+  categoryId: number;
+
   @ApiProperty()
   @IsNumber()
   @IsPositive()
   price: number;
 
-  @ApiPropertyOptional({ enum: CourseType, default: CourseType.THEORETICAL })
+  @ApiPropertyOptional({ default: 2, description: 'Course duration in hours' })
   @IsOptional()
-  @IsEnum(CourseType)
-  courseType?: CourseType;
+  @IsNumber()
+  @IsPositive()
+  duration?: number;
+
+  @ApiPropertyOptional({ default: false, description: 'Whether the course is free' })
+  @IsOptional()
+  @IsBoolean()
+  isFree?: boolean;
+
+  @ApiPropertyOptional({ description: 'Course expiry date (ISO string)' })
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()

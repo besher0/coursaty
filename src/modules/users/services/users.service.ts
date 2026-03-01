@@ -27,10 +27,11 @@ export class UsersService {
       userableData = await this.prisma.student.findUnique({
         where: { id: user.userableId },
         include: {
-          year: true,
+          collegeYear: { include: { academicYear: true } },
           department: true,
           college: true,
           university: true,
+          province: true,
         },
       });
     } else if (user.userableType === 'TEACHER') {
@@ -128,10 +129,17 @@ export class UsersService {
 
     const updateData: any = {};
     if (dto.name !== undefined) updateData.name = dto.name;
-    if (dto.universityId !== undefined) updateData.universityId = BigInt(dto.universityId);
+    if (dto.universityId !== undefined) {
+      const university = await this.prisma.university.findUnique({
+        where: { id: BigInt(dto.universityId) },
+      });
+      if (!university) throw new NotFoundException('University not found');
+      updateData.universityId = BigInt(dto.universityId);
+      updateData.provinceId = university.provinceId;
+    }
     if (dto.collegeId !== undefined) updateData.collegeId = BigInt(dto.collegeId);
     if (dto.departmentId !== undefined) updateData.departmentId = BigInt(dto.departmentId);
-    if (dto.yearId !== undefined) updateData.yearId = BigInt(dto.yearId);
+    if (dto.collegeYearId !== undefined) updateData.collegeYearId = BigInt(dto.collegeYearId);
 
     await this.prisma.student.update({
       where: { id: user.userableId },

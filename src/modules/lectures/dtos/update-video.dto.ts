@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsOptional, IsString } from 'class-validator';
 
 export class UpdateVideoDto {
   @ApiPropertyOptional()
@@ -7,9 +7,9 @@ export class UpdateVideoDto {
   @IsString()
   videoName?: string;
 
-  @ApiPropertyOptional({ minimum: 0 })
+  @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  durationSeconds?: number;
+  @IsBoolean()
+  isFree?: boolean;
+
 }

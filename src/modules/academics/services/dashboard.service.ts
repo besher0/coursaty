@@ -5,23 +5,88 @@ import { PrismaService } from '@/prisma/prisma.service';
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getStudentCollegeInfo(user: { userId: string | number; type: string }) {
+  private async getStudentCollege(user: { userId: string | number; type: string }) {
     if (!user || user.type !== 'STUDENT') {
       throw new ForbiddenException('Only students can access this resource');
     }
 
-    // Get user and their student profile
     const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
     if (!dbUser) throw new NotFoundException('User not found');
 
     const student = await this.prisma.student.findUnique({
       where: { id: dbUser.userableId },
-      include: { year: { include: { college: true } } },
+      include: {
+        college: true,
+        collegeYear: { include: { academicYear: true } },
+      },
     });
     if (!student) throw new NotFoundException('Student not found');
 
-    const collegeId = student.year.college.id;
-    const college = student.year.college;
+    return {
+      collegeId: student.collegeId,
+      college: student.college,
+      departmentId: student.departmentId,
+    };
+  }
+
+  private buildCourseCard(course: any) {
+    return {
+      id: course.id,
+      name: course.name,
+      description: course.description,
+      imageUrl: course.imageUrl ?? null,
+      price: course.price,
+      season: course.season
+        ? {
+            id: course.season.id,
+            name: course.season.seasonName,
+            number: course.season.seasonNumber,
+          }
+        : null,
+      year: course.collegeYear?.academicYear
+        ? {
+            id: course.collegeYear.academicYear.id,
+            name: course.collegeYear.academicYear.yearName,
+            number: course.collegeYear.academicYear.yearNumber,
+          }
+        : null,
+      studentsCount: course._count?.subscriptions ?? 0,
+    };
+  }
+
+  private buildCourseCardWithTeacher(course: any) {
+    return {
+      id: course.id,
+      name: course.name,
+      imageUrl: course.imageUrl ?? null,
+      price: course.price,
+      season: course.season
+        ? {
+            id: course.season.id,
+            name: course.season.seasonName,
+            number: course.season.seasonNumber,
+          }
+        : null,
+      year: course.collegeYear?.academicYear
+        ? {
+            id: course.collegeYear.academicYear.id,
+            name: course.collegeYear.academicYear.yearName,
+            number: course.collegeYear.academicYear.yearNumber,
+          }
+        : null,
+      teacher: course.teacher
+        ? {
+            id: course.teacher.id,
+            name: course.teacher.name,
+            image: course.teacher.image ?? null,
+          }
+        : null,
+      studentsCount: course._count?.subscriptions ?? 0,
+    };
+  }
+
+  async getStudentCollegeInfo(user: { userId: string | number; type: string }, limit: number = 7) {
+    const { collegeId, college } = await this.getStudentCollege(user);
 
     // Get advertisements for the college
     const advertisements = await this.prisma.advertisement.findMany({
@@ -44,30 +109,35 @@ export class DashboardService {
       include: {
         _count: { select: { courses: true, teacherLikes: true } },
       },
+      take: limit,
     });
 
-    // Get regular courses (non-PROGRAM) in this college
+    // Get regular courses (non-program) in this college
     const regularCourses = await this.prisma.course.findMany({
       where: {
         collegeId,
-        courseType: { not: 'PROGRAM' },
+        OR: [{ category: { isProgram: false } }, { categoryId: null }],
       },
       include: {
         teacher: true,
         subject: true,
-        year: true,
+        collegeYear: { include: { academicYear: true } },
         season: true,
+        category: true,
       },
       orderBy: { createdAt: 'desc' },
+      take: limit,
     });
 
-    // Get PROGRAM type courses
+    // Get program courses
     const programCourses = await this.prisma.course.findMany({
-      where: { courseType: 'PROGRAM' },
+      where: { category: { isProgram: true } },
       include: {
         teacher: true,
+        category: true,
       },
       orderBy: { createdAt: 'desc' },
+      take: limit,
     });
 
     return {
@@ -83,30 +153,18 @@ export class DashboardService {
     };
   }
 
-  async getCoursesByCollege(user: { userId: string | number; type: string }) {
-    if (!user || user.type !== 'STUDENT') {
-      throw new ForbiddenException('Only students can access this resource');
-    }
-
-    // Get user and their student profile
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
-    if (!dbUser) throw new NotFoundException('User not found');
-
-    const student = await this.prisma.student.findUnique({
-      where: { id: dbUser.userableId },
-      include: { year: { include: { college: true } } },
-    });
-    if (!student) throw new NotFoundException('Student not found');
-
-    const collegeId = student.year.college.id;
-    const college = student.year.college;
+  async getCoursesByCollege(user: { userId: string | number; type: string }, collegeYearId?: number) {
+    const { collegeId, college, departmentId } = await this.getStudentCollege(user);
 
     // Get all years for this college's department
-    const years = await this.prisma.year.findMany({
+    const years = await this.prisma.collegeYear.findMany({
       where: {
         collegeId,
+        ...(departmentId ? { departmentId } : {}),
+        ...(collegeYearId ? { id: BigInt(collegeYearId) } : {}),
       },
-      orderBy: { yearNumber: 'asc' },
+      include: { academicYear: true },
+      orderBy: { academicYear: { yearNumber: 'asc' } },
     });
 
     // For each year, get courses organized by season, but return subject data
@@ -114,14 +172,15 @@ export class DashboardService {
       years.map(async (year) => {
         const courses = await this.prisma.course.findMany({
           where: {
-            yearId: year.id,
-            courseType: { not: 'PROGRAM' },
+            collegeYearId: year.id,
+            OR: [{ category: { isProgram: false } }, { categoryId: null }],
             seasonId: { not: null },
             subjectId: { not: null },
           },
           include: {
             season: true,
             subject: true,
+            category: true,
           },
           orderBy: [{ season: { seasonNumber: 'asc' } }, { subject: { subjectName: 'asc' } }],
         });
@@ -159,8 +218,8 @@ export class DashboardService {
         return {
           year: {
             id: year.id,
-            yearName: year.yearName,
-            yearNumber: year.yearNumber,
+            yearName: year.academicYear.yearName,
+            yearNumber: year.academicYear.yearNumber,
           },
           seasons: seasonsArray,
         };
@@ -177,23 +236,61 @@ export class DashboardService {
     };
   }
 
-  async getCollegeTeachers(user: { userId: string | number; type: string }) {
-    if (!user || user.type !== 'STUDENT') {
-      throw new ForbiddenException('Only students can access this resource');
-    }
+  async getSubjectCourses(
+    user: { userId: string | number; type: string },
+    subjectId: number,
+    page: number = 1,
+    limit: number = 10,
+  ) {
+    const { collegeId } = await this.getStudentCollege(user);
 
-    // Get user and their student profile
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
-    if (!dbUser) throw new NotFoundException('User not found');
-
-    const student = await this.prisma.student.findUnique({
-      where: { id: dbUser.userableId },
-      include: { year: { include: { college: true } } },
+    const subject = await this.prisma.subject.findFirst({
+      where: { id: BigInt(subjectId), collegeId },
     });
-    if (!student) throw new NotFoundException('Student not found');
 
-    const collegeId = student.year.college.id;
-    const college = student.year.college;
+    if (!subject) throw new NotFoundException('Subject not found');
+
+    const skip = (page - 1) * limit;
+    const where = {
+      subjectId: BigInt(subjectId),
+      collegeId,
+    } as any;
+
+    const total = await this.prisma.course.count({ where });
+    const courses = await this.prisma.course.findMany({
+      where,
+      include: {
+        collegeYear: { include: { academicYear: true } },
+        season: true,
+        teacher: true,
+        _count: { select: { subscriptions: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+    });
+
+    return {
+      subject: {
+        id: subject.id,
+        name: subject.subjectName,
+      },
+      courses: {
+        data: courses.map((course) => this.buildCourseCardWithTeacher(course)),
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+          hasNextPage: page < Math.ceil(total / limit),
+          hasPreviousPage: page > 1,
+        },
+      },
+    };
+  }
+
+  async getCollegeTeachers(user: { userId: string | number; type: string }) {
+    const { collegeId, college } = await this.getStudentCollege(user);
 
     // Get all teachers who teach in this college
     const teachers = await this.prisma.teacher.findMany({
@@ -260,7 +357,7 @@ export class DashboardService {
     const courses = await this.prisma.course.findMany({
       where: { teacherId: BigInt(teacherId) },
       include: {
-        year: true,
+        collegeYear: { include: { academicYear: true } },
         season: true,
         _count: {
           select: {
@@ -277,11 +374,12 @@ export class DashboardService {
       id: course.id,
       name: course.name,
       studentsCount: course._count.subscriptions,
-      year: course.year
+      duration: course.duration,
+      year: course.collegeYear?.academicYear
         ? {
-            id: course.year.id,
-            yearNumber: course.year.yearNumber,
-            yearName: course.year.yearName,
+            id: course.collegeYear.academicYear.id,
+            yearNumber: course.collegeYear.academicYear.yearNumber,
+            yearName: course.collegeYear.academicYear.yearName,
           }
         : null,
       season: course.season
@@ -313,5 +411,207 @@ export class DashboardService {
         },
       },
     };
+  }
+
+  async getCoursesByCategory(user: { userId: string | number; type: string }, page: number = 1, limit: number = 10) {
+    const { collegeId, college } = await this.getStudentCollege(user);
+
+    const years = await this.prisma.collegeYear.findMany({
+      where: { collegeId },
+      include: { academicYear: true },
+      orderBy: { academicYear: { yearNumber: 'asc' } },
+    });
+
+    const categories = await this.prisma.courseCategory.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+
+    const categoriesWithYears = await Promise.all(
+      categories.map(async (category) => {
+        const yearsWithCourses = await Promise.all(
+          years.map(async (year) => {
+            const where = {
+              collegeId,
+              collegeYearId: year.id,
+              categoryId: category.id,
+            } as any;
+
+            const total = await this.prisma.course.count({ where });
+            const courses = await this.prisma.course.findMany({
+              where,
+              include: {
+                collegeYear: { include: { academicYear: true } },
+                season: true,
+                _count: { select: { subscriptions: true } },
+              },
+              orderBy: { createdAt: 'desc' },
+              skip: (page - 1) * limit,
+              take: limit,
+            });
+
+            return {
+              year: {
+                id: year.id,
+                name: year.academicYear.yearName,
+                number: year.academicYear.yearNumber,
+              },
+              pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+              },
+              courses: courses.map((course) => this.buildCourseCard(course)),
+            };
+          }),
+        );
+
+        return {
+          category: {
+            id: category.id,
+            name: category.name,
+          },
+          years: yearsWithCourses,
+        };
+      }),
+    );
+
+    return {
+      college: {
+        id: college.id,
+        name: college.name,
+        universityId: college.universityId,
+      },
+      categories: categoriesWithYears,
+    };
+  }
+
+  async getCoursesByPopular(user: { userId: string | number; type: string }, page: number = 1, limit: number = 10) {
+    const { collegeId, college } = await this.getStudentCollege(user);
+
+    const years = await this.prisma.collegeYear.findMany({
+      where: { collegeId },
+      include: { academicYear: true },
+      orderBy: { academicYear: { yearNumber: 'asc' } },
+    });
+
+    const yearsWithCourses = await Promise.all(
+      years.map(async (year) => {
+        const where = { collegeId, collegeYearId: year.id } as any;
+        const total = await this.prisma.course.count({ where });
+        const courses = await this.prisma.course.findMany({
+          where,
+          include: {
+            collegeYear: { include: { academicYear: true } },
+            season: true,
+            _count: { select: { subscriptions: true } },
+          },
+          orderBy: { subscriptions: { _count: 'desc' } },
+          skip: (page - 1) * limit,
+          take: limit,
+        });
+
+        return {
+          year: {
+            id: year.id,
+            name: year.academicYear.yearName,
+            number: year.academicYear.yearNumber,
+          },
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+          courses: courses.map((course) => this.buildCourseCard(course)),
+        };
+      }),
+    );
+
+    return {
+      college: {
+        id: college.id,
+        name: college.name,
+        universityId: college.universityId,
+      },
+      years: yearsWithCourses,
+    };
+  }
+
+  async getCoursesByYear(user: { userId: string | number; type: string }, page: number = 1, limit: number = 10) {
+    const { collegeId, college } = await this.getStudentCollege(user);
+
+    const years = await this.prisma.collegeYear.findMany({
+      where: { collegeId },
+      include: { academicYear: true },
+      orderBy: { academicYear: { yearNumber: 'asc' } },
+    });
+
+    const yearsWithCourses = await Promise.all(
+      years.map(async (year) => {
+        const where = { collegeId, collegeYearId: year.id } as any;
+        const total = await this.prisma.course.count({ where });
+        const courses = await this.prisma.course.findMany({
+          where,
+          include: {
+            collegeYear: { include: { academicYear: true } },
+            season: true,
+            _count: { select: { subscriptions: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        });
+
+        return {
+          year: {
+            id: year.id,
+            name: year.academicYear.yearName,
+            number: year.academicYear.yearNumber,
+          },
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+          courses: courses.map((course) => this.buildCourseCard(course)),
+        };
+      }),
+    );
+
+    return {
+      college: {
+        id: college.id,
+        name: college.name,
+        universityId: college.universityId,
+      },
+      years: yearsWithCourses,
+    };
+  }
+
+  async getCoursesUnified(
+    user: { userId: string | number; type: string },
+    filter: string = 'all',
+    categoryId?: number,
+    page: number = 1,
+    limit: number = 10,
+  ) {
+    if (filter === 'popular') {
+      return this.getCoursesByPopular(user, page, limit);
+    }
+
+    if (categoryId) {
+      const result = await this.getCoursesByCategory(user, page, limit);
+      const matched = result.categories.find((c) => c.category.id.toString() === categoryId.toString());
+      return {
+        college: result.college,
+        mode: 'category',
+        category: matched?.category ?? null,
+        years: matched?.years ?? [],
+      };
+    }
+
+    return this.getCoursesByYear(user, page, limit);
   }
 }

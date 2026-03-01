@@ -1,5 +1,5 @@
 -- CreateTable "PointOfSale"
-CREATE TABLE "PointOfSale" (
+CREATE TABLE IF NOT EXISTS "PointOfSale" (
     "id" BIGSERIAL NOT NULL,
     "name" TEXT NOT NULL,
     "address" TEXT NOT NULL,

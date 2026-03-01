@@ -36,4 +36,9 @@ export class UpdatePointOfSaleDto {
   @IsOptional()
   @IsString()
   image?: string;
+
+  @ApiPropertyOptional({ example: 's3://bucket/path/pos-2.png', description: 'Image location' })
+  @IsOptional()
+  @IsString()
+  imageLocation?: string;
 }

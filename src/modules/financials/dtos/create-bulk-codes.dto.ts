@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsISO8601, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class CreateBulkCodesDto {
   @ApiProperty()
@@ -29,4 +29,15 @@ export class CreateBulkCodesDto {
   @IsNumber()
   @Min(1)
   usageLimit?: number;
+
+  @ApiPropertyOptional({ description: 'Valid for N days starting from code creation date' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  validForDays?: number;
+
+  @ApiPropertyOptional({ description: 'Absolute expiry date (ISO)' })
+  @IsOptional()
+  @IsISO8601()
+  validUntil?: string;
 }

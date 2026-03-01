@@ -48,7 +48,7 @@ export class UsersController {
 
   @Patch('me/student')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Update student info (name, universityId, collegeId, departmentId, yearId)' })
+  @ApiOperation({ summary: 'Update student info (name, universityId, collegeId, departmentId, collegeYearId)' })
   @UseGuards(JwtAuthGuard)
   async updateStudentProfile(@Req() req: any, @Body() dto: UpdateStudentProfileDto) {
     return this.users.updateStudentProfile(req.user.userId, dto);

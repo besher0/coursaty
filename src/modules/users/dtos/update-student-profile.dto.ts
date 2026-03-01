@@ -22,8 +22,8 @@ export class UpdateStudentProfileDto {
   @IsOptional()
   departmentId?: number;
 
-  @ApiPropertyOptional({ description: 'Year ID' })
+  @ApiPropertyOptional({ description: 'College year ID' })
   @IsNumber()
   @IsOptional()
-  yearId?: number;
+  collegeYearId?: number;
 }

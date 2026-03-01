@@ -13,12 +13,6 @@ enum UserType {
   ADMIN
 }
 
-enum CourseType {
-  PRACTICAL
-  THEORETICAL
-  PROGRAM
-  FREE
-}
 
 enum CodeStatus {
   ACTIVE
@@ -29,6 +23,24 @@ enum CodeStatus {
 enum Gender {
   MALE
   FEMALE
+}
+
+enum NotificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CourseStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 model User {
@@ -43,6 +55,7 @@ model User {
   createdAt    DateTime @default(now())
 
   videoInteractions VideoInteraction[]
+  createdNotifications Notification[] @relation("CreatedNotifications")
 
   @@index([userableId, userableType])
 }
@@ -52,21 +65,25 @@ model Student {
   name         String
   universityNumber String? @unique
   universityId BigInt
+  provinceId  BigInt
   collegeId    BigInt
   departmentId BigInt
-  yearId       BigInt
+  collegeYearId BigInt
   createdAt    DateTime @default(now())
 
   university University @relation(fields: [universityId], references: [id])
+  province  Province  @relation(fields: [provinceId], references: [id])
   college    College    @relation(fields: [collegeId], references: [id])
   department Department @relation(fields: [departmentId], references: [id])
-  year       Year       @relation(fields: [yearId], references: [id])
+  collegeYear CollegeYear @relation(fields: [collegeYearId], references: [id])
   subscriptions StudentSubscription[]
   teacherLikes   TeacherLike[]
   usedCodes       Code[] @relation("UsedCodes")
 
   @@index([universityId])
+  @@index([provinceId])
   @@index([collegeId])
+  @@index([collegeYearId])
 }
 
 model Teacher {
@@ -75,27 +92,61 @@ model Teacher {
   description        String?
   image              String?
   likesCount         Int      @default(0)
-  teacherPercentage  Decimal  @default(0.0)
   createdAt          DateTime @default(now())
 
-  courses       Course[]
-  teacherLikes  TeacherLike[]
+  affiliations   TeacherAffiliation[]
+  courses        Course[]
+  teacherLikes   TeacherLike[]
+  allowedSubjects TeacherSubjectPermission[]
+  withdrawals    TeacherWithdrawal[]
+}
+
+model TeacherWithdrawal {
+  id        BigInt           @id @default(autoincrement())
+  teacherId BigInt
+  amount    Decimal          @db.Decimal(10, 2)
+  status    WithdrawalStatus @default(APPROVED)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@index([teacherId])
+  @@index([createdAt])
 }
 
 model Admin {
   id        BigInt   @id @default(autoincrement())
   name      String
   createdAt DateTime @default(now())
+
+  approvedNotifications Notification[]
+  approvedCourses Course[]
 }
 
 model University {
   id        BigInt   @id @default(autoincrement())
+  provinceId BigInt
   name      String
   createdAt DateTime @default(now())
+  province Province @relation(fields: [provinceId], references: [id])
   colleges  College[]
   courses   Course[]
   pointsOfSales PointOfSale[]
   students  Student[]
+  teacherAffiliations TeacherAffiliation[]
+
+  @@index([provinceId])
+}
+
+model Province {
+  id        BigInt   @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  universities University[]
+  pointsOfSales PointOfSale[]
+  students Student[]
 }
 
 model College {
@@ -105,13 +156,34 @@ model College {
 
   university University @relation(fields: [universityId], references: [id])
   departments Department[]
-  years       Year[]
+  collegeYears CollegeYear[]
   subjects    Subject[]
   courses     Course[]
   advertisements Advertisement[]
+  notifications Notification[]
   students   Student[]
+  teacherAffiliations TeacherAffiliation[]
 
   @@index([universityId])
+}
+
+model TeacherAffiliation {
+  id           BigInt   @id @default(autoincrement())
+  teacherId    BigInt
+  universityId BigInt
+  collegeId    BigInt
+  departmentId BigInt?
+  createdAt    DateTime @default(now())
+
+  teacher    Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  university University @relation(fields: [universityId], references: [id])
+  college    College    @relation(fields: [collegeId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@index([teacherId])
+  @@index([universityId])
+  @@index([collegeId])
+  @@index([departmentId])
 }
 
 model Advertisement {
@@ -127,33 +199,70 @@ model Advertisement {
   @@index([collegeId])
 }
 
+model Notification {
+  id           BigInt             @id @default(autoincrement())
+  title        String
+  description  String
+  status       NotificationStatus @default(PENDING)
+  createdById  BigInt
+  collegeId    BigInt
+  departmentId BigInt?
+  approvedById BigInt?
+  approvedAt   DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  createdBy  User       @relation("CreatedNotifications", fields: [createdById], references: [id])
+  college    College    @relation(fields: [collegeId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  approvedBy Admin?     @relation(fields: [approvedById], references: [id])
+
+  @@index([createdById])
+  @@index([collegeId])
+  @@index([departmentId])
+  @@index([status])
+}
+
 model Department {
   id         BigInt   @id @default(autoincrement())
   collegeId  BigInt
   name       String
 
   college  College  @relation(fields: [collegeId], references: [id])
-  years    Year[]
+  collegeYears    CollegeYear[]
   subjects Subject[]
   students Student[]
+  notifications Notification[]
+  teacherAffiliations TeacherAffiliation[]
+  courses Course[]
 
   @@index([collegeId])
 }
 
-model Year {
-  id            BigInt   @id @default(autoincrement())
-  collegeId     BigInt
-  departmentId  BigInt?
-  yearName      String
-  yearNumber    Int
+model AcademicYear {
+  id         BigInt   @id @default(autoincrement())
+  yearNumber Int      @unique
+  yearName   String
 
-  college    College    @relation(fields: [collegeId], references: [id])
-  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  students    Student[]
-  courses     Course[]
+  collegeYears CollegeYear[]
+}
 
+model CollegeYear {
+  id             BigInt   @id @default(autoincrement())
+  collegeId      BigInt
+  departmentId   BigInt?
+  academicYearId BigInt
+  isActive       Boolean  @default(true)
+
+  college      College      @relation(fields: [collegeId], references: [id])
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  students     Student[]
+  courses      Course[]
+  subjects     Subject[]
   @@index([collegeId])
   @@index([departmentId])
+  @@index([academicYearId])
 }
 
 model Season {
@@ -161,19 +270,28 @@ model Season {
   seasonName   String
   seasonNumber Int
   courses      Course[]
+  subjects     Subject[]
 }
 
 model Subject {
   id           BigInt   @id @default(autoincrement())
   collegeId    BigInt
+  collegeYearId       BigInt?
+  seasonId     BigInt?
   departmentId BigInt?
   subjectName  String
+  isProgram    Boolean  @default(false)
 
   college    College    @relation(fields: [collegeId], references: [id])
+  collegeYear       CollegeYear?      @relation(fields: [collegeYearId], references: [id])
+  season     Season?    @relation(fields: [seasonId], references: [id])
   department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   courses    Course[]
+  teacherPermissions TeacherSubjectPermission[]
 
   @@index([collegeId])
+  @@index([collegeYearId])
+  @@index([seasonId])
   @@index([departmentId])
 }
 
@@ -181,46 +299,77 @@ model Course {
   id                    BigInt    @id @default(autoincrement())
   teacherId             BigInt
   subjectId             BigInt?
-  yearId                BigInt?
+  collegeYearId                BigInt?
   seasonId              BigInt?
   universityId          BigInt?
   collegeId             BigInt?
+  departmentId          BigInt?
+  categoryId            BigInt?
   name                  String
   description           String?
+  imageUrl              String?
   price                 Decimal   @db.Decimal(10, 2)
-  courseType            CourseType @default(THEORETICAL)
+  duration              Int       @default(2)
+  isFree                Boolean   @default(false)
+  expiresAt             DateTime?
   introVideoUrl         String?
   discussionGroupUrl    String?
+  status                CourseStatus @default(PENDING)
+  teacherPercentage     Decimal   @default(0.0)
+  approvedById          BigInt?
+  approvedAt            DateTime?
   createdAt             DateTime  @default(now())
 
   teacher        Teacher   @relation(fields: [teacherId], references: [id])
   subject        Subject?  @relation(fields: [subjectId], references: [id])
-  year           Year?     @relation(fields: [yearId], references: [id])
+  collegeYear           CollegeYear?     @relation(fields: [collegeYearId], references: [id])
   season         Season?   @relation(fields: [seasonId], references: [id])
   university     University? @relation(fields: [universityId], references: [id])
   college        College?    @relation(fields: [collegeId], references: [id])
+  department     Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  category       CourseCategory? @relation(fields: [categoryId], references: [id])
+  approvedBy     Admin?    @relation(fields: [approvedById], references: [id], onDelete: SetNull)
   lectures       Lecture[]
   codeGroups     CodeGroup[]
   subscriptions  StudentSubscription[]
 
   @@index([teacherId])
   @@index([subjectId])
-  @@index([yearId])
+  @@index([collegeYearId])
   @@index([seasonId])
   @@index([universityId])
   @@index([collegeId])
+  @@index([departmentId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([approvedById])
+}
+
+model CourseCategory {
+  id        BigInt   @id @default(autoincrement())
+  name      String
+  sortOrder Int?
+  requiresAcademicLinks Boolean @default(true)
+  isProgram Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  courses Course[]
+
+  @@unique([name])
 }
 
 model Lecture {
   id         BigInt   @id @default(autoincrement())
   courseId   BigInt
   title      String
+  description String?
+  imageUrl   String?
   sortOrder  Int?
 
   course      Course      @relation(fields: [courseId], references: [id])
   videos      Video[]
   files       LectureFile[]
-  automations Automation[]
+  questions   Question[]
 
   @@index([courseId])
 }
@@ -232,11 +381,28 @@ model Video {
   videoUrl        String
   durationSeconds Int?
   viewsCount      Int      @default(0)
+  isFree          Boolean  @default(false)
 
   lecture       Lecture            @relation(fields: [lectureId], references: [id])
   interactions  VideoInteraction[]
+  segments      VideoSegment[]
 
   @@index([lectureId])
+}
+
+model VideoSegment {
+  id            BigInt   @id @default(autoincrement())
+  videoId       BigInt
+  segmentName   String
+  startSeconds  Int
+  endSeconds    Int
+  sortOrder     Int?
+  createdAt     DateTime @default(now())
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([videoId])
+  @@index([startSeconds, endSeconds])
 }
 
 model VideoInteraction {
@@ -253,6 +419,7 @@ model VideoInteraction {
 
   @@index([videoId])
   @@index([userId])
+  @@index([rating])
 }
 
 model TeacherLike {
@@ -267,42 +434,45 @@ model TeacherLike {
   @@index([studentId])
 }
 
+model TeacherSubjectPermission {
+  teacherId BigInt
+  subjectId BigInt
+  createdAt DateTime @default(now())
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@id([teacherId, subjectId])
+  @@index([subjectId])
+}
+
 model LectureFile {
   id        BigInt   @id @default(autoincrement())
   lectureId BigInt
   fileName  String
   fileUrl   String
   fileType  String?
+  isFree    Boolean  @default(false)
 
   lecture Lecture @relation(fields: [lectureId], references: [id])
 
   @@index([lectureId])
 }
 
-model Automation {
-  id             BigInt   @id @default(autoincrement())
-  lectureId      BigInt
-  title          String
-  questionsCount Int      @default(0)
-
-  lecture   Lecture    @relation(fields: [lectureId], references: [id])
-  questions Question[]
-
-  @@index([lectureId])
-}
-
 model Question {
   id           BigInt   @id @default(autoincrement())
-  automationId BigInt
-  questionText String
+  lectureId    BigInt
+  questionText String?
+  imageUrl     String?
+  explanation  String?
   questionType String   @default("multiple_choice") // multiple_choice, true_false, short_answer
   points       Int      @default(1)
   sortOrder    Int?
 
-  automation Automation       @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  lecture  Lecture       @relation(fields: [lectureId], references: [id], onDelete: Cascade)
   options    QuestionOption[]
 
-  @@index([automationId])
+  @@index([lectureId])
 }
 
 model QuestionOption {
@@ -336,10 +506,13 @@ model Code {
   codeValue       String   @unique
   status          CodeStatus @default(ACTIVE)
   allowedUniversityNumber String?
+  validForDays    Int?
+  validUntil      DateTime?
   usageLimit      Int?
   usageCount      Int      @default(0)
   usedByStudentId BigInt?
   usedAt          DateTime?
+  createdAt       DateTime @default(now())
 
   codeGroup CodeGroup @relation(fields: [codeGroupId], references: [id])
   usedBy    Student?  @relation("UsedCodes", fields: [usedByStudentId], references: [id])
@@ -353,6 +526,7 @@ model StudentSubscription {
   studentId  BigInt
   courseId   BigInt
   finalPrice Decimal  @db.Decimal(10, 2)
+  expiresAt  DateTime?
   createdAt  DateTime @default(now())
 
   student Student @relation(fields: [studentId], references: [id])
@@ -360,19 +534,44 @@ model StudentSubscription {
 
   @@unique([studentId, courseId])
   @@index([courseId])
+  @@index([createdAt])
 }
 model PointOfSale {
   id           BigInt   @id @default(autoincrement())
   universityId BigInt
+  provinceId  BigInt
   name         String
   address      String
   phone        String?
   description  String?
   image        String?
+  imageLocation String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   university University @relation(fields: [universityId], references: [id])
+  province  Province  @relation(fields: [provinceId], references: [id])
 
   @@index([universityId])
+  @@index([provinceId])
+}
+
+model CustomerService {
+  id                BigInt   @id @default(autoincrement())
+  technicalSupportPhone String
+  contactSupportPhone   String
+  whatsappUrl       String?
+  telegramUrl       String?
+  facebookUrl       String?
+  instagramUrl      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model AppDescription {
+  id          BigInt   @id @default(autoincrement())
+  title       String
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

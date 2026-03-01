@@ -14,16 +14,16 @@ export class YearsController {
   constructor(private readonly academics: AcademicsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create year' })
-  @ApiOkResponse({ description: 'Year created' })
+  @ApiOperation({ summary: 'Create college year' })
+  @ApiOkResponse({ description: 'College year created' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   create(@Body() body: CreateYearDto) {
-    return this.academics.createYear(body.collegeId, body.yearName, body.yearNumber, body.departmentId);
+    return this.academics.createYear(body.collegeId, body.academicYearId, body.departmentId, body.isActive);
   }
 
   @Get()
-  @ApiOperation({ summary: 'List years' })
+  @ApiOperation({ summary: 'List college years' })
   @ApiQuery({ name: 'collegeId', required: true })
   @ApiQuery({ name: 'departmentId', required: false })
   list(@Query('collegeId') collegeId?: string, @Query('departmentId') departmentId?: string) {
@@ -31,7 +31,7 @@ export class YearsController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update year' })
+  @ApiOperation({ summary: 'Update college year' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   update(
@@ -42,7 +42,7 @@ export class YearsController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete year' })
+  @ApiOperation({ summary: 'Delete college year' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   remove(@Param('id', ParseIntPipe) id: number) {

@@ -7,6 +7,18 @@
   - Added the required column `universityId` to the `PointOfSale` table without a default value. This is not possible if the table is not empty.
 
 */
+-- Ensure PointOfSale exists for shadow DB apply order
+CREATE TABLE IF NOT EXISTS "PointOfSale" (
+  "id" BIGSERIAL NOT NULL,
+  "name" TEXT NOT NULL,
+  "address" TEXT NOT NULL,
+  "image" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+
+  CONSTRAINT "PointOfSale_pkey" PRIMARY KEY ("id")
+);
+
 -- AlterEnum
 ALTER TYPE "CourseType" ADD VALUE 'PROGRAM';
 

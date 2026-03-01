@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 
 class QuestionOptionDto {
   @ApiProperty()
@@ -19,14 +19,26 @@ class QuestionOptionDto {
 }
 
 export class CreateQuestionDto {
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsNumber()
-  automationId: number;
+  lectureId?: number;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  questionText: string;
+  questionText?: string;
+
+  @ApiPropertyOptional({ description: 'Question image URL' })
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @ApiPropertyOptional({ description: 'Explanation shown after answering' })
+  @IsOptional()
+  @IsString()
+  explanation?: string;
 
   @ApiProperty({ enum: ['multiple_choice', 'true_false', 'short_answer'], default: 'multiple_choice' })
   @IsString()
@@ -46,6 +58,8 @@ export class CreateQuestionDto {
   @ApiPropertyOptional({ type: [QuestionOptionDto] })
   @IsOptional()
   @IsArray()
+  @ArrayMinSize(2)
+  @ArrayMaxSize(6)
   @ValidateNested({ each: true })
   @Type(() => QuestionOptionDto)
   options?: QuestionOptionDto[];

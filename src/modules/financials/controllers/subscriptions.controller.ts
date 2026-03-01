@@ -4,6 +4,7 @@ import { FinancialsService } from '../services/financials.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
+import { SubscribeWithCodeDto } from '../dtos/subscribe-with-code.dto';
 
 @ApiTags('financials')
 @ApiBearerAuth()
@@ -12,12 +13,12 @@ export class SubscriptionsController {
   constructor(private readonly financials: FinancialsService) {}
 
   @Post('subscribe')
-  @ApiOperation({ summary: 'Subscribe to a course with optional discount code' })
+  @ApiOperation({ summary: 'Subscribe to a course using code only' })
   @ApiOkResponse({ description: 'Subscription created' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('STUDENT')
-  subscribe(@Body() body: { courseId: number; codeValue?: string }, @Req() req: any) {
-    return this.financials.subscribeWithCode(req.user, body.courseId, body.codeValue);
+  subscribe(@Body() body: SubscribeWithCodeDto, @Req() req: any) {
+    return this.financials.subscribeWithCodeValue(req.user, body.codeValue);
   }
 
   @Get()
@@ -31,5 +32,21 @@ export class SubscriptionsController {
       studentId: studentId ? Number(studentId) : undefined,
       courseId: courseId ? Number(courseId) : undefined,
     });
+  }
+
+  @Get('me/active-courses')
+  @ApiOperation({ summary: 'Get active courses for current student' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('STUDENT')
+  getActiveCourses(@Req() req: any) {
+    return this.financials.getActiveCoursesByUser(req.user);
+  }
+
+  @Get('me/inactive-courses')
+  @ApiOperation({ summary: 'Get inactive courses for current student' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('STUDENT')
+  getInactiveCourses(@Req() req: any) {
+    return this.financials.getInactiveCoursesByUser(req.user);
   }
 }

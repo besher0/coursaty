@@ -24,7 +24,9 @@ export class PointOfSalesService {
         phone: createPointOfSaleDto.phone,
         description: createPointOfSaleDto.description,
         image: createPointOfSaleDto.image,
+        imageLocation: createPointOfSaleDto.imageLocation,
         university: { connect: { id: universityId } },
+        province: { connect: { id: university.provinceId } },
       },
     });
   }
@@ -44,6 +46,13 @@ export class PointOfSalesService {
     });
   }
 
+  async findByProvince(provinceId: bigint) {
+    return this.prisma.pointOfSale.findMany({
+      where: { provinceId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async findByStudentToken(user: { userId: string | number; type: string }) {
     if (!user || user.type !== 'STUDENT') {
       throw new ForbiddenException('Only students can access this resource');
@@ -59,6 +68,10 @@ export class PointOfSalesService {
     });
     if (!student) throw new NotFoundException('Student not found');
 
+    if (student.provinceId) {
+      return this.findByProvince(student.provinceId);
+    }
+
     return this.findByUniversity(student.universityId);
   }
 
@@ -70,6 +83,7 @@ export class PointOfSalesService {
 
   async update(id: bigint, updatePointOfSaleDto: UpdatePointOfSaleDto) {
     let universityId: bigint | undefined;
+    let provinceId: bigint | undefined;
 
     if (updatePointOfSaleDto.universityId !== undefined) {
       universityId = BigInt(updatePointOfSaleDto.universityId);
@@ -80,6 +94,7 @@ export class PointOfSalesService {
       if (!university) {
         throw new NotFoundException('University not found');
       }
+      provinceId = university.provinceId;
     }
 
     return this.prisma.pointOfSale.update({
@@ -90,7 +105,9 @@ export class PointOfSalesService {
         phone: updatePointOfSaleDto.phone,
         description: updatePointOfSaleDto.description,
         image: updatePointOfSaleDto.image,
+        imageLocation: updatePointOfSaleDto.imageLocation,
         ...(universityId !== undefined ? { university: { connect: { id: universityId } } } : {}),
+        ...(provinceId !== undefined ? { province: { connect: { id: provinceId } } } : {}),
       },
     });
   }

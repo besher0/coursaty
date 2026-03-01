@@ -19,7 +19,7 @@ export class UniversitiesController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   create(@Body() dto: CreateUniversityDto) {
-    return this.academics.createUniversity(dto.name);
+    return this.academics.createUniversity(dto.name, dto.provinceId);
   }
 
   @Get()

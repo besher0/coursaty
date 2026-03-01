@@ -19,7 +19,14 @@ export class SubjectsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   create(@Body() body: CreateSubjectDto) {
-    return this.academics.createSubject(body.collegeId, body.subjectName, body.departmentId);
+    return this.academics.createSubject(
+      body.collegeId,
+      body.collegeYearId,
+      body.seasonId,
+      body.subjectName,
+      body.departmentId,
+      body.isProgram,
+    );
   }
 
   @Get()
