@@ -8,7 +8,7 @@ export class PointOfSalesService {
   constructor(private prisma: PrismaService) {}
 
   async create(createPointOfSaleDto: CreatePointOfSaleDto) {
-    const universityId = BigInt(createPointOfSaleDto.universityId);
+    const universityId = String(createPointOfSaleDto.universityId);
     const university = await this.prisma.university.findUnique({
       where: { id: universityId },
     });
@@ -39,14 +39,14 @@ export class PointOfSalesService {
     });
   }
 
-  async findByUniversity(universityId: bigint) {
+  async findByUniversity(universityId: string) {
     return this.prisma.pointOfSale.findMany({
       where: { universityId },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findByProvince(provinceId: bigint) {
+  async findByProvince(provinceId: string) {
     return this.prisma.pointOfSale.findMany({
       where: { provinceId },
       orderBy: { createdAt: 'desc' },
@@ -59,7 +59,7 @@ export class PointOfSalesService {
     }
 
     const dbUser = await this.prisma.user.findUnique({
-      where: { id: BigInt(user.userId) },
+      where: { id: String(user.userId) },
     });
     if (!dbUser) throw new NotFoundException('User not found');
 
@@ -75,18 +75,18 @@ export class PointOfSalesService {
     return this.findByUniversity(student.universityId);
   }
 
-  async findOne(id: bigint) {
+  async findOne(id: string) {
     return this.prisma.pointOfSale.findUnique({
       where: { id },
     });
   }
 
-  async update(id: bigint, updatePointOfSaleDto: UpdatePointOfSaleDto) {
-    let universityId: bigint | undefined;
-    let provinceId: bigint | undefined;
+  async update(id: string, updatePointOfSaleDto: UpdatePointOfSaleDto) {
+    let universityId: string | undefined;
+    let provinceId: string | undefined;
 
     if (updatePointOfSaleDto.universityId !== undefined) {
-      universityId = BigInt(updatePointOfSaleDto.universityId);
+      universityId = String(updatePointOfSaleDto.universityId);
       const university = await this.prisma.university.findUnique({
         where: { id: universityId },
       });
@@ -112,7 +112,7 @@ export class PointOfSalesService {
     });
   }
 
-  async remove(id: bigint) {
+  async remove(id: string) {
     return this.prisma.pointOfSale.delete({
       where: { id },
     });

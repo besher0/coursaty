@@ -14,146 +14,146 @@ export class AcademicsService {
   constructor(private readonly prisma: PrismaService) {}
 
   // Universities
-  async createUniversity(name: string, provinceId: number) {
-    const province = await this.prisma.province.findUnique({ where: { id: BigInt(provinceId) } });
+    async createUniversity(name: string, provinceId: string) {
+    const province = await this.prisma.province.findUnique({ where: { id: provinceId } });
     if (!province) throw new NotFoundException('Province not found');
 
     return this.prisma.university.create({
-      data: { name, provinceId: BigInt(provinceId) },
+      data: { name, provinceId },
     });
   }
   listUniversities() {
     return this.prisma.university.findMany({ include: { province: true } });
   }
 
-  async updateUniversity(id: number, dto: UpdateUniversityDto) {
+  async updateUniversity(id: string, dto: UpdateUniversityDto) {
     const data: any = {};
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.provinceId !== undefined) {
-      const province = await this.prisma.province.findUnique({ where: { id: BigInt(dto.provinceId) } });
+      const province = await this.prisma.province.findUnique({ where: { id: dto.provinceId } });
       if (!province) throw new NotFoundException('Province not found');
-      data.provinceId = BigInt(dto.provinceId);
+      data.provinceId = dto.provinceId;
     }
-    return this.prisma.university.update({ where: { id: BigInt(id) }, data });
+    return this.prisma.university.update({ where: { id }, data });
   }
 
-  deleteUniversity(id: number) {
-    return this.prisma.university.delete({ where: { id: BigInt(id) } });
+  deleteUniversity(id: string) {
+    return this.prisma.university.delete({ where: { id } });
   }
 
   // Colleges
-  createCollege(universityId: number, name: string) {
-    return this.prisma.college.create({ data: { universityId: BigInt(universityId), name } });
+  createCollege(universityId: string, name: string) {
+    return this.prisma.college.create({ data: { universityId, name } });
   }
-  listColleges(universityId?: number) {
-    return this.prisma.college.findMany({ where: universityId ? { universityId: BigInt(universityId) } : undefined });
+  listColleges(universityId?: string) {
+    return this.prisma.college.findMany({ where: universityId ? { universityId } : undefined });
   }
 
-  updateCollege(id: number, dto: UpdateCollegeDto) {
+  updateCollege(id: string, dto: UpdateCollegeDto) {
     const data: any = {};
     if (dto.name !== undefined) data.name = dto.name;
-    return this.prisma.college.update({ where: { id: BigInt(id) }, data });
+    return this.prisma.college.update({ where: { id }, data });
   }
 
-  deleteCollege(id: number) {
-    return this.prisma.college.delete({ where: { id: BigInt(id) } });
+  deleteCollege(id: string) {
+    return this.prisma.college.delete({ where: { id } });
   }
 
   // Departments
-  createDepartment(collegeId: number, name: string) {
-    return this.prisma.department.create({ data: { collegeId: BigInt(collegeId), name } });
+  createDepartment(collegeId: string, name: string) {
+    return this.prisma.department.create({ data: { collegeId, name } });
   }
-  listDepartments(collegeId?: number) {
-    return this.prisma.department.findMany({ where: collegeId ? { collegeId: BigInt(collegeId) } : undefined });
+  listDepartments(collegeId?: string) {
+    return this.prisma.department.findMany({ where: collegeId ? { collegeId } : undefined });
   }
 
-  updateDepartment(id: number, dto: UpdateDepartmentDto) {
+  updateDepartment(id: string, dto: UpdateDepartmentDto) {
     const data: any = {};
     if (dto.name !== undefined) data.name = dto.name;
-    return this.prisma.department.update({ where: { id: BigInt(id) }, data });
+    return this.prisma.department.update({ where: { id }, data });
   }
 
-  deleteDepartment(id: number) {
-    return this.prisma.department.delete({ where: { id: BigInt(id) } });
+  deleteDepartment(id: string) {
+    return this.prisma.department.delete({ where: { id } });
   }
 
   // Subjects
   createSubject(
-    collegeId: number,
-    collegeYearId: number,
-    seasonId: number,
+    collegeId: string,
+    collegeYearId: string,
+    seasonId: string,
     subjectName: string,
-    departmentId?: number,
+    departmentId?: string,
     isProgram?: boolean,
   ) {
     return this.prisma.subject.create({
       data: {
-        collegeId: BigInt(collegeId),
-        collegeYearId: BigInt(collegeYearId),
-        seasonId: BigInt(seasonId),
-        departmentId: departmentId ? BigInt(departmentId) : undefined,
+        collegeId,
+        collegeYearId,
+        seasonId,
+        departmentId: departmentId || undefined,
         subjectName,
         isProgram: isProgram ?? false,
       },
     });
   }
-  listSubjects(collegeId: number, departmentId?: number) {
+  listSubjects(collegeId: string, departmentId?: string) {
     return this.prisma.subject.findMany({
       where: {
-        collegeId: BigInt(collegeId),
-        departmentId: departmentId ? BigInt(departmentId) : undefined,
+        collegeId,
+        departmentId: departmentId || undefined,
       },
     });
   }
 
-  updateSubject(id: number, dto: UpdateSubjectDto) {
+  updateSubject(id: string, dto: UpdateSubjectDto) {
     const raw = dto as Record<string, unknown>;
     if (raw.collegeId !== undefined || raw.collegeYearId !== undefined || raw.seasonId !== undefined) {
       throw new DomainException();
     }
     const data: any = {};
     if (dto.subjectName !== undefined) data.subjectName = dto.subjectName;
-    if (dto.departmentId !== undefined) data.departmentId = dto.departmentId ? BigInt(dto.departmentId) : null;
+    if (dto.departmentId !== undefined) data.departmentId = dto.departmentId || null;
     if (dto.isProgram !== undefined) data.isProgram = dto.isProgram;
-    return this.prisma.subject.update({ where: { id: BigInt(id) }, data });
+    return this.prisma.subject.update({ where: { id }, data });
   }
 
-  deleteSubject(id: number) {
-    return this.prisma.subject.delete({ where: { id: BigInt(id) } });
+  deleteSubject(id: string) {
+    return this.prisma.subject.delete({ where: { id } });
   }
 
   // Years
-  createYear(collegeId: number, academicYearId: number, departmentId?: number, isActive?: boolean) {
+  createYear(collegeId: string, academicYearId: string, departmentId?: string, isActive?: boolean) {
     return this.prisma.collegeYear.create({
       data: {
-        collegeId: BigInt(collegeId),
-        academicYearId: BigInt(academicYearId),
-        departmentId: departmentId ? BigInt(departmentId) : undefined,
+        collegeId,
+        academicYearId,
+        departmentId: departmentId || undefined,
         isActive: isActive ?? true,
       },
     });
   }
-  listYears(collegeId: number, departmentId?: number) {
+  listYears(collegeId: string, departmentId?: string) {
     return this.prisma.collegeYear.findMany({
       where: {
-        collegeId: BigInt(collegeId),
-        departmentId: departmentId ? BigInt(departmentId) : undefined,
+        collegeId,
+        departmentId: departmentId || undefined,
       },
       include: { academicYear: true },
       orderBy: { academicYear: { yearNumber: 'asc' } },
     });
   }
 
-  updateYear(id: number, dto: UpdateYearDto) {
+  updateYear(id: string, dto: UpdateYearDto) {
     const data: any = {};
-    if (dto.academicYearId !== undefined) data.academicYearId = BigInt(dto.academicYearId);
-    if (dto.departmentId !== undefined) data.departmentId = dto.departmentId ? BigInt(dto.departmentId) : null;
+    if (dto.academicYearId !== undefined) data.academicYearId = dto.academicYearId;
+    if (dto.departmentId !== undefined) data.departmentId = dto.departmentId || null;
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
-    return this.prisma.collegeYear.update({ where: { id: BigInt(id) }, data });
+    return this.prisma.collegeYear.update({ where: { id }, data });
   }
 
-  deleteYear(id: number) {
-    return this.prisma.collegeYear.delete({ where: { id: BigInt(id) } });
+  deleteYear(id: string) {
+    return this.prisma.collegeYear.delete({ where: { id } });
   }
 
   // Academic Years
@@ -170,11 +170,11 @@ export class AcademicsService {
     const data: any = {};
     if (dto.yearName !== undefined) data.yearName = dto.yearName;
     if (dto.yearNumber !== undefined) data.yearNumber = dto.yearNumber;
-    return this.prisma.academicYear.update({ where: { id: BigInt(id) }, data });
+    return this.prisma.academicYear.update({ where: { id: String(id) }, data });
   }
 
   deleteAcademicYear(id: number) {
-    return this.prisma.academicYear.delete({ where: { id: BigInt(id) } });
+    return this.prisma.academicYear.delete({ where: { id: String(id) } });
   }
 
   // Seasons
@@ -189,10 +189,10 @@ export class AcademicsService {
     const data: any = {};
     if (dto.seasonName !== undefined) data.seasonName = dto.seasonName;
     if (dto.seasonNumber !== undefined) data.seasonNumber = dto.seasonNumber;
-    return this.prisma.season.update({ where: { id: BigInt(id) }, data });
+    return this.prisma.season.update({ where: { id: String(id) }, data });
   }
 
   deleteSeason(id: number) {
-    return this.prisma.season.delete({ where: { id: BigInt(id) } });
+    return this.prisma.season.delete({ where: { id: String(id) } });
   }
 }

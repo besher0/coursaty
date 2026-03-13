@@ -12,14 +12,14 @@ export class NotificationsService {
 
   private async getUserFromToken(user?: { userId: string | number; type: string }) {
     if (!user) throw new BadRequestException('User not found');
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser) throw new BadRequestException('User not found');
     return dbUser;
   }
 
   private async getAdminIdFromUser(user?: { userId: string | number; type: string }) {
     if (!user) throw new BadRequestException('User not found');
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser || dbUser.userableType !== 'ADMIN') {
       throw new BadRequestException('Admin not found');
     }
@@ -28,7 +28,7 @@ export class NotificationsService {
 
   private async getStudentFromUser(user?: { userId: string | number; type: string }) {
     if (!user) throw new BadRequestException('User not found');
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser || dbUser.userableType !== 'STUDENT') {
       throw new BadRequestException('Student not found');
     }
@@ -38,14 +38,14 @@ export class NotificationsService {
     return student;
   }
 
-  private async ensureCollegeAndDepartment(collegeId: number, departmentId?: number) {
-    const college = await this.prisma.college.findUnique({ where: { id: BigInt(collegeId) } });
+  private async ensureCollegeAndDepartment(collegeId: string, departmentId?: string) {
+    const college = await this.prisma.college.findUnique({ where: { id: collegeId } });
     if (!college) throw new NotFoundException('College not found');
 
     if (departmentId !== undefined) {
-      const department = await this.prisma.department.findUnique({ where: { id: BigInt(departmentId) } });
+      const department = await this.prisma.department.findUnique({ where: { id: departmentId } });
       if (!department) throw new NotFoundException('Department not found');
-      if (department.collegeId !== BigInt(collegeId)) {
+      if (department.collegeId !== collegeId) {
         throw new BadRequestException('Department does not belong to college');
       }
     }
@@ -69,8 +69,8 @@ export class NotificationsService {
         title: dto.title,
         description: dto.description,
         createdById: dbUser.id,
-        collegeId: BigInt(dto.collegeId),
-        departmentId: dto.departmentId ? BigInt(dto.departmentId) : null,
+        collegeId: dto.collegeId,
+        departmentId: dto.departmentId || null,
         status,
         ...(status === 'APPROVED' ? { approvedById: dbUser.userableId, approvedAt: new Date() } : {}),
       },
@@ -116,16 +116,16 @@ export class NotificationsService {
     });
   }
 
-  async approveNotification(id: number, user?: { userId: string | number; type: string }) {
+  async approveNotification(id: string, user?: { userId: string | number; type: string }) {
     const adminId = await this.getAdminIdFromUser(user);
     const notification = await this.prisma.notification.findUnique({
-      where: { id: BigInt(id) },
+      where: { id },
     });
     if (!notification) throw new NotFoundException('Notification not found');
     if (notification.status !== 'PENDING') throw new BadRequestException('Notification already processed');
 
     const updated = await this.prisma.notification.update({
-      where: { id: BigInt(id) },
+      where: { id },
       data: {
         status: 'APPROVED',
         approvedById: adminId,
@@ -139,16 +139,16 @@ export class NotificationsService {
     return updated;
   }
 
-  async rejectNotification(id: number, user?: { userId: string | number; type: string }) {
+  async rejectNotification(id: string, user?: { userId: string | number; type: string }) {
     const adminId = await this.getAdminIdFromUser(user);
     const notification = await this.prisma.notification.findUnique({
-      where: { id: BigInt(id) },
+      where: { id },
     });
     if (!notification) throw new NotFoundException('Notification not found');
     if (notification.status !== 'PENDING') throw new BadRequestException('Notification already processed');
 
     return this.prisma.notification.update({
-      where: { id: BigInt(id) },
+      where: { id },
       data: {
         status: 'REJECTED',
         approvedById: adminId,
@@ -158,7 +158,7 @@ export class NotificationsService {
     });
   }
 
-  private async sendToStudents(notification: { collegeId: bigint; departmentId: bigint | null; title: string; description: string }) {
+  private async sendToStudents(notification: { collegeId: string; departmentId: string | null; title: string; description: string }) {
     const students = await this.prisma.student.findMany({
       where: {
         collegeId: notification.collegeId,

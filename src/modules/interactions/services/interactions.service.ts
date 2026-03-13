@@ -9,9 +9,9 @@ export class InteractionsService {
     const { studentId } = await this.ensureStudentContext(user);
 
     const result = await this.prisma.teacherLike.upsert({
-      where: { teacherId_studentId: { teacherId: BigInt(teacherId), studentId } },
+      where: { teacherId_studentId: { teacherId: String(teacherId), studentId } },
       update: {},
-      create: { teacherId: BigInt(teacherId), studentId },
+      create: { teacherId: String(teacherId), studentId },
     });
 
     await this.syncTeacherLikesCount(teacherId);
@@ -21,7 +21,7 @@ export class InteractionsService {
   async deleteTeacherLike(teacherId: number, user: { userId: string | number; type: string }) {
     const { studentId } = await this.ensureStudentContext(user);
     const result = await this.prisma.teacherLike.delete({
-      where: { teacherId_studentId: { teacherId: BigInt(teacherId), studentId } },
+      where: { teacherId_studentId: { teacherId: String(teacherId), studentId } },
     });
     await this.syncTeacherLikesCount(teacherId);
     return result;
@@ -36,7 +36,7 @@ export class InteractionsService {
 
     return this.prisma.videoInteraction.create({
       data: {
-        videoId: BigInt(videoId),
+        videoId: String(videoId),
         userId: dbUser.id,
         isLiked: !!data.isLiked,
         rating: data.rating,
@@ -50,14 +50,14 @@ export class InteractionsService {
     user: { userId: string | number; type: string },
     data: { isLiked?: boolean; rating?: number; comment?: string },
   ) {
-    const interaction = await this.prisma.videoInteraction.findUnique({ where: { id: BigInt(id) } });
+    const interaction = await this.prisma.videoInteraction.findUnique({ where: { id: String(id) } });
     if (!interaction) throw new NotFoundException('Interaction not found');
 
     if (interaction.userId.toString() !== user.userId.toString()) throw new ForbiddenException('Not your interaction');
     await this.ensureVideoAccess(Number(interaction.videoId), user);
 
     return this.prisma.videoInteraction.update({
-      where: { id: BigInt(id) },
+      where: { id: String(id) },
       data: {
         isLiked: data.isLiked,
         rating: data.rating,
@@ -67,32 +67,32 @@ export class InteractionsService {
   }
 
   async deleteVideoInteraction(id: number, user: { userId: string | number; type: string }) {
-    const interaction = await this.prisma.videoInteraction.findUnique({ where: { id: BigInt(id) } });
+    const interaction = await this.prisma.videoInteraction.findUnique({ where: { id: String(id) } });
     if (!interaction) throw new NotFoundException('Interaction not found');
     if (interaction.userId.toString() !== user.userId.toString()) throw new ForbiddenException('Not your interaction');
 
-    await this.prisma.videoInteraction.delete({ where: { id: BigInt(id) } });
+    await this.prisma.videoInteraction.delete({ where: { id: String(id) } });
     return { success: true };
   }
 
   async incrementVideoView(videoId: number, user: { userId: string | number; type: string }) {
     await this.ensureVideoAccess(videoId, user);
     return this.prisma.video.update({
-      where: { id: BigInt(videoId) },
+      where: { id: String(videoId) },
       data: { viewsCount: { increment: 1 } },
     });
   }
 
   private async ensureStudentContext(user: { userId: string | number; type: string }) {
     if (!user || user.type !== 'STUDENT') throw new ForbiddenException('Student role required');
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser) throw new ForbiddenException('User not found');
     return { dbUser, studentId: dbUser.userableId };
   }
 
   private async ensureVideoAccess(videoId: number, user: { userId: string | number; type: string }) {
     const video = await this.prisma.video.findUnique({
-      where: { id: BigInt(videoId) },
+      where: { id: String(videoId) },
       include: { lecture: { select: { courseId: true, course: { select: { expiresAt: true } } } } },
     });
     if (!video) throw new NotFoundException('Video not found');
@@ -100,7 +100,7 @@ export class InteractionsService {
     if (user.type === 'ADMIN') return { video };
     if (user.type === 'TEACHER') {
       // Allow teacher access only if owns the course
-      const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+      const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
       if (!dbUser) throw new ForbiddenException('User not found');
       const course = await this.prisma.course.findUnique({ where: { id: video.lecture.courseId } });
       if (!course) throw new NotFoundException('Course not found');
@@ -110,7 +110,7 @@ export class InteractionsService {
       return { video, dbUser };
     }
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser) throw new ForbiddenException('User not found');
 
     if (video.lecture.course?.expiresAt && video.lecture.course.expiresAt.getTime() <= Date.now()) {
@@ -128,7 +128,7 @@ export class InteractionsService {
   }
 
   private async syncTeacherLikesCount(teacherId: number) {
-    const likes = await this.prisma.teacherLike.count({ where: { teacherId: BigInt(teacherId) } });
-    await this.prisma.teacher.update({ where: { id: BigInt(teacherId) }, data: { likesCount: likes } });
+    const likes = await this.prisma.teacherLike.count({ where: { teacherId: String(teacherId) } });
+    await this.prisma.teacher.update({ where: { id: String(teacherId) }, data: { likesCount: likes } });
   }
 }

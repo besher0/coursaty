@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateNotificationDto {
   @ApiProperty()
@@ -13,13 +13,11 @@ export class CreateNotificationDto {
   description: string;
 
   @ApiProperty()
-  @IsNumber()
-  @IsPositive()
-  collegeId: number;
+  @IsUUID('4')
+  collegeId: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  departmentId?: number;
+  @IsUUID('4')
+  departmentId?: string;
 }

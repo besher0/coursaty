@@ -35,7 +35,7 @@ export class PointOfSalesController {
 
   @Get('university/:universityId')
   findByUniversity(@Param('universityId', ParseIntPipe) universityId: number) {
-    return this.pointOfSalesService.findByUniversity(BigInt(universityId));
+    return this.pointOfSalesService.findByUniversity(String(universityId));
   }
 
   @Get('university')
@@ -49,7 +49,7 @@ export class PointOfSalesController {
 
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.pointOfSalesService.findOne(BigInt(id));
+    return this.pointOfSalesService.findOne(String(id));
   }
 
   @Patch(':id')
@@ -57,11 +57,11 @@ export class PointOfSalesController {
     @Param('id', ParseIntPipe) id: number,
     @Body() updatePointOfSaleDto: UpdatePointOfSaleDto,
   ) {
-    return this.pointOfSalesService.update(BigInt(id), updatePointOfSaleDto);
+    return this.pointOfSalesService.update(String(id), updatePointOfSaleDto);
   }
 
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {
-    return this.pointOfSalesService.remove(BigInt(id));
+    return this.pointOfSalesService.remove(String(id));
   }
 }

@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsDateString, IsNumber, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsDateString, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, Max } from 'class-validator';
 
 export class CreateCourseDto {
   @ApiProperty()
@@ -17,61 +18,58 @@ export class CreateCourseDto {
   @IsString()
   imageUrl?: string;
 
-  @ApiPropertyOptional({ description: 'Required only for ADMIN; TEACHER taken from token' })
+  @ApiPropertyOptional({ description: 'Required only for ADMIN; TEACHER taken from token (UUID)' })
   @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  teacherId?: number;
+  @IsUUID()
+  teacherId?: string;
 
-  @ApiProperty({ description: 'Required subject/program ID' })
-  @IsNumber()
-  @IsPositive()
-  subjectId: number;
+  @ApiProperty({ description: 'Required subject/program ID (UUID)' })
+  @IsUUID()
+  subjectId: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  collegeYearId?: number;
+  @IsUUID()
+  collegeYearId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  seasonId?: number;
+  @IsUUID()
+  seasonId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  universityId?: number;
+  @IsUUID()
+  universityId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  collegeId?: number;
+  @IsUUID()
+  collegeId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  departmentId?: number;
+  @IsUUID()
+  departmentId?: string;
 
-  @ApiProperty({ description: 'Course category ID' })
-  @IsNumber()
-  @IsPositive()
-  categoryId: number;
+  @ApiProperty({ description: 'Course category ID (UUID)' })
+  @IsUUID()
+  categoryId: string;
 
   @ApiProperty()
   @IsNumber()
-  @IsPositive()
   price: number;
+
+  @ApiPropertyOptional({ description: 'Course discount percentage (0-100)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  courseDiscountPercentage?: number;
 
   @ApiPropertyOptional({ default: 2, description: 'Course duration in hours' })
   @IsOptional()
   @IsNumber()
-  @IsPositive()
   duration?: number;
 
   @ApiPropertyOptional({ default: false, description: 'Whether the course is free' })
@@ -81,6 +79,23 @@ export class CreateCourseDto {
 
   @ApiPropertyOptional({ description: 'Course expiry date (ISO string)' })
   @IsOptional()
+  @Transform(({ value }) => {
+    if (value === '' || value === null || value === undefined) return undefined;
+    if (typeof value !== 'string') return value;
+
+    // Accept inputs like 2026-6-11T00:00:00.000Z by zero-padding month/day.
+    const normalized = value.replace(
+      /^(\d{4})-(\d{1,2})-(\d{1,2})(T.*)$/,
+      (_, year: string, month: string, day: string, rest: string) => {
+        const mm = month.padStart(2, '0');
+        const dd = day.padStart(2, '0');
+        return `${year}-${mm}-${dd}${rest}`;
+      },
+    );
+
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? normalized : parsed.toISOString();
+  })
   @IsDateString()
   expiresAt?: string | null;
 

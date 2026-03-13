@@ -8,7 +8,7 @@ export class StudentsService {
 
   async create(dto: CreateStudentDto) {
     const university = await this.prisma.university.findUnique({
-      where: { id: BigInt(dto.universityId) },
+      where: { id: dto.universityId },
     });
     if (!university) throw new NotFoundException('University not found');
 
@@ -16,11 +16,11 @@ export class StudentsService {
       data: {
         name: dto.name,
         universityNumber: dto.universityNumber,
-        universityId: BigInt(dto.universityId),
+        universityId: dto.universityId,
         provinceId: university.provinceId,
-        collegeId: BigInt(dto.collegeId),
-        departmentId: BigInt(dto.departmentId),
-        collegeYearId: BigInt(dto.collegeYearId),
+        collegeId: dto.collegeId,
+        collegeYearId: dto.collegeYearId,
+        departmentId: dto.departmentId ?? null,
       },
     });
     return student;

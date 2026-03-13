@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class TeacherSummarySeasonDto {
   @ApiProperty()
-  id: bigint;
+  id: string;
 
   @ApiProperty()
   name: string;
@@ -13,7 +13,7 @@ export class TeacherSummarySeasonDto {
 
 export class TeacherSummaryYearDto {
   @ApiProperty()
-  id: bigint;
+  id: string;
 
   @ApiProperty()
   name: string;
@@ -24,7 +24,7 @@ export class TeacherSummaryYearDto {
 
 export class TeacherSummaryCourseDto {
   @ApiProperty()
-  id: bigint;
+  id: string;
 
   @ApiProperty()
   name: string;
@@ -47,7 +47,7 @@ export class TeacherSummaryCourseDto {
 
 export class PendingNotificationDto {
   @ApiProperty()
-  id: bigint;
+  id: string;
 
   @ApiProperty()
   title: string;
@@ -56,10 +56,10 @@ export class PendingNotificationDto {
   description: string;
 
   @ApiProperty()
-  collegeId: bigint;
+  collegeId: string;
 
   @ApiPropertyOptional()
-  departmentId: bigint | null;
+  departmentId: string | null;
 
   @ApiProperty()
   createdAt: Date;

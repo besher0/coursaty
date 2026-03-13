@@ -1,19 +1,25 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNumber, IsOptional } from 'class-validator';
+import { IsBoolean, IsOptional, IsUUID } from 'class-validator';
 
 export class CreateYearDto {
-  @ApiProperty()
-  @IsNumber()
-  collegeId: number;
+  @ApiProperty({
+    description: 'College ID (UUID)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @IsUUID('4')
+  collegeId: string;
 
   @ApiPropertyOptional()
-  @IsNumber()
   @IsOptional()
-  departmentId?: number;
+  @IsUUID('4')
+  departmentId?: string;
 
-  @ApiProperty()
-  @IsNumber()
-  academicYearId: number;
+  @ApiProperty({
+    description: 'Academic Year ID (UUID)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @IsUUID('4')
+  academicYearId: string;
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()

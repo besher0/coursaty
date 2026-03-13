@@ -13,12 +13,15 @@ export class AuthService {
   async register(dto: RegisterDto) {
     const hash = await bcrypt.hash(dto.password, 10);
     try {
+      const userStatus = dto.userableType === 'TEACHER' ? 'pending' : 'active';
+
       const user = await this.prisma.user.create({
         data: {
           phone: dto.phone,
           password: hash,
-          userableId: BigInt(dto.userableId),
+          userableId: dto.userableId,
           userableType: dto.userableType,
+          status: userStatus,
           fcmToken: dto.fcmToken,
         },
       });

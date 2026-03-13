@@ -9,14 +9,14 @@ export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async updateFcmToken(id: number, fcmToken: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: BigInt(id) } });
+    const user = await this.prisma.user.findUnique({ where: { id: String(id) } });
     if (!user) throw new NotFoundException('User not found');
-    return this.prisma.user.update({ where: { id: BigInt(id) }, data: { fcmToken } });
+    return this.prisma.user.update({ where: { id: String(id) }, data: { fcmToken } });
   }
 
   async getProfile(userId: string | number) {
     const user = await this.prisma.user.findUnique({
-      where: { id: BigInt(userId) },
+      where: { id: String(userId) },
     });
     if (!user) throw new NotFoundException('User not found');
 
@@ -62,7 +62,7 @@ export class UsersService {
 
   async updateProfile(userId: string | number, dto: UpdateProfileDto) {
     const user = await this.prisma.user.findUnique({
-      where: { id: BigInt(userId) },
+      where: { id: String(userId) },
     });
     if (!user) throw new NotFoundException('User not found');
 
@@ -73,7 +73,7 @@ export class UsersService {
 
     if (Object.keys(userUpdateData).length > 0) {
       await this.prisma.user.update({
-        where: { id: BigInt(userId) },
+        where: { id: String(userId) },
         data: userUpdateData,
       });
     }
@@ -101,7 +101,7 @@ export class UsersService {
 
   async updateUserProfile(userId: string | number, dto: UpdateUserProfileDto) {
     const user = await this.prisma.user.findUnique({
-      where: { id: BigInt(userId) },
+      where: { id: String(userId) },
     });
     if (!user) throw new NotFoundException('User not found');
 
@@ -110,7 +110,7 @@ export class UsersService {
     if (dto.gender !== undefined) updateData.gender = dto.gender;
 
     const updatedUser = await this.prisma.user.update({
-      where: { id: BigInt(userId) },
+      where: { id: String(userId) },
       data: updateData,
     });
 
@@ -119,7 +119,7 @@ export class UsersService {
 
   async updateStudentProfile(userId: string | number, dto: UpdateStudentProfileDto) {
     const user = await this.prisma.user.findUnique({
-      where: { id: BigInt(userId) },
+      where: { id: String(userId) },
     });
     if (!user) throw new NotFoundException('User not found');
 
@@ -131,15 +131,15 @@ export class UsersService {
     if (dto.name !== undefined) updateData.name = dto.name;
     if (dto.universityId !== undefined) {
       const university = await this.prisma.university.findUnique({
-        where: { id: BigInt(dto.universityId) },
+        where: { id: String(dto.universityId) },
       });
       if (!university) throw new NotFoundException('University not found');
-      updateData.universityId = BigInt(dto.universityId);
+      updateData.universityId = String(dto.universityId);
       updateData.provinceId = university.provinceId;
     }
-    if (dto.collegeId !== undefined) updateData.collegeId = BigInt(dto.collegeId);
-    if (dto.departmentId !== undefined) updateData.departmentId = BigInt(dto.departmentId);
-    if (dto.collegeYearId !== undefined) updateData.collegeYearId = BigInt(dto.collegeYearId);
+    if (dto.collegeId !== undefined) updateData.collegeId = String(dto.collegeId);
+    if (dto.departmentId !== undefined) updateData.departmentId = String(dto.departmentId);
+    if (dto.collegeYearId !== undefined) updateData.collegeYearId = String(dto.collegeYearId);
 
     await this.prisma.student.update({
       where: { id: user.userableId },

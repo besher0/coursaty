@@ -1,24 +1,31 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateSubjectDto {
-  @ApiProperty()
-  @IsNumber()
-  collegeId: number;
+  @ApiProperty({
+    description: 'College ID (UUID)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @IsUUID('4')
+  collegeId: string;
 
-  @ApiProperty()
-  @IsNumber()
-  @IsPositive()
-  collegeYearId: number;
-  @ApiProperty()
-  @IsNumber()
-  @IsPositive()
-  seasonId: number;
+  @ApiProperty({
+    description: 'College Year ID (UUID)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @IsUUID('4')
+  collegeYearId: string;
+  @ApiProperty({
+    description: 'Season ID (UUID)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @IsUUID('4')
+  seasonId: string;
 
   @ApiPropertyOptional()
-  @IsNumber()
   @IsOptional()
-  departmentId?: number;
+  @IsUUID('4')
+  departmentId?: string;
 
   @ApiProperty()
   @IsString()

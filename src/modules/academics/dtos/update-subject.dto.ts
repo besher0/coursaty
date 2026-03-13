@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class UpdateSubjectDto {
 	@ApiPropertyOptional()
@@ -10,8 +10,8 @@ export class UpdateSubjectDto {
 
 	@ApiPropertyOptional()
 	@IsOptional()
-	@IsNumber()
-	departmentId?: number;
+	@IsUUID('4')
+	departmentId?: string;
 
 	@ApiPropertyOptional({ description: 'True when this subject is a program' })
 	@IsOptional()

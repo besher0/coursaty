@@ -14,14 +14,14 @@ export class FinancialsService {
   createCodeGroup(courseId: number, batchName: string, discountPercentage: number) {
     return this.prisma.codeGroup.create({
       data: {
-        courseId: BigInt(courseId),
+        courseId: String(courseId),
         batchName,
         discountPercentage: discountPercentage as any,
       },
     });
   }
   listCodeGroups(courseId?: number) {
-    return this.prisma.codeGroup.findMany({ where: courseId ? { courseId: BigInt(courseId) } : undefined });
+    return this.prisma.codeGroup.findMany({ where: courseId ? { courseId: String(courseId) } : undefined });
   }
 
   updateCodeGroup(id: number, dto: UpdateCodeGroupDto) {
@@ -30,13 +30,13 @@ export class FinancialsService {
     if (dto.discountPercentage !== undefined) data.discountPercentage = dto.discountPercentage as any;
 
     return this.prisma.codeGroup.update({
-      where: { id: BigInt(id) },
+      where: { id: String(id) },
       data,
     });
   }
 
   deleteCodeGroup(id: number) {
-    return this.prisma.codeGroup.delete({ where: { id: BigInt(id) } });
+    return this.prisma.codeGroup.delete({ where: { id: String(id) } });
   }
 
   // Codes
@@ -54,7 +54,7 @@ export class FinancialsService {
     const createWithValue = async (value: string) =>
       this.prisma.code.create({
         data: {
-          codeGroupId: BigInt(codeGroupId),
+          codeGroupId: String(codeGroupId),
           codeValue: value,
           allowedUniversityNumber,
           usageLimit,
@@ -70,7 +70,7 @@ export class FinancialsService {
     return this.createWithGeneratedCode(createWithValue);
   }
   listCodes(codeGroupId?: number) {
-    return this.prisma.code.findMany({ where: codeGroupId ? { codeGroupId: BigInt(codeGroupId) } : undefined });
+    return this.prisma.code.findMany({ where: codeGroupId ? { codeGroupId: String(codeGroupId) } : undefined });
   }
 
   async createBulkCodes(dto: CreateBulkCodesDto) {
@@ -80,7 +80,7 @@ export class FinancialsService {
     const prefix = dto.prefix ?? '';
     const length = dto.length ?? 6;
 
-    const group = await this.prisma.codeGroup.findUnique({ where: { id: BigInt(dto.codeGroupId) } });
+    const group = await this.prisma.codeGroup.findUnique({ where: { id: String(dto.codeGroupId) } });
     if (!group) throw new NotFoundException('Code group not found');
 
     let created = 0;
@@ -97,7 +97,7 @@ export class FinancialsService {
       }
 
       const data = Array.from(codes).map((codeValue) => ({
-        codeGroupId: BigInt(dto.codeGroupId),
+        codeGroupId: String(dto.codeGroupId),
         codeValue,
         usageLimit: dto.usageLimit,
         validForDays: dto.validForDays,
@@ -124,7 +124,7 @@ export class FinancialsService {
     const allowed: $Enums.CodeStatus[] = ['ACTIVE', 'USED', 'INACTIVE'];
     if (status && !allowed.includes(status)) throw new BadRequestException('Invalid status');
     return this.prisma.code.update({
-      where: { id: BigInt(id) },
+      where: { id: String(id) },
       data: {
         status,
         validForDays: dto.validForDays,
@@ -134,7 +134,7 @@ export class FinancialsService {
   }
 
   deleteCode(id: number) {
-    return this.prisma.code.delete({ where: { id: BigInt(id) } });
+    return this.prisma.code.delete({ where: { id: String(id) } });
   }
 
   activateCode(id: number) {
@@ -150,7 +150,7 @@ export class FinancialsService {
     if (!user || user.type !== 'STUDENT') throw new BadRequestException('Student role required');
     if (user.userId === undefined || user.userId === null) throw new BadRequestException('Invalid token');
     if (!codeValue) throw new BadRequestException('codeValue is required');
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser) throw new NotFoundException('User not found');
 
     const studentId = dbUser.userableId;
@@ -188,11 +188,18 @@ export class FinancialsService {
       throw new BadRequestException('Course is not approved');
     }
 
-    let finalPrice = Number(course.price);
     let expiresAt: Date | null = null;
 
-    const discountPct = Number(group.discountPercentage);
-    finalPrice = Number((finalPrice * (100 - discountPct)) / 100);
+    // Calculate prices with sequential discounts
+    const basePrice = Number(course.price);
+    const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
+    const courseDiscountAmount = Number(((basePrice * courseDiscountPct) / 100).toFixed(2));
+    const priceAfterCourseDiscount = Number((basePrice - courseDiscountAmount).toFixed(2));
+
+    const codeDiscountPct = Number(group.discountPercentage);
+    const codeDiscountAmount = Number(((priceAfterCourseDiscount * codeDiscountPct) / 100).toFixed(2));
+    const finalPrice = Number((priceAfterCourseDiscount - codeDiscountAmount).toFixed(2));
+
     expiresAt = codeExpiry;
 
     await this.prisma.$transaction(async (tx) => {
@@ -241,7 +248,15 @@ export class FinancialsService {
     });
 
     const subscription = await this.prisma.studentSubscription.create({
-      data: { studentId, courseId, finalPrice: finalPrice as any, expiresAt },
+      data: {
+        studentId,
+        courseId,
+        basePrice: basePrice as any,
+        courseDiscountAmount: courseDiscountAmount as any,
+        codeDiscountAmount: codeDiscountAmount as any,
+        finalPrice: finalPrice as any,
+        expiresAt,
+      },
     });
 
     return subscription;
@@ -250,8 +265,8 @@ export class FinancialsService {
   listSubscriptions(filters?: { studentId?: number; courseId?: number }) {
     return this.prisma.studentSubscription.findMany({
       where: {
-        studentId: filters?.studentId ? BigInt(filters.studentId) : undefined,
-        courseId: filters?.courseId ? BigInt(filters.courseId) : undefined,
+        studentId: filters?.studentId ? String(filters.studentId) : undefined,
+        courseId: filters?.courseId ? String(filters.courseId) : undefined,
       },
       include: {
         course: true,
@@ -318,7 +333,7 @@ export class FinancialsService {
 
   async getActiveCoursesByUser(user: { userId: string | number; type: string }) {
     if (!user || user.type !== 'STUDENT') throw new BadRequestException('Student role required');
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser) throw new NotFoundException('User not found');
 
     const studentId = dbUser.userableId;
@@ -343,7 +358,7 @@ export class FinancialsService {
 
   async getInactiveCoursesByUser(user: { userId: string | number; type: string }) {
     if (!user || user.type !== 'STUDENT') throw new BadRequestException('Student role required');
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser) throw new NotFoundException('User not found');
 
     const studentId = dbUser.userableId;

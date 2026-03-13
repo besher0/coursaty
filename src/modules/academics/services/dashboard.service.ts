@@ -10,7 +10,7 @@ export class DashboardService {
       throw new ForbiddenException('Only students can access this resource');
     }
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser) throw new NotFoundException('User not found');
 
     const student = await this.prisma.student.findUnique({
@@ -161,7 +161,7 @@ export class DashboardService {
       where: {
         collegeId,
         ...(departmentId ? { departmentId } : {}),
-        ...(collegeYearId ? { id: BigInt(collegeYearId) } : {}),
+        ...(collegeYearId ? { id: String(collegeYearId) } : {}),
       },
       include: { academicYear: true },
       orderBy: { academicYear: { yearNumber: 'asc' } },
@@ -245,14 +245,14 @@ export class DashboardService {
     const { collegeId } = await this.getStudentCollege(user);
 
     const subject = await this.prisma.subject.findFirst({
-      where: { id: BigInt(subjectId), collegeId },
+      where: { id: String(subjectId), collegeId },
     });
 
     if (!subject) throw new NotFoundException('Subject not found');
 
     const skip = (page - 1) * limit;
     const where = {
-      subjectId: BigInt(subjectId),
+      subjectId: String(subjectId),
       collegeId,
     } as any;
 
@@ -334,7 +334,7 @@ export class DashboardService {
 
   async getTeacherDetails(teacherId: string | number, page: number = 1, limit: number = 10) {
     const teacher = await this.prisma.teacher.findUnique({
-      where: { id: BigInt(teacherId) },
+      where: { id: String(teacherId) },
       include: {
         _count: {
           select: {
@@ -350,12 +350,12 @@ export class DashboardService {
 
     // Get total courses count
     const totalCourses = await this.prisma.course.count({
-      where: { teacherId: BigInt(teacherId) },
+      where: { teacherId: String(teacherId) },
     });
 
     // Get paginated courses with year and season info
     const courses = await this.prisma.course.findMany({
-      where: { teacherId: BigInt(teacherId) },
+      where: { teacherId: String(teacherId) },
       include: {
         collegeYear: { include: { academicYear: true } },
         season: true,

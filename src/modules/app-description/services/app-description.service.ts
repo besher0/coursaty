@@ -24,7 +24,7 @@ export class AppDescriptionService {
 
   async findOne(id: number) {
     const description = await this.prisma.appDescription.findUnique({
-      where: { id: BigInt(id) },
+      where: { id: String(id) },
     });
     if (!description) throw new NotFoundException('App description not found');
     return description;
@@ -33,7 +33,7 @@ export class AppDescriptionService {
   async update(id: number, dto: UpdateAppDescriptionDto) {
     await this.findOne(id);
     return this.prisma.appDescription.update({
-      where: { id: BigInt(id) },
+      where: { id: String(id) },
       data: dto,
     });
   }
@@ -41,7 +41,7 @@ export class AppDescriptionService {
   async remove(id: number) {
     await this.findOne(id);
     return this.prisma.appDescription.delete({
-      where: { id: BigInt(id) },
+      where: { id: String(id) },
     });
   }
 }

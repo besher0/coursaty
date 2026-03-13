@@ -25,33 +25,34 @@ export class CourseService {
     };
   }
 
-  async createCourseCategory(
-    name: string,
-    sortOrder?: number,
-    requiresAcademicLinks?: boolean,
-    isProgram?: boolean,
-  ) {
+  async createCourseCategory(name: string, isProgram?: boolean) {
+    const maxSortOrderResult = await this.prisma.courseCategory.aggregate({
+      _max: { sortOrder: true },
+    });
+
+    const nextSortOrder = (maxSortOrderResult._max.sortOrder ?? 0) + 1;
+
     return this.prisma.courseCategory.create({
-      data: { name, sortOrder, requiresAcademicLinks, isProgram },
+      data: {
+        name,
+        isProgram,
+        sortOrder: nextSortOrder,
+        // Keep current business rule and existing data behavior.
+        requiresAcademicLinks: true,
+      },
     });
   }
 
-  async updateCourseCategory(
-    id: number,
-    name?: string,
-    sortOrder?: number,
-    requiresAcademicLinks?: boolean,
-    isProgram?: boolean,
-  ) {
+  async updateCourseCategory(id: number, name?: string, isProgram?: boolean) {
     return this.prisma.courseCategory.update({
-      where: { id: BigInt(id) },
-      data: { name, sortOrder, requiresAcademicLinks, isProgram },
+      where: { id: String(id) },
+      data: { name, isProgram },
     });
   }
 
   async deleteCourseCategory(id: number) {
     return this.prisma.courseCategory.delete({
-      where: { id: BigInt(id) },
+      where: { id: String(id) },
     });
   }
 
@@ -68,18 +69,18 @@ export class CourseService {
       throw new DomainException();
     }
 
-    let teacherId: bigint;
+    let teacherId: string;
     if (user?.type === 'TEACHER') {
-      const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+      const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
       if (!dbUser) throw new BadRequestException('User not found');
       teacherId = dbUser.userableId;
     } else {
       if (!dto.teacherId) throw new BadRequestException('teacherId is required for admin');
-      teacherId = BigInt(dto.teacherId);
+      teacherId = await this.resolveTeacherIdForAdmin(String(dto.teacherId));
     }
 
     const category = await this.prisma.courseCategory.findUnique({
-      where: { id: BigInt(dto.categoryId) },
+      where: { id: String(dto.categoryId) },
     });
     if (!category) throw new BadRequestException('Course category not found');
 
@@ -87,15 +88,15 @@ export class CourseService {
       throw new BadRequestException('subjectId is required for this category');
     }
 
-    let universityId: bigint | null = null;
-    let collegeId: bigint | null = null;
-    let departmentId: bigint | null = null;
-    let collegeYearId: bigint | null = null;
-    let seasonId: bigint | null = null;
+    let universityId: string | null = null;
+    let collegeId: string | null = null;
+    let departmentId: string | null = null;
+    let collegeYearId: string | null = null;
+    let seasonId: string | null = null;
 
     if (dto.subjectId) {
       const subject = await this.prisma.subject.findUnique({
-        where: { id: BigInt(dto.subjectId) },
+        where: { id: String(dto.subjectId) },
         include: { college: true },
       });
 
@@ -109,7 +110,7 @@ export class CourseService {
           where: {
             teacherId_subjectId: {
               teacherId,
-              subjectId: BigInt(dto.subjectId),
+              subjectId: String(dto.subjectId),
             },
           },
         });
@@ -131,9 +132,9 @@ export class CourseService {
 
       await this.ensureTeacherAffiliation(teacherId, dto.universityId, dto.collegeId, dto.departmentId);
 
-      universityId = BigInt(dto.universityId);
-      collegeId = BigInt(dto.collegeId);
-      departmentId = dto.departmentId ? BigInt(dto.departmentId) : null;
+      universityId = String(dto.universityId);
+      collegeId = String(dto.collegeId);
+      departmentId = dto.departmentId ? String(dto.departmentId) : null;
     }
 
     return this.prisma.course.create({
@@ -142,17 +143,18 @@ export class CourseService {
         description: dto.description,
         imageUrl: dto.imageUrl,
         price: dto.price,
+        courseDiscountPercentage: dto.courseDiscountPercentage ?? 0,
         duration: dto.duration,
         isFree: dto.isFree,
         expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
         teacherId,
-        subjectId: dto.subjectId ? BigInt(dto.subjectId) : null,
+        subjectId: dto.subjectId ? String(dto.subjectId) : null,
         collegeYearId,
         seasonId,
         universityId,
         collegeId,
         departmentId,
-        categoryId: BigInt(dto.categoryId),
+        categoryId: String(dto.categoryId),
         introVideoUrl: dto.introVideoUrl,
         discussionGroupUrl: dto.discussionGroupUrl,
         status: 'PENDING',
@@ -161,9 +163,32 @@ export class CourseService {
     });
   }
 
+  private async resolveTeacherIdForAdmin(inputTeacherId: string) {
+    const directTeacher = await this.prisma.teacher.findUnique({
+      where: { id: inputTeacherId },
+      select: { id: true },
+    });
+    if (directTeacher) return directTeacher.id;
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: inputTeacherId },
+      select: { userableId: true, userableType: true },
+    });
+
+    if (user?.userableType === 'TEACHER') {
+      const mappedTeacher = await this.prisma.teacher.findUnique({
+        where: { id: user.userableId },
+        select: { id: true },
+      });
+      if (mappedTeacher) return mappedTeacher.id;
+    }
+
+    throw new BadRequestException('teacherId is invalid. Use Teacher.id or a User.id of type TEACHER');
+  }
+
   private async getAdminIdFromUser(user?: { userId: string | number; type: string }) {
     if (!user || user.type !== 'ADMIN') throw new ForbiddenException('Admin role required');
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser) throw new BadRequestException('User not found');
     return dbUser.userableId;
   }
@@ -176,7 +201,7 @@ export class CourseService {
     }
 
     return this.prisma.course.update({
-      where: { id: BigInt(id) },
+      where: { id: String(id) },
       data: {
         status: 'APPROVED',
         teacherPercentage: teacherPercentage as any,
@@ -189,7 +214,7 @@ export class CourseService {
   async rejectCourse(id: number, user?: { userId: string | number; type: string }) {
     const adminId = await this.getAdminIdFromUser(user);
     return this.prisma.course.update({
-      where: { id: BigInt(id) },
+      where: { id: String(id) },
       data: {
         status: 'REJECTED',
         teacherPercentage: 0,
@@ -222,6 +247,7 @@ export class CourseService {
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl;
     if (dto.price !== undefined) data.price = dto.price as any;
+    if (dto.courseDiscountPercentage !== undefined) data.courseDiscountPercentage = dto.courseDiscountPercentage as any;
     if (dto.duration !== undefined) data.duration = dto.duration as any;
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
     if (dto.expiresAt !== undefined) data.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
@@ -229,24 +255,24 @@ export class CourseService {
     if (dto.discussionGroupUrl !== undefined) data.discussionGroupUrl = dto.discussionGroupUrl;
     if (dto.categoryId !== undefined) {
       if (!dto.categoryId) throw new BadRequestException('categoryId cannot be empty');
-      const category = await this.prisma.courseCategory.findUnique({ where: { id: BigInt(dto.categoryId) } });
+      const category = await this.prisma.courseCategory.findUnique({ where: { id: String(dto.categoryId) } });
       if (!category) throw new BadRequestException('Course category not found');
-      data.categoryId = BigInt(dto.categoryId);
+      data.categoryId = String(dto.categoryId);
     }
 
-    return this.prisma.course.update({ where: { id: BigInt(id) }, data });
+    return this.prisma.course.update({ where: { id: String(id) }, data });
   }
 
   deleteCourse(id: number, user?: { userId: string | number; type: string }) {
     return this.assertCourseOwnership(user, id).then(() =>
-      this.prisma.course.delete({ where: { id: BigInt(id) } }),
+      this.prisma.course.delete({ where: { id: String(id) } }),
     );
   }
 
   async getCourseWithCounts(id: number, user?: { userId: string | number; type: string }) {
     await this.assertStudentSubscription(user, id);
     const course = await this.prisma.course.findUnique({
-      where: { id: BigInt(id) },
+      where: { id: String(id) },
       include: {
         _count: { select: { subscriptions: true } },
         lectures: {
@@ -275,7 +301,7 @@ export class CourseService {
 
   async getCourseDetails(id: number, user?: { userId: string | number; type: string }) {
     const course = await this.prisma.course.findUnique({
-      where: { id: BigInt(id) },
+      where: { id: String(id) },
       include: {
         teacher: true,
         collegeYear: { include: { academicYear: true } },
@@ -299,13 +325,10 @@ export class CourseService {
     const hasAccess = course.isFree || isOwnerOrAdmin || (isSubscribed && !isExpired);
 
     const basePrice = Number(course.price);
-    const maxDiscount = course.codeGroups.reduce((max, cg) => {
-      const val = Number(cg.discountPercentage);
-      return Number.isNaN(val) ? max : Math.max(max, val);
-    }, 0);
-    const discountedPrice = Number.isNaN(basePrice)
+    const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
+    const priceAfterCourseDiscount = Number.isNaN(basePrice)
       ? null
-      : Math.max(0, basePrice - (basePrice * maxDiscount) / 100);
+      : Math.max(0, basePrice - (basePrice * courseDiscountPct) / 100);
 
     const totalVideos = course.lectures.reduce((acc, lec) => acc + (lec._count?.videos ?? 0), 0);
     const totalFiles = course.lectures.reduce((acc, lec) => acc + (lec._count?.files ?? 0), 0);
@@ -320,7 +343,7 @@ export class CourseService {
         imageUrl: course.imageUrl ?? null,
         name: course.name,
         basePrice: basePrice,
-        discountedPrice,
+        discountedPrice: priceAfterCourseDiscount,
         isFree: course.isFree,
         locked: !hasAccess,
       },
@@ -359,8 +382,153 @@ export class CourseService {
     };
   }
 
+  async getAdminCourseDetails(courseId: string) {
+    const now = new Date();
+
+    const course = await this.prisma.course.findUnique({
+      where: { id: String(courseId) },
+      include: {
+        teacher: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+          },
+        },
+        subject: {
+          select: {
+            id: true,
+            subjectName: true,
+          },
+        },
+        college: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        collegeYear: {
+          include: {
+            academicYear: true,
+          },
+        },
+        season: true,
+        _count: { select: { subscriptions: true, lectures: true } },
+        lectures: {
+          include: {
+            _count: { select: { videos: true, files: true, questions: true } },
+          },
+          orderBy: { sortOrder: 'asc' },
+        },
+        codeGroups: {
+          include: {
+            codes: {
+              orderBy: { createdAt: 'desc' },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!course) throw new NotFoundException('Course not found');
+
+    const basePrice = Number(course.price);
+    const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
+    const courseDiscountedPrice = Number.isNaN(basePrice)
+      ? null
+      : Math.max(0, basePrice - (basePrice * courseDiscountPct) / 100);
+
+    return {
+      course: {
+        id: course.id,
+        name: course.name,
+        imageUrl: course.imageUrl ?? null,
+        basePrice,
+        discountedPrice: courseDiscountedPrice,
+      },
+      details: {
+        teacher: {
+          id: course.teacher.id,
+          name: course.teacher.name,
+          image: course.teacher.image,
+        },
+        studentsCount: course._count.subscriptions,
+        year: course.collegeYear?.academicYear
+          ? {
+              id: course.collegeYear.academicYear.id,
+              name: course.collegeYear.academicYear.yearName,
+              number: course.collegeYear.academicYear.yearNumber,
+            }
+          : null,
+        season: course.season
+          ? {
+              id: course.season.id,
+              name: course.season.seasonName,
+              number: course.season.seasonNumber,
+            }
+          : null,
+        lecturesCount: course._count.lectures,
+        durationHours: course.duration,
+        college: course.college,
+        department: course.department,
+        subject: course.subject
+          ? {
+              id: course.subject.id,
+              name: course.subject.subjectName,
+            }
+          : null,
+        description: course.description,
+        introVideoUrl: course.introVideoUrl,
+        discussionGroupUrl: course.discussionGroupUrl,
+      },
+      lectures: course.lectures.map((lec) => ({
+        id: lec.id,
+        title: lec.title,
+        description: lec.description,
+        imageUrl: lec.imageUrl,
+        videosCount: lec._count?.videos ?? 0,
+        filesCount: lec._count?.files ?? 0,
+        questionsCount: lec._count?.questions ?? 0,
+      })),
+      codes: {
+        courseExpiresAt: course.expiresAt,
+        teacherName: course.teacher.name,
+        groups: course.codeGroups.map((group) => {
+          const groupDiscountPct = Number(group.discountPercentage ?? 0);
+          const codePrice = Number.isNaN(basePrice)
+            ? null
+            : Math.max(0, basePrice - (basePrice * groupDiscountPct) / 100);
+
+          return {
+            id: group.id,
+            batchName: group.batchName,
+            discountPercentage: groupDiscountPct,
+            codePrice,
+            codes: group.codes.map((code) => ({
+              id: code.id,
+              codeValue: code.codeValue,
+              status: code.status,
+              validUntil: code.validUntil,
+              isExpired: !!code.validUntil && code.validUntil.getTime() < now.getTime(),
+              usageLimit: code.usageLimit,
+              usageCount: code.usageCount,
+              usedAt: code.usedAt,
+            })),
+          };
+        }),
+      },
+    };
+  }
+
   async uploadLectureVideo(lectureId: number, file: any, user?: { userId: string | number; type: string }) {
-    const lecture = await this.prisma.lecture.findUnique({ where: { id: BigInt(lectureId) } });
+    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
     if (!lecture) throw new NotFoundException('Lecture not found');
     await this.assertCourseOwnershipByCourseId(user, Number(lecture.courseId));
 
@@ -371,7 +539,7 @@ export class CourseService {
 
     return this.prisma.video.create({
       data: {
-        lectureId: BigInt(lectureId),
+        lectureId: String(lectureId),
         videoName: file.originalname,
         videoUrl: playbackUrl,
         durationSeconds: null,
@@ -390,12 +558,12 @@ export class CourseService {
   private async assertStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: number) {
     if (!user || user.type !== 'STUDENT') return;
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser) throw new ForbiddenException('User not found');
 
     const subscription = await this.prisma.studentSubscription.findUnique({
       where: {
-        studentId_courseId: { studentId: dbUser.userableId, courseId: BigInt(courseId) },
+        studentId_courseId: { studentId: dbUser.userableId, courseId: String(courseId) },
       },
     });
 
@@ -405,12 +573,12 @@ export class CourseService {
   private async hasStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: number) {
     if (!user || user.type !== 'STUDENT') return false;
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser) return false;
 
     const subscription = await this.prisma.studentSubscription.findUnique({
       where: {
-        studentId_courseId: { studentId: dbUser.userableId, courseId: BigInt(courseId) },
+        studentId_courseId: { studentId: dbUser.userableId, courseId: String(courseId) },
       },
     });
 
@@ -421,10 +589,10 @@ export class CourseService {
     if (!user || user.type === 'ADMIN') return;
     if (user.type !== 'TEACHER') throw new ForbiddenException('Teacher role required');
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser) throw new ForbiddenException('User not found');
 
-    const course = await this.prisma.course.findUnique({ where: { id: BigInt(courseId) } });
+    const course = await this.prisma.course.findUnique({ where: { id: String(courseId) } });
     if (!course) throw new NotFoundException('Course not found');
     if (course.teacherId.toString() !== dbUser.userableId.toString()) {
       throw new ForbiddenException('You do not own this course');
@@ -436,10 +604,10 @@ export class CourseService {
     if (user.type === 'ADMIN') return true;
     if (user.type !== 'TEACHER') return false;
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser) return false;
 
-    const course = await this.prisma.course.findUnique({ where: { id: BigInt(courseId) } });
+    const course = await this.prisma.course.findUnique({ where: { id: String(courseId) } });
     if (!course) return false;
     return course.teacherId.toString() === dbUser.userableId.toString();
   }
@@ -449,22 +617,22 @@ export class CourseService {
   }
 
   private async ensureTeacherAffiliation(
-    teacherId: bigint,
-    universityId: number,
-    collegeId: number,
-    departmentId?: number,
+    teacherId: string,
+    universityId: string,
+    collegeId: string,
+    departmentId?: string,
   ) {
-    const university = await this.prisma.university.findUnique({ where: { id: BigInt(universityId) } });
+    const university = await this.prisma.university.findUnique({ where: { id: String(universityId) } });
     if (!university) throw new BadRequestException('University not found');
 
-    const college = await this.prisma.college.findUnique({ where: { id: BigInt(collegeId) } });
+    const college = await this.prisma.college.findUnique({ where: { id: String(collegeId) } });
     if (!college) throw new BadRequestException('College not found');
     if (college.universityId.toString() !== universityId.toString()) {
       throw new BadRequestException('College does not belong to university');
     }
 
     if (departmentId !== undefined) {
-      const department = await this.prisma.department.findUnique({ where: { id: BigInt(departmentId) } });
+      const department = await this.prisma.department.findUnique({ where: { id: String(departmentId) } });
       if (!department) throw new BadRequestException('Department not found');
       if (department.collegeId.toString() !== collegeId.toString()) {
         throw new BadRequestException('Department does not belong to college');
@@ -474,9 +642,9 @@ export class CourseService {
     const affiliation = await this.prisma.teacherAffiliation.findFirst({
       where: {
         teacherId,
-        universityId: BigInt(universityId),
-        collegeId: BigInt(collegeId),
-        departmentId: departmentId ? BigInt(departmentId) : null,
+        universityId: String(universityId),
+        collegeId: String(collegeId),
+        departmentId: departmentId ? String(departmentId) : null,
       },
     });
 

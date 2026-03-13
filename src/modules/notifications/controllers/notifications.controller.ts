@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { NotificationsService } from '../services/notifications.service';
 import { CreateNotificationDto } from '../dtos/create-notification.dto';
@@ -40,7 +40,7 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Approve notification (admin only)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  approve(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+  approve(@Param('id') id: string, @Req() req: any) {
     return this.notifications.approveNotification(id, req.user);
   }
 
@@ -48,7 +48,7 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Reject notification (admin only)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  reject(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+  reject(@Param('id') id: string, @Req() req: any) {
     return this.notifications.rejectNotification(id, req.user);
   }
 

@@ -44,10 +44,10 @@ enum CourseStatus {
 }
 
 model User {
-  id           BigInt   @id @default(autoincrement())
+  id           String   @id @default(uuid())
   phone        String   @unique
   password     String
-  userableId   BigInt
+  userableId   String
   userableType UserType
   gender       Gender   @default(MALE)
   fcmToken     String?
@@ -61,20 +61,20 @@ model User {
 }
 
 model Student {
-  id           BigInt   @id @default(autoincrement())
+  id           String   @id @default(uuid())
   name         String
   universityNumber String? @unique
-  universityId BigInt
-  provinceId  BigInt
-  collegeId    BigInt
-  departmentId BigInt
-  collegeYearId BigInt
+  universityId String
+  provinceId  String
+  collegeId    String
+  departmentId String?
+  collegeYearId String
   createdAt    DateTime @default(now())
 
   university University @relation(fields: [universityId], references: [id])
   province  Province  @relation(fields: [provinceId], references: [id])
   college    College    @relation(fields: [collegeId], references: [id])
-  department Department @relation(fields: [departmentId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
   collegeYear CollegeYear @relation(fields: [collegeYearId], references: [id])
   subscriptions StudentSubscription[]
   teacherLikes   TeacherLike[]
@@ -87,7 +87,7 @@ model Student {
 }
 
 model Teacher {
-  id                 BigInt   @id @default(autoincrement())
+  id                 String   @id @default(uuid())
   name               String
   description        String?
   image              String?
@@ -102,8 +102,8 @@ model Teacher {
 }
 
 model TeacherWithdrawal {
-  id        BigInt           @id @default(autoincrement())
-  teacherId BigInt
+  id        String           @id @default(uuid())
+  teacherId String
   amount    Decimal          @db.Decimal(10, 2)
   status    WithdrawalStatus @default(APPROVED)
   createdAt DateTime         @default(now())
@@ -116,7 +116,7 @@ model TeacherWithdrawal {
 }
 
 model Admin {
-  id        BigInt   @id @default(autoincrement())
+  id        String   @id @default(uuid())
   name      String
   createdAt DateTime @default(now())
 
@@ -125,8 +125,8 @@ model Admin {
 }
 
 model University {
-  id        BigInt   @id @default(autoincrement())
-  provinceId BigInt
+  id        String   @id @default(uuid())
+  provinceId String
   name      String
   createdAt DateTime @default(now())
   province Province @relation(fields: [provinceId], references: [id])
@@ -140,7 +140,7 @@ model University {
 }
 
 model Province {
-  id        BigInt   @id @default(autoincrement())
+  id        String   @id @default(uuid())
   name      String   @unique
   createdAt DateTime @default(now())
 
@@ -150,8 +150,8 @@ model Province {
 }
 
 model College {
-  id           BigInt   @id @default(autoincrement())
-  universityId BigInt
+  id           String   @id @default(uuid())
+  universityId String
   name         String
 
   university University @relation(fields: [universityId], references: [id])
@@ -168,11 +168,11 @@ model College {
 }
 
 model TeacherAffiliation {
-  id           BigInt   @id @default(autoincrement())
-  teacherId    BigInt
-  universityId BigInt
-  collegeId    BigInt
-  departmentId BigInt?
+  id           String   @id @default(uuid())
+  teacherId    String
+  universityId String
+  collegeId    String
+  departmentId String?
   createdAt    DateTime @default(now())
 
   teacher    Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
@@ -187,8 +187,8 @@ model TeacherAffiliation {
 }
 
 model Advertisement {
-  id        BigInt   @id @default(autoincrement())
-  collegeId BigInt
+  id        String   @id @default(uuid())
+  collegeId String
   title     String
   imageUrl  String
   createdAt DateTime @default(now())
@@ -200,14 +200,14 @@ model Advertisement {
 }
 
 model Notification {
-  id           BigInt             @id @default(autoincrement())
+  id           String             @id @default(uuid())
   title        String
   description  String
   status       NotificationStatus @default(PENDING)
-  createdById  BigInt
-  collegeId    BigInt
-  departmentId BigInt?
-  approvedById BigInt?
+  createdById  String
+  collegeId    String
+  departmentId String?
+  approvedById String?
   approvedAt   DateTime?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
@@ -224,8 +224,8 @@ model Notification {
 }
 
 model Department {
-  id         BigInt   @id @default(autoincrement())
-  collegeId  BigInt
+  id         String   @id @default(uuid())
+  collegeId  String
   name       String
 
   college  College  @relation(fields: [collegeId], references: [id])
@@ -240,7 +240,7 @@ model Department {
 }
 
 model AcademicYear {
-  id         BigInt   @id @default(autoincrement())
+  id         String   @id @default(uuid())
   yearNumber Int      @unique
   yearName   String
 
@@ -248,10 +248,10 @@ model AcademicYear {
 }
 
 model CollegeYear {
-  id             BigInt   @id @default(autoincrement())
-  collegeId      BigInt
-  departmentId   BigInt?
-  academicYearId BigInt
+  id             String   @id @default(uuid())
+  collegeId      String
+  departmentId   String?
+  academicYearId String
   isActive       Boolean  @default(true)
 
   college      College      @relation(fields: [collegeId], references: [id])
@@ -266,7 +266,7 @@ model CollegeYear {
 }
 
 model Season {
-  id           BigInt   @id @default(autoincrement())
+  id           String   @id @default(uuid())
   seasonName   String
   seasonNumber Int
   courses      Course[]
@@ -274,11 +274,11 @@ model Season {
 }
 
 model Subject {
-  id           BigInt   @id @default(autoincrement())
-  collegeId    BigInt
-  collegeYearId       BigInt?
-  seasonId     BigInt?
-  departmentId BigInt?
+  id           String   @id @default(uuid())
+  collegeId    String
+  collegeYearId       String?
+  seasonId     String?
+  departmentId String?
   subjectName  String
   isProgram    Boolean  @default(false)
 
@@ -296,19 +296,20 @@ model Subject {
 }
 
 model Course {
-  id                    BigInt    @id @default(autoincrement())
-  teacherId             BigInt
-  subjectId             BigInt?
-  collegeYearId                BigInt?
-  seasonId              BigInt?
-  universityId          BigInt?
-  collegeId             BigInt?
-  departmentId          BigInt?
-  categoryId            BigInt?
+  id                    String    @id @default(uuid())
+  teacherId             String
+  subjectId             String?
+  collegeYearId                String?
+  seasonId              String?
+  universityId          String?
+  collegeId             String?
+  departmentId          String?
+  categoryId            String?
   name                  String
   description           String?
   imageUrl              String?
   price                 Decimal   @db.Decimal(10, 2)
+  courseDiscountPercentage Decimal @db.Decimal(5, 2) @default(0.00)
   duration              Int       @default(2)
   isFree                Boolean   @default(false)
   expiresAt             DateTime?
@@ -316,7 +317,7 @@ model Course {
   discussionGroupUrl    String?
   status                CourseStatus @default(PENDING)
   teacherPercentage     Decimal   @default(0.0)
-  approvedById          BigInt?
+  approvedById          String?
   approvedAt            DateTime?
   createdAt             DateTime  @default(now())
 
@@ -346,7 +347,7 @@ model Course {
 }
 
 model CourseCategory {
-  id        BigInt   @id @default(autoincrement())
+  id        String   @id @default(uuid())
   name      String
   sortOrder Int?
   requiresAcademicLinks Boolean @default(true)
@@ -359,8 +360,8 @@ model CourseCategory {
 }
 
 model Lecture {
-  id         BigInt   @id @default(autoincrement())
-  courseId   BigInt
+  id         String   @id @default(uuid())
+  courseId   String
   title      String
   description String?
   imageUrl   String?
@@ -375,8 +376,8 @@ model Lecture {
 }
 
 model Video {
-  id              BigInt   @id @default(autoincrement())
-  lectureId       BigInt
+  id              String   @id @default(uuid())
+  lectureId       String
   videoName       String
   videoUrl        String
   durationSeconds Int?
@@ -391,8 +392,8 @@ model Video {
 }
 
 model VideoSegment {
-  id            BigInt   @id @default(autoincrement())
-  videoId       BigInt
+  id            String   @id @default(uuid())
+  videoId       String
   segmentName   String
   startSeconds  Int
   endSeconds    Int
@@ -406,9 +407,9 @@ model VideoSegment {
 }
 
 model VideoInteraction {
-  id        BigInt   @id @default(autoincrement())
-  videoId   BigInt
-  userId    BigInt
+  id        String   @id @default(uuid())
+  videoId   String
+  userId    String
   isLiked   Boolean  @default(false)
   rating    Int?
   comment   String?
@@ -423,9 +424,9 @@ model VideoInteraction {
 }
 
 model TeacherLike {
-  id        BigInt   @id @default(autoincrement())
-  teacherId BigInt
-  studentId BigInt
+  id        String   @id @default(uuid())
+  teacherId String
+  studentId String
 
   teacher Teacher @relation(fields: [teacherId], references: [id])
   student Student @relation(fields: [studentId], references: [id])
@@ -435,8 +436,8 @@ model TeacherLike {
 }
 
 model TeacherSubjectPermission {
-  teacherId BigInt
-  subjectId BigInt
+  teacherId String
+  subjectId String
   createdAt DateTime @default(now())
 
   teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
@@ -447,8 +448,8 @@ model TeacherSubjectPermission {
 }
 
 model LectureFile {
-  id        BigInt   @id @default(autoincrement())
-  lectureId BigInt
+  id        String   @id @default(uuid())
+  lectureId String
   fileName  String
   fileUrl   String
   fileType  String?
@@ -460,8 +461,8 @@ model LectureFile {
 }
 
 model Question {
-  id           BigInt   @id @default(autoincrement())
-  lectureId    BigInt
+  id           String   @id @default(uuid())
+  lectureId    String
   questionText String?
   imageUrl     String?
   explanation  String?
@@ -476,8 +477,8 @@ model Question {
 }
 
 model QuestionOption {
-  id         BigInt  @id @default(autoincrement())
-  questionId BigInt
+  id         String  @id @default(uuid())
+  questionId String
   optionText String
   isCorrect  Boolean @default(false)
   sortOrder  Int?
@@ -488,8 +489,8 @@ model QuestionOption {
 }
 
 model CodeGroup {
-  id                  BigInt   @id @default(autoincrement())
-  courseId            BigInt
+  id                  String   @id @default(uuid())
+  courseId            String
   batchName           String
   discountPercentage  Decimal  @db.Decimal(5, 2) @default(0.00)
   createdAt           DateTime @default(now())
@@ -501,8 +502,8 @@ model CodeGroup {
 }
 
 model Code {
-  id              BigInt   @id @default(autoincrement())
-  codeGroupId     BigInt
+  id              String   @id @default(uuid())
+  codeGroupId     String
   codeValue       String   @unique
   status          CodeStatus @default(ACTIVE)
   allowedUniversityNumber String?
@@ -510,7 +511,7 @@ model Code {
   validUntil      DateTime?
   usageLimit      Int?
   usageCount      Int      @default(0)
-  usedByStudentId BigInt?
+  usedByStudentId String?
   usedAt          DateTime?
   createdAt       DateTime @default(now())
 
@@ -522,12 +523,15 @@ model Code {
 }
 
 model StudentSubscription {
-  id         BigInt   @id @default(autoincrement())
-  studentId  BigInt
-  courseId   BigInt
-  finalPrice Decimal  @db.Decimal(10, 2)
-  expiresAt  DateTime?
-  createdAt  DateTime @default(now())
+  id                    String   @id @default(uuid())
+  studentId             String
+  courseId              String
+  basePrice             Decimal  @db.Decimal(10, 2)
+  courseDiscountAmount  Decimal  @db.Decimal(10, 2) @default(0.00)
+  codeDiscountAmount    Decimal  @db.Decimal(10, 2) @default(0.00)
+  finalPrice            Decimal  @db.Decimal(10, 2)
+  expiresAt             DateTime?
+  createdAt             DateTime @default(now())
 
   student Student @relation(fields: [studentId], references: [id])
   course  Course  @relation(fields: [courseId], references: [id])
@@ -537,9 +541,9 @@ model StudentSubscription {
   @@index([createdAt])
 }
 model PointOfSale {
-  id           BigInt   @id @default(autoincrement())
-  universityId BigInt
-  provinceId  BigInt
+  id           String   @id @default(uuid())
+  universityId String
+  provinceId  String
   name         String
   address      String
   phone        String?
@@ -557,7 +561,7 @@ model PointOfSale {
 }
 
 model CustomerService {
-  id                BigInt   @id @default(autoincrement())
+  id                String   @id @default(uuid())
   technicalSupportPhone String
   contactSupportPhone   String
   whatsappUrl       String?
@@ -569,7 +573,7 @@ model CustomerService {
 }
 
 model AppDescription {
-  id          BigInt   @id @default(autoincrement())
+  id          String   @id @default(uuid())
   title       String
   description String
   createdAt   DateTime @default(now())

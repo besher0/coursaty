@@ -37,7 +37,7 @@ export class TeachersService {
   private async getTeacherContext(user: { userId: string | number; type: string }) {
     if (!user || user.type !== 'TEACHER') throw new ForbiddenException('Teacher role required');
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: BigInt(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser) throw new NotFoundException('User not found');
 
     const teacher = await this.prisma.teacher.findUnique({ where: { id: dbUser.userableId } });
@@ -47,13 +47,13 @@ export class TeachersService {
   }
 
   private async getTeacherById(teacherId: number) {
-    const teacher = await this.prisma.teacher.findUnique({ where: { id: BigInt(teacherId) } });
+    const teacher = await this.prisma.teacher.findUnique({ where: { id: String(teacherId) } });
     if (!teacher) throw new NotFoundException('Teacher not found');
     return teacher;
   }
 
   private normalizeSubjectIds(subjectIds: number[]) {
-    return Array.from(new Set(subjectIds)).map((id) => BigInt(id));
+    return Array.from(new Set(subjectIds)).map((id) => String(id));
   }
 
   private async ensureSubjectsExist(subjectIds: number[]) {
@@ -72,17 +72,17 @@ export class TeachersService {
   }
 
   private async validateAffiliationScope(universityId: number, collegeId: number, departmentId?: number) {
-    const university = await this.prisma.university.findUnique({ where: { id: BigInt(universityId) } });
+    const university = await this.prisma.university.findUnique({ where: { id: String(universityId) } });
     if (!university) throw new NotFoundException('University not found');
 
-    const college = await this.prisma.college.findUnique({ where: { id: BigInt(collegeId) } });
+    const college = await this.prisma.college.findUnique({ where: { id: String(collegeId) } });
     if (!college) throw new NotFoundException('College not found');
     if (college.universityId.toString() !== universityId.toString()) {
       throw new ForbiddenException('College does not belong to university');
     }
 
     if (departmentId !== undefined) {
-      const department = await this.prisma.department.findUnique({ where: { id: BigInt(departmentId) } });
+      const department = await this.prisma.department.findUnique({ where: { id: String(departmentId) } });
       if (!department) throw new NotFoundException('Department not found');
       if (department.collegeId.toString() !== collegeId.toString()) {
         throw new ForbiddenException('Department does not belong to college');
@@ -111,9 +111,9 @@ export class TeachersService {
     const existing = await this.prisma.teacherAffiliation.findFirst({
       where: {
         teacherId: teacher.id,
-        universityId: BigInt(universityId),
-        collegeId: BigInt(collegeId),
-        departmentId: departmentId ? BigInt(departmentId) : null,
+        universityId: String(universityId),
+        collegeId: String(collegeId),
+        departmentId: departmentId ? String(departmentId) : null,
       },
     });
 
@@ -122,9 +122,9 @@ export class TeachersService {
     return this.prisma.teacherAffiliation.create({
       data: {
         teacherId: teacher.id,
-        universityId: BigInt(universityId),
-        collegeId: BigInt(collegeId),
-        departmentId: departmentId ? BigInt(departmentId) : null,
+        universityId: String(universityId),
+        collegeId: String(collegeId),
+        departmentId: departmentId ? String(departmentId) : null,
       },
     });
   }
@@ -139,9 +139,9 @@ export class TeachersService {
     const affiliation = await this.prisma.teacherAffiliation.findFirst({
       where: {
         teacherId: teacher.id,
-        universityId: BigInt(universityId),
-        collegeId: BigInt(collegeId),
-        departmentId: departmentId ? BigInt(departmentId) : null,
+        universityId: String(universityId),
+        collegeId: String(collegeId),
+        departmentId: departmentId ? String(departmentId) : null,
       },
     });
 
@@ -346,19 +346,19 @@ export class TeachersService {
     const universityMap = new Map<
       string,
       {
-        university: { id: bigint; name: string } | null;
+        university: { id: string; name: string } | null;
         years: Map<
           string,
           {
-            year: { id: bigint; name: string; number: number } | null;
+            year: { id: string; name: string; number: number } | null;
             courses: Array<{
-              id: bigint;
+              id: string;
               name: string;
               imageUrl: string | null;
               duration: number;
               expiresAt: Date | null;
               studentsCount: number;
-              season: { id: bigint; name: string; number: number } | null;
+              season: { id: string; name: string; number: number } | null;
             }>;
           }
         >;
@@ -430,7 +430,7 @@ export class TeachersService {
     await this.getTeacherById(teacherId);
 
     const permissions = await this.prisma.teacherSubjectPermission.findMany({
-      where: { teacherId: BigInt(teacherId) },
+      where: { teacherId: String(teacherId) },
       include: {
         subject: {
           select: {
@@ -473,7 +473,7 @@ export class TeachersService {
 
     await this.prisma.teacherSubjectPermission.createMany({
       data: subjectIdsBig.map((subjectId) => ({
-        teacherId: BigInt(teacherId),
+        teacherId: String(teacherId),
         subjectId,
       })),
       skipDuplicates: true,
@@ -487,7 +487,7 @@ export class TeachersService {
 
     const subjectIdsBig = this.normalizeSubjectIds(subjectIds);
     const result = await this.prisma.teacherSubjectPermission.deleteMany({
-      where: { teacherId: BigInt(teacherId), subjectId: { in: subjectIdsBig } },
+      where: { teacherId: String(teacherId), subjectId: { in: subjectIdsBig } },
     });
 
     return { removedCount: result.count };

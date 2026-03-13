@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AcademicsService } from '../services/academics.service';
 import { CreateYearDto } from '../dtos/create-year.dto';
@@ -27,7 +27,7 @@ export class YearsController {
   @ApiQuery({ name: 'collegeId', required: true })
   @ApiQuery({ name: 'departmentId', required: false })
   list(@Query('collegeId') collegeId?: string, @Query('departmentId') departmentId?: string) {
-    return this.academics.listYears(Number(collegeId), departmentId ? Number(departmentId) : undefined);
+    return this.academics.listYears(collegeId as string, departmentId);
   }
 
   @Patch(':id')
@@ -35,7 +35,7 @@ export class YearsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id') id: string,
     @Body() body: UpdateYearDto,
   ) {
     return this.academics.updateYear(id, body);
@@ -45,7 +45,7 @@ export class YearsController {
   @ApiOperation({ summary: 'Delete college year' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(@Param('id') id: string) {
     return this.academics.deleteYear(id);
   }
 }

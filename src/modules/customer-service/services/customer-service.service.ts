@@ -33,7 +33,7 @@ export class CustomerServiceService {
 
   async findOne(id: number) {
     const service = await this.prisma.customerService.findUnique({
-      where: { id: BigInt(id) },
+      where: { id: String(id) },
     });
     if (!service) throw new CustomerServiceNotFoundError();
     return service;
@@ -45,7 +45,7 @@ export class CustomerServiceService {
     entity.update(dto);
 
     return this.prisma.customerService.update({
-      where: { id: BigInt(id) },
+      where: { id: String(id) },
       data: CustomerServiceMapper.toPersistenceUpdate(entity),
     });
   }
@@ -53,7 +53,7 @@ export class CustomerServiceService {
   async remove(id: number) {
     await this.findOne(id);
     return this.prisma.customerService.delete({
-      where: { id: BigInt(id) },
+      where: { id: String(id) },
     });
   }
 }

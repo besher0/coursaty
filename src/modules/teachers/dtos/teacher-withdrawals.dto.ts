@@ -3,7 +3,7 @@ import { PaginationMetaDto } from './teacher-summary.dto';
 
 export class TeacherWithdrawalItemDto {
   @ApiProperty()
-  id: bigint;
+  id: string;
 
   @ApiProperty()
   amount: number;

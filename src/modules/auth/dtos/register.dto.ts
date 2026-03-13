@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { UserType } from '@prisma/client';
 
 export class RegisterDto {
@@ -15,9 +15,9 @@ export class RegisterDto {
   @IsEnum(UserType)
   userableType: UserType;
 
-  @ApiProperty()
-  @IsNumber()
-  userableId: number;
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
+  @IsUUID('4')
+  userableId: string;
 
   @ApiProperty({ required: false })
   @IsOptional()

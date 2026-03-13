@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateStudentDto {
   @ApiProperty()
@@ -12,19 +12,20 @@ export class CreateStudentDto {
   @IsNotEmpty()
   universityNumber: string;
 
-  @ApiProperty()
-  @IsNumber()
-  universityId: number;
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
+  @IsUUID('4')
+  universityId: string;
 
-  @ApiProperty()
-  @IsNumber()
-  collegeId: number;
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
+  @IsUUID('4')
+  collegeId: string;
 
-  @ApiProperty()
-  @IsNumber()
-  departmentId: number;
+  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000' })
+  @IsOptional()
+  @IsUUID('4')
+  departmentId?: string;
 
-  @ApiProperty()
-  @IsNumber()
-  collegeYearId: number;
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
+  @IsUUID('4')
+  collegeYearId: string;
 }

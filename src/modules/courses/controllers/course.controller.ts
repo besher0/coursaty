@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CourseService } from '../services/course.service';
@@ -38,7 +38,7 @@ export class CourseController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   createCourseCategory(@Body() dto: CreateCourseCategoryDto) {
-    return this.courseService.createCourseCategory(dto.name, dto.sortOrder, dto.requiresAcademicLinks, dto.isProgram);
+    return this.courseService.createCourseCategory(dto.name, dto.isProgram);
   }
 
   @Patch('categories/:id')
@@ -46,13 +46,7 @@ export class CourseController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   updateCourseCategory(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCourseCategoryDto) {
-    return this.courseService.updateCourseCategory(
-      id,
-      dto.name,
-      dto.sortOrder,
-      dto.requiresAcademicLinks,
-      dto.isProgram,
-    );
+    return this.courseService.updateCourseCategory(id, dto.name, dto.isProgram);
   }
 
   @Delete('categories/:id')
@@ -75,6 +69,14 @@ export class CourseController {
   @UseGuards(JwtAuthGuard)
   async getCourseDetails(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
     return this.courseService.getCourseDetails(id, req.user);
+  }
+
+  @Get(':id/admin-details')
+  @ApiOperation({ summary: 'Get full course details for admin (course, details, lectures, codes)' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async getAdminCourseDetails(@Param('id', ParseUUIDPipe) id: string) {
+    return this.courseService.getAdminCourseDetails(id);
   }
 
   @Get()

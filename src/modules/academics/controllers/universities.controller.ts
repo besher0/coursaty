@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AcademicsService } from '../services/academics.service';
 import { CreateUniversityDto } from '../dtos/create-university.dto';
@@ -32,7 +32,7 @@ export class UniversitiesController {
   @ApiOperation({ summary: 'Update university' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateUniversityDto) {
+  update(@Param('id') id: string, @Body() dto: UpdateUniversityDto) {
     return this.academics.updateUniversity(id, dto);
   }
 
@@ -40,7 +40,7 @@ export class UniversitiesController {
   @ApiOperation({ summary: 'Delete university' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(@Param('id') id: string) {
     return this.academics.deleteUniversity(id);
   }
 }

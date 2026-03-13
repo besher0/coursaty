@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AcademicsService } from '../services/academics.service';
 import { CreateCollegeDto } from '../dtos/create-college.dto';
@@ -26,14 +26,14 @@ export class CollegesController {
   @ApiOperation({ summary: 'List colleges' })
   @ApiQuery({ name: 'universityId', required: false })
   list(@Query('universityId') universityId?: string) {
-    return this.academics.listColleges(universityId ? Number(universityId) : undefined);
+    return this.academics.listColleges(universityId);
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update college' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateCollegeDto) {
+  update(@Param('id') id: string, @Body() body: UpdateCollegeDto) {
     return this.academics.updateCollege(id, body);
   }
 
@@ -41,7 +41,7 @@ export class CollegesController {
   @ApiOperation({ summary: 'Delete college' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(@Param('id') id: string) {
     return this.academics.deleteCollege(id);
   }
 }

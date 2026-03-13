@@ -2,7 +2,7 @@ import { PhoneNumber } from '../value-objects/phone-number.vo';
 import { SocialLink } from '../value-objects/social-link.vo';
 
 export interface CustomerServiceProps {
-  id?: bigint;
+  id?: string;
   technicalSupportPhone: string;
   contactSupportPhone: string;
   whatsappUrl?: string | null;

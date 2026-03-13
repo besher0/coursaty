@@ -16,14 +16,14 @@ export class ProvincesService {
   }
 
   async update(id: number, dto: UpdateProvinceDto) {
-    const existing = await this.prisma.province.findUnique({ where: { id: BigInt(id) } });
+    const existing = await this.prisma.province.findUnique({ where: { id: String(id) } });
     if (!existing) throw new NotFoundException('Province not found');
-    return this.prisma.province.update({ where: { id: BigInt(id) }, data: { name: dto.name } });
+    return this.prisma.province.update({ where: { id: String(id) }, data: { name: dto.name } });
   }
 
   async remove(id: number) {
-    const existing = await this.prisma.province.findUnique({ where: { id: BigInt(id) } });
+    const existing = await this.prisma.province.findUnique({ where: { id: String(id) } });
     if (!existing) throw new NotFoundException('Province not found');
-    return this.prisma.province.delete({ where: { id: BigInt(id) } });
+    return this.prisma.province.delete({ where: { id: String(id) } });
   }
 }
