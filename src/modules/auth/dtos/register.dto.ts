@@ -1,6 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
-import { UserType } from '@prisma/client';
+
+export enum UserType {
+  STUDENT = 'STUDENT',
+  TEACHER = 'TEACHER',
+  ADMIN = 'ADMIN',
+}
+
+export enum UserGender {
+  MALE = 'MALE',
+  FEMALE = 'FEMALE',
+}
 
 export class RegisterDto {
   @ApiProperty()
@@ -23,4 +33,9 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   fcmToken?: string;
+
+  @ApiProperty({ enum: UserGender, required: false })
+  @IsOptional()
+  @IsEnum(UserGender)
+  gender?: UserGender;
 }

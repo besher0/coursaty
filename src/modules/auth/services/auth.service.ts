@@ -23,12 +23,20 @@ export class AuthService {
           userableType: dto.userableType,
           status: userStatus,
           fcmToken: dto.fcmToken,
+          gender: dto.gender,
         },
       });
+
+      const payload = { sub: user.id.toString(), type: user.userableType };
+      const accessToken = await this.jwt.signAsync(payload);
+
       return {
-        ...user,
-        id: user.id.toString(),
-        userableId: user.userableId.toString(),
+        accessToken,
+        user: {
+          ...user,
+          id: user.id.toString(),
+          userableId: user.userableId.toString(),
+        },
       };
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
