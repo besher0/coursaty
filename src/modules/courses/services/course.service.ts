@@ -270,7 +270,6 @@ export class CourseService {
   }
 
   async getCourseWithCounts(id: string, user?: { userId: string | number; type: string }) {
-    await this.assertStudentSubscription(user, id);
     const course = await this.prisma.course.findUnique({
       where: { id: String(id) },
       include: {
@@ -278,8 +277,6 @@ export class CourseService {
         lectures: {
           include: {
             _count: { select: { videos: true, files: true } },
-            videos: { select: { id: true } },
-            files: { select: { id: true } },
           },
         },
         codeGroups: true,
@@ -288,8 +285,8 @@ export class CourseService {
 
     if (!course) throw new NotFoundException('Course not found');
 
-    const totalVideos = course.lectures.reduce((acc, lec) => acc + lec.videos.length, 0);
-    const totalFiles = course.lectures.reduce((acc, lec) => acc + lec.files.length, 0);
+    const totalVideos = course.lectures.reduce((acc, lec) => acc + (lec._count?.videos ?? 0), 0);
+    const totalFiles = course.lectures.reduce((acc, lec) => acc + (lec._count?.files ?? 0), 0);
 
     return {
       ...course,
@@ -310,6 +307,16 @@ export class CourseService {
         lectures: {
           include: {
             _count: { select: { videos: true, files: true, questions: true } },
+            videos: {
+              select: {
+                id: true,
+                videoName: true,
+                videoUrl: true,
+                durationSeconds: true,
+                viewsCount: true,
+                isFree: true,
+              },
+            },
           },
           orderBy: { sortOrder: 'asc' },
         },
@@ -370,6 +377,22 @@ export class CourseService {
         filesCount: totalFiles,
         questionsCount: totalQuestions,
       },
+      videos: course.lectures.flatMap((lec) =>
+        lec.videos.map((video) => {
+          const unlocked = hasAccess || video.isFree;
+          return {
+            id: video.id,
+            lectureId: lec.id,
+            lectureTitle: lec.title,
+            name: video.videoName,
+            durationSeconds: video.durationSeconds,
+            viewsCount: video.viewsCount,
+            isFree: video.isFree,
+            locked: !unlocked,
+            videoUrl: unlocked ? video.videoUrl : null,
+          };
+        }),
+      ),
       lectures: course.lectures.map((lec) => ({
         id: lec.id,
         title: lec.title,
