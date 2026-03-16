@@ -193,7 +193,7 @@ export class CourseService {
     return dbUser.userableId;
   }
 
-  async approveCourse(id: number, teacherPercentage: number, user?: { userId: string | number; type: string }) {
+  async approveCourse(id: string, teacherPercentage: number, user?: { userId: string | number; type: string }) {
     const adminId = await this.getAdminIdFromUser(user);
 
     if (Number.isNaN(teacherPercentage) || teacherPercentage < 0 || teacherPercentage > 100) {
@@ -211,7 +211,7 @@ export class CourseService {
     });
   }
 
-  async rejectCourse(id: number, user?: { userId: string | number; type: string }) {
+  async rejectCourse(id: string, user?: { userId: string | number; type: string }) {
     const adminId = await this.getAdminIdFromUser(user);
     return this.prisma.course.update({
       where: { id: String(id) },
@@ -224,7 +224,7 @@ export class CourseService {
     });
   }
 
-  async updateCourse(id: number, dto: UpdateCourseDto, user?: { userId: string | number; type: string }) {
+  async updateCourse(id: string, dto: UpdateCourseDto, user?: { userId: string | number; type: string }) {
     const raw = dto as Record<string, unknown>;
     if (
       raw.subjectId !== undefined ||
@@ -263,13 +263,13 @@ export class CourseService {
     return this.prisma.course.update({ where: { id: String(id) }, data });
   }
 
-  deleteCourse(id: number, user?: { userId: string | number; type: string }) {
+  deleteCourse(id: string, user?: { userId: string | number; type: string }) {
     return this.assertCourseOwnership(user, id).then(() =>
       this.prisma.course.delete({ where: { id: String(id) } }),
     );
   }
 
-  async getCourseWithCounts(id: number, user?: { userId: string | number; type: string }) {
+  async getCourseWithCounts(id: string, user?: { userId: string | number; type: string }) {
     await this.assertStudentSubscription(user, id);
     const course = await this.prisma.course.findUnique({
       where: { id: String(id) },
@@ -299,7 +299,7 @@ export class CourseService {
     };
   }
 
-  async getCourseDetails(id: number, user?: { userId: string | number; type: string }) {
+  async getCourseDetails(id: string, user?: { userId: string | number; type: string }) {
     const course = await this.prisma.course.findUnique({
       where: { id: String(id) },
       include: {
@@ -319,8 +319,8 @@ export class CourseService {
 
     if (!course) throw new NotFoundException('Course not found');
 
-    const isOwnerOrAdmin = await this.isCourseOwnerOrAdmin(user, Number(course.id));
-    const isSubscribed = await this.hasStudentSubscription(user, Number(course.id));
+    const isOwnerOrAdmin = await this.isCourseOwnerOrAdmin(user, course.id);
+    const isSubscribed = await this.hasStudentSubscription(user, course.id);
     const isExpired = !!course.expiresAt && course.expiresAt.getTime() <= Date.now();
     const hasAccess = course.isFree || isOwnerOrAdmin || (isSubscribed && !isExpired);
 
@@ -530,7 +530,7 @@ export class CourseService {
   async uploadLectureVideo(lectureId: number, file: any, user?: { userId: string | number; type: string }) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
     if (!lecture) throw new NotFoundException('Lecture not found');
-    await this.assertCourseOwnershipByCourseId(user, Number(lecture.courseId));
+    await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
 
     const created = await this.bunny.createStreamVideo(file.originalname || 'lecture-video');
     await this.bunny.uploadStreamVideo(created.guid, file);
@@ -555,7 +555,7 @@ export class CourseService {
     });
   }
 
-  private async assertStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: number) {
+  private async assertStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {
     if (!user || user.type !== 'STUDENT') return;
 
     const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
@@ -570,7 +570,7 @@ export class CourseService {
     if (!subscription) throw new ForbiddenException('Subscription required');
   }
 
-  private async hasStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: number) {
+  private async hasStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {
     if (!user || user.type !== 'STUDENT') return false;
 
     const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
@@ -585,7 +585,7 @@ export class CourseService {
     return !!subscription;
   }
 
-  private async assertCourseOwnership(user: { userId: string | number; type: string } | undefined, courseId: number) {
+  private async assertCourseOwnership(user: { userId: string | number; type: string } | undefined, courseId: string) {
     if (!user || user.type === 'ADMIN') return;
     if (user.type !== 'TEACHER') throw new ForbiddenException('Teacher role required');
 
@@ -599,7 +599,7 @@ export class CourseService {
     }
   }
 
-  private async isCourseOwnerOrAdmin(user: { userId: string | number; type: string } | undefined, courseId: number) {
+  private async isCourseOwnerOrAdmin(user: { userId: string | number; type: string } | undefined, courseId: string) {
     if (!user) return false;
     if (user.type === 'ADMIN') return true;
     if (user.type !== 'TEACHER') return false;
@@ -612,7 +612,7 @@ export class CourseService {
     return course.teacherId.toString() === dbUser.userableId.toString();
   }
 
-  private async assertCourseOwnershipByCourseId(user: { userId: string | number; type: string } | undefined, courseId: number) {
+  private async assertCourseOwnershipByCourseId(user: { userId: string | number; type: string } | undefined, courseId: string) {
     return this.assertCourseOwnership(user, courseId);
   }
 

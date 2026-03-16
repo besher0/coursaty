@@ -60,14 +60,14 @@ export class CourseController {
   @Get(':id')
   @ApiOperation({ summary: 'Get course with aggregated counts' })
   @UseGuards(JwtAuthGuard)
-  async getCourse(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+  async getCourse(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
     return this.courseService.getCourseWithCounts(id, req.user);
   }
 
   @Get(':id/details')
   @ApiOperation({ summary: 'Get course details and lectures' })
   @UseGuards(JwtAuthGuard)
-  async getCourseDetails(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+  async getCourseDetails(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
     return this.courseService.getCourseDetails(id, req.user);
   }
 
@@ -89,7 +89,7 @@ export class CourseController {
   @ApiOperation({ summary: 'Update course' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  updateCourse(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCourseDto, @Req() req: any) {
+  updateCourse(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Body() dto: UpdateCourseDto, @Req() req: any) {
     return this.courseService.updateCourse(id, dto, req.user);
   }
 
@@ -97,7 +97,7 @@ export class CourseController {
   @ApiOperation({ summary: 'Approve course and set teacher percentage' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  approveCourse(@Param('id', ParseIntPipe) id: number, @Body() dto: ApproveCourseDto, @Req() req: any) {
+  approveCourse(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Body() dto: ApproveCourseDto, @Req() req: any) {
     return this.courseService.approveCourse(id, dto.teacherPercentage, req.user);
   }
 
@@ -105,7 +105,7 @@ export class CourseController {
   @ApiOperation({ summary: 'Reject course' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  rejectCourse(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+  rejectCourse(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
     return this.courseService.rejectCourse(id, req.user);
   }
 
@@ -113,7 +113,7 @@ export class CourseController {
   @ApiOperation({ summary: 'Delete course' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  removeCourse(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+  removeCourse(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
     return this.courseService.deleteCourse(id, req.user);
   }
 
