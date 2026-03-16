@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseIntPipe, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AdvertisementsService } from '../services/advertisements.service';
 import { CreateAdvertisementDto } from '../dtos/create-advertisement.dto';
@@ -29,13 +29,13 @@ export class AdvertisementsController {
 
   @Get('college/:collegeId')
   @ApiOperation({ summary: 'Get advertisements by college' })
-  findByCollege(@Param('collegeId', ParseIntPipe) collegeId: number) {
+  findByCollege(@Param('collegeId', new ParseUUIDPipe({ version: '4' })) collegeId: string) {
     return this.service.findByCollege(collegeId);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get advertisement by ID' })
-  findOne(@Param('id', ParseIntPipe) id: number) {
+  findOne(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.service.findOne(id);
   }
 
@@ -43,7 +43,7 @@ export class AdvertisementsController {
   @ApiOperation({ summary: 'Update advertisement (admin only)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateAdvertisementDto) {
+  update(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Body() dto: UpdateAdvertisementDto) {
     return this.service.update(id, dto);
   }
 
@@ -51,7 +51,7 @@ export class AdvertisementsController {
   @ApiOperation({ summary: 'Delete advertisement (admin only)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.service.remove(id);
   }
 }

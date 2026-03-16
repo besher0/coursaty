@@ -70,6 +70,7 @@ export class UsersService {
     const userUpdateData: any = {};
     if (dto.gender !== undefined) userUpdateData.gender = dto.gender;
     if (dto.fcmToken !== undefined) userUpdateData.fcmToken = dto.fcmToken;
+    if (dto.phone !== undefined) userUpdateData.phone = dto.phone;
 
     if (Object.keys(userUpdateData).length > 0) {
       await this.prisma.user.update({
@@ -82,7 +83,6 @@ export class UsersService {
     if (user.userableType === 'STUDENT') {
       const studentUpdateData: any = {};
       if (dto.name !== undefined) studentUpdateData.name = dto.name;
-      if (dto.universityNumber !== undefined) studentUpdateData.universityNumber = dto.universityNumber;
 
       if (Object.keys(studentUpdateData).length > 0) {
         await this.prisma.student.update({

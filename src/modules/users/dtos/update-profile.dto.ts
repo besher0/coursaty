@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString, IsNumber } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 
 export enum UserGender {
   MALE = 'MALE',
@@ -18,14 +18,15 @@ export class UpdateProfileDto {
   @IsOptional()
   fcmToken?: string;
 
+  @ApiPropertyOptional({ description: 'Phone number' })
+  @IsString()
+  @IsOptional()
+  phone?: string;
+
   // Student fields (optional, only for students)
   @ApiPropertyOptional({ description: 'Student name' })
   @IsString()
   @IsOptional()
   name?: string;
 
-  @ApiPropertyOptional({ description: 'University number' })
-  @IsString()
-  @IsOptional()
-  universityNumber?: string;
 }

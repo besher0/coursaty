@@ -1,11 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber, IsPositive, IsString, IsNotEmpty } from 'class-validator';
+import { IsUUID, IsString, IsNotEmpty } from 'class-validator';
 
 export class CreateAdvertisementDto {
-  @ApiProperty()
-  @IsNumber()
-  @IsPositive()
-  collegeId: number;
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID('4')
+  collegeId: string;
 
   @ApiProperty()
   @IsString()

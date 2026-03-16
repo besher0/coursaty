@@ -27,14 +27,14 @@ export class AdvertisementsService {
     });
   }
 
-  findByCollege(collegeId: number) {
+  findByCollege(collegeId: string) {
     return this.prisma.advertisement.findMany({
       where: { collegeId: String(collegeId) },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findOne(id: number) {
+  async findOne(id: string) {
     const ad = await this.prisma.advertisement.findUnique({
       where: { id: String(id) },
       include: { college: true },
@@ -43,7 +43,7 @@ export class AdvertisementsService {
     return ad;
   }
 
-  async update(id: number, dto: UpdateAdvertisementDto) {
+  async update(id: string, dto: UpdateAdvertisementDto) {
     const ad = await this.prisma.advertisement.findUnique({ where: { id: String(id) } });
     if (!ad) throw new NotFoundException('Advertisement not found');
 
@@ -64,7 +64,7 @@ export class AdvertisementsService {
     });
   }
 
-  async remove(id: number) {
+  async remove(id: string) {
     const ad = await this.prisma.advertisement.findUnique({ where: { id: String(id) } });
     if (!ad) throw new NotFoundException('Advertisement not found');
 

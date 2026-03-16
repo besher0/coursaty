@@ -6,7 +6,7 @@ import {
   Patch,
   Param,
   Delete,
-  ParseIntPipe,
+  ParseUUIDPipe,
   UseGuards,
   Req,
 } from '@nestjs/common';
@@ -34,8 +34,8 @@ export class PointOfSalesController {
   }
 
   @Get('university/:universityId')
-  findByUniversity(@Param('universityId', ParseIntPipe) universityId: number) {
-    return this.pointOfSalesService.findByUniversity(String(universityId));
+  findByUniversity(@Param('universityId', new ParseUUIDPipe({ version: '4' })) universityId: string) {
+    return this.pointOfSalesService.findByUniversity(universityId);
   }
 
   @Get('university')
@@ -48,20 +48,20 @@ export class PointOfSalesController {
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.pointOfSalesService.findOne(String(id));
+  findOne(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.pointOfSalesService.findOne(id);
   }
 
   @Patch(':id')
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() updatePointOfSaleDto: UpdatePointOfSaleDto,
   ) {
-    return this.pointOfSalesService.update(String(id), updatePointOfSaleDto);
+    return this.pointOfSalesService.update(id, updatePointOfSaleDto);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.pointOfSalesService.remove(String(id));
+  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.pointOfSalesService.remove(id);
   }
 }

@@ -1,11 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
+import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class CreatePointOfSaleDto {
-  @ApiProperty({ example: 1, description: 'University ID' })
-  @IsNumber()
-  @IsPositive()
-  universityId: number;
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'University ID', format: 'uuid' })
+  @IsUUID('4')
+  universityId: string;
 
   @ApiProperty({ example: 'Main Campus Store', description: 'Point of sale name' })
   @IsString()

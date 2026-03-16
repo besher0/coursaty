@@ -12,7 +12,7 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get('student-college-info')
-  @ApiOperation({ summary: 'Get college advertisements, teachers, regular courses and program courses' })
+  @ApiOperation({ summary: 'Get college advertisements, teachers, subjects, and programs for the student college/department' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('STUDENT')
   getStudentCollegeInfo(@Req() req: any, @Query('limit') limit: string = '7') {
@@ -28,7 +28,7 @@ export class DashboardController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('STUDENT')
   getCoursesByCollege(@Req() req: any, @Query('collegeYearId') collegeYearId?: string) {
-    return this.dashboardService.getCoursesByCollege(req.user, collegeYearId ? Number(collegeYearId) : undefined);
+    return this.dashboardService.getCoursesByCollege(req.user, collegeYearId);
   }
 
   @Get('subjects/:id/courses')
@@ -46,7 +46,7 @@ export class DashboardController {
 
     return this.dashboardService.getSubjectCourses(
       req.user,
-      Number(subjectId),
+      subjectId,
       Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1,
       Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10,
     );

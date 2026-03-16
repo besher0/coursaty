@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class UpdateStudentProfileDto {
   @ApiPropertyOptional({ description: 'Student name' })
@@ -8,22 +8,22 @@ export class UpdateStudentProfileDto {
   name?: string;
 
   @ApiPropertyOptional({ description: 'University ID' })
-  @IsNumber()
+  @IsUUID('4')
   @IsOptional()
-  universityId?: number;
+  universityId?: string;
 
   @ApiPropertyOptional({ description: 'College ID' })
-  @IsNumber()
+  @IsUUID('4')
   @IsOptional()
-  collegeId?: number;
+  collegeId?: string;
 
   @ApiPropertyOptional({ description: 'Department ID' })
-  @IsNumber()
+  @IsUUID('4')
   @IsOptional()
-  departmentId?: number;
+  departmentId?: string;
 
   @ApiPropertyOptional({ description: 'College year ID' })
-  @IsNumber()
+  @IsUUID('4')
   @IsOptional()
-  collegeYearId?: number;
+  collegeYearId?: string;
 }
