@@ -29,8 +29,8 @@ export class SubscriptionsController {
   @Roles('ADMIN', 'TEACHER')
   list(@Query('studentId') studentId?: string, @Query('courseId') courseId?: string) {
     return this.financials.listSubscriptions({
-      studentId: studentId ? Number(studentId) : undefined,
-      courseId: courseId ? Number(courseId) : undefined,
+      studentId,
+      courseId,
     });
   }
 

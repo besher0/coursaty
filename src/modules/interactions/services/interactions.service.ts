@@ -5,30 +5,30 @@ import { PrismaService } from '@/prisma/prisma.service';
 export class InteractionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async likeTeacher(teacherId: number, user: { userId: string | number; type: string }) {
+  async likeTeacher(teacherId: string, user: { userId: string | number; type: string }) {
     const { studentId } = await this.ensureStudentContext(user);
 
     const result = await this.prisma.teacherLike.upsert({
-      where: { teacherId_studentId: { teacherId: String(teacherId), studentId } },
+      where: { teacherId_studentId: { teacherId, studentId } },
       update: {},
-      create: { teacherId: String(teacherId), studentId },
+      create: { teacherId, studentId },
     });
 
     await this.syncTeacherLikesCount(teacherId);
     return result;
   }
 
-  async deleteTeacherLike(teacherId: number, user: { userId: string | number; type: string }) {
+  async deleteTeacherLike(teacherId: string, user: { userId: string | number; type: string }) {
     const { studentId } = await this.ensureStudentContext(user);
     const result = await this.prisma.teacherLike.delete({
-      where: { teacherId_studentId: { teacherId: String(teacherId), studentId } },
+      where: { teacherId_studentId: { teacherId, studentId } },
     });
     await this.syncTeacherLikesCount(teacherId);
     return result;
   }
 
   async interactVideo(
-    videoId: number,
+    videoId: string,
     user: { userId: string | number; type: string },
     data: { isLiked?: boolean; rating?: number; comment?: string },
   ) {
@@ -36,7 +36,7 @@ export class InteractionsService {
 
     return this.prisma.videoInteraction.create({
       data: {
-        videoId: String(videoId),
+        videoId,
         userId: dbUser.id,
         isLiked: !!data.isLiked,
         rating: data.rating,
@@ -46,18 +46,18 @@ export class InteractionsService {
   }
 
   async updateVideoInteraction(
-    id: number,
+    id: string,
     user: { userId: string | number; type: string },
     data: { isLiked?: boolean; rating?: number; comment?: string },
   ) {
-    const interaction = await this.prisma.videoInteraction.findUnique({ where: { id: String(id) } });
+    const interaction = await this.prisma.videoInteraction.findUnique({ where: { id } });
     if (!interaction) throw new NotFoundException('Interaction not found');
 
     if (interaction.userId.toString() !== user.userId.toString()) throw new ForbiddenException('Not your interaction');
-    await this.ensureVideoAccess(Number(interaction.videoId), user);
+    await this.ensureVideoAccess(interaction.videoId, user);
 
     return this.prisma.videoInteraction.update({
-      where: { id: String(id) },
+      where: { id },
       data: {
         isLiked: data.isLiked,
         rating: data.rating,
@@ -66,19 +66,19 @@ export class InteractionsService {
     });
   }
 
-  async deleteVideoInteraction(id: number, user: { userId: string | number; type: string }) {
-    const interaction = await this.prisma.videoInteraction.findUnique({ where: { id: String(id) } });
+  async deleteVideoInteraction(id: string, user: { userId: string | number; type: string }) {
+    const interaction = await this.prisma.videoInteraction.findUnique({ where: { id } });
     if (!interaction) throw new NotFoundException('Interaction not found');
     if (interaction.userId.toString() !== user.userId.toString()) throw new ForbiddenException('Not your interaction');
 
-    await this.prisma.videoInteraction.delete({ where: { id: String(id) } });
+    await this.prisma.videoInteraction.delete({ where: { id } });
     return { success: true };
   }
 
-  async incrementVideoView(videoId: number, user: { userId: string | number; type: string }) {
+  async incrementVideoView(videoId: string, user: { userId: string | number; type: string }) {
     await this.ensureVideoAccess(videoId, user);
     return this.prisma.video.update({
-      where: { id: String(videoId) },
+      where: { id: videoId },
       data: { viewsCount: { increment: 1 } },
     });
   }
@@ -90,9 +90,9 @@ export class InteractionsService {
     return { dbUser, studentId: dbUser.userableId };
   }
 
-  private async ensureVideoAccess(videoId: number, user: { userId: string | number; type: string }) {
+  private async ensureVideoAccess(videoId: string, user: { userId: string | number; type: string }) {
     const video = await this.prisma.video.findUnique({
-      where: { id: String(videoId) },
+      where: { id: videoId },
       include: { lecture: { select: { courseId: true, course: { select: { expiresAt: true } } } } },
     });
     if (!video) throw new NotFoundException('Video not found');
@@ -127,8 +127,8 @@ export class InteractionsService {
     return { video, dbUser };
   }
 
-  private async syncTeacherLikesCount(teacherId: number) {
-    const likes = await this.prisma.teacherLike.count({ where: { teacherId: String(teacherId) } });
-    await this.prisma.teacher.update({ where: { id: String(teacherId) }, data: { likesCount: likes } });
+  private async syncTeacherLikesCount(teacherId: string) {
+    const likes = await this.prisma.teacherLike.count({ where: { teacherId } });
+    await this.prisma.teacher.update({ where: { id: teacherId }, data: { likesCount: likes } });
   }
 }

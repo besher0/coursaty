@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InteractionsService } from '../services/interactions.service';
 import { CreateVideoInteractionDto } from '../dtos/create-video-interaction.dto';
@@ -27,7 +27,7 @@ export class VideoInteractionsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('STUDENT')
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() body: UpdateVideoInteractionDto,
     @Req() req: any,
   ) {
@@ -38,14 +38,14 @@ export class VideoInteractionsController {
   @ApiOperation({ summary: 'Delete video interaction' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('STUDENT')
-  remove(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
     return this.interactions.deleteVideoInteraction(id, req.user);
   }
 
   @Post(':id/view')
   @ApiOperation({ summary: 'Increment video view with access control' })
   @UseGuards(JwtAuthGuard)
-  incrementView(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+  incrementView(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
     return this.interactions.incrementVideoView(id, req.user);
   }
 }

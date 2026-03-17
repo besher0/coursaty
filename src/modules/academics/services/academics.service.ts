@@ -166,15 +166,15 @@ export class AcademicsService {
     return this.prisma.academicYear.findMany({ orderBy: { yearNumber: 'asc' } });
   }
 
-  updateAcademicYear(id: number, dto: UpdateAcademicYearDto) {
+  updateAcademicYear(id: string, dto: UpdateAcademicYearDto) {
     const data: any = {};
     if (dto.yearName !== undefined) data.yearName = dto.yearName;
     if (dto.yearNumber !== undefined) data.yearNumber = dto.yearNumber;
-    return this.prisma.academicYear.update({ where: { id: String(id) }, data });
+    return this.prisma.academicYear.update({ where: { id }, data });
   }
 
-  deleteAcademicYear(id: number) {
-    return this.prisma.academicYear.delete({ where: { id: String(id) } });
+  deleteAcademicYear(id: string) {
+    return this.prisma.academicYear.delete({ where: { id } });
   }
 
   // Seasons
@@ -185,14 +185,14 @@ export class AcademicsService {
     return this.prisma.season.findMany();
   }
 
-  updateSeason(id: number, dto: UpdateSeasonDto) {
+  updateSeason(id: string, dto: UpdateSeasonDto) {
     const data: any = {};
     if (dto.seasonName !== undefined) data.seasonName = dto.seasonName;
     if (dto.seasonNumber !== undefined) data.seasonNumber = dto.seasonNumber;
-    return this.prisma.season.update({ where: { id: String(id) }, data });
+    return this.prisma.season.update({ where: { id }, data });
   }
 
-  deleteSeason(id: number) {
-    return this.prisma.season.delete({ where: { id: String(id) } });
+  deleteSeason(id: string) {
+    return this.prisma.season.delete({ where: { id } });
   }
 }

@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateTeacherDto {
   @ApiProperty()
@@ -15,5 +15,20 @@ export class CreateTeacherDto {
   @IsOptional()
   @IsString()
   image?: string;
+
+  @ApiPropertyOptional({ format: 'uuid', description: 'University ID to create initial affiliation' })
+  @IsOptional()
+  @IsUUID('4')
+  universityId?: string;
+
+  @ApiPropertyOptional({ format: 'uuid', description: 'College ID to create initial affiliation' })
+  @IsOptional()
+  @IsUUID('4')
+  collegeId?: string;
+
+  @ApiPropertyOptional({ format: 'uuid', description: 'Department ID to create initial affiliation' })
+  @IsOptional()
+  @IsUUID('4')
+  departmentId?: string;
 
 }

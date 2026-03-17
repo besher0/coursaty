@@ -639,7 +639,7 @@ export class DashboardService {
   async getCoursesUnified(
     user: { userId: string | number; type: string },
     filter: string = 'all',
-    categoryId?: number,
+    categoryId?: string,
     page: number = 1,
     limit: number = 10,
   ) {
@@ -649,7 +649,7 @@ export class DashboardService {
 
     if (categoryId) {
       const result = await this.getCoursesByCategory(user, page, limit);
-      const matched = result.categories.find((c) => c.category.id.toString() === categoryId.toString());
+      const matched = result.categories.find((c) => c.category.id === categoryId);
       return {
         college: result.college,
         mode: 'category',

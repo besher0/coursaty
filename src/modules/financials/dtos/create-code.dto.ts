@@ -1,10 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsISO8601, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsInt, IsISO8601, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class CreateCodeDto {
   @ApiProperty()
-  @IsNumber()
-  codeGroupId: number;
+  @IsUUID('4')
+  codeGroupId: string;
 
   @ApiPropertyOptional({ description: 'If omitted, codeValue will be generated automatically' })
   @IsOptional()

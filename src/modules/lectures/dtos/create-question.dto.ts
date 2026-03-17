@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
 
 class QuestionOptionDto {
   @ApiProperty()
@@ -19,10 +19,10 @@ class QuestionOptionDto {
 }
 
 export class CreateQuestionDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @IsNumber()
-  lectureId?: number;
+  @IsUUID('4')
+  lectureId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

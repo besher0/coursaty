@@ -1,10 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class CreateVideoInteractionDto {
   @ApiProperty()
-  @IsNumber()
-  videoId: number;
+  @IsUUID('4')
+  videoId: string;
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()

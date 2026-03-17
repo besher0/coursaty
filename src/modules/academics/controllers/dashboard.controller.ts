@@ -124,7 +124,7 @@ export class DashboardController {
     return this.dashboardService.getCoursesUnified(
       req.user,
       filter,
-      categoryId ? Number(categoryId) : undefined,
+      categoryId,
       parseInt(page),
       parseInt(limit),
     );

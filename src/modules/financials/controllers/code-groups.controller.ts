@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { FinancialsService } from '../services/financials.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -26,7 +26,7 @@ export class CodeGroupsController {
   @ApiOperation({ summary: 'List code groups' })
   @ApiQuery({ name: 'courseId', required: false })
   list(@Query('courseId') courseId?: string) {
-    return this.financials.listCodeGroups(courseId ? Number(courseId) : undefined);
+    return this.financials.listCodeGroups(courseId);
   }
 
   @Patch(':id')
@@ -34,7 +34,7 @@ export class CodeGroupsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() body: UpdateCodeGroupDto,
   ) {
     return this.financials.updateCodeGroup(id, body);
@@ -44,7 +44,7 @@ export class CodeGroupsController {
   @ApiOperation({ summary: 'Delete code group' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.financials.deleteCodeGroup(id);
   }
 }

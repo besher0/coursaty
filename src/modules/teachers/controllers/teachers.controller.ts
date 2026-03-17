@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Param, ParseIntPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { TeachersService } from '../services/teachers.service';
 import { CreateTeacherDto } from '../dtos/create-teacher.dto';
@@ -124,7 +124,7 @@ export class TeachersController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  listAllowedSubjects(@Param('id', ParseIntPipe) id: number) {
+  listAllowedSubjects(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.teachers.listAllowedSubjects(id);
   }
 
@@ -134,7 +134,7 @@ export class TeachersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   addAllowedSubjects(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() body: TeacherSubjectPermissionsDto,
   ) {
     return this.teachers.addAllowedSubjects(id, body.subjectIds);
@@ -146,7 +146,7 @@ export class TeachersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   removeAllowedSubjects(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() body: TeacherSubjectPermissionsDto,
   ) {
     return this.teachers.removeAllowedSubjects(id, body.subjectIds);

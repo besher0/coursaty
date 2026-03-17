@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AcademicsService } from '../services/academics.service';
 import { CreateSeasonDto } from '../dtos/create-season.dto';
@@ -33,7 +33,7 @@ export class SeasonsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() body: UpdateSeasonDto,
   ) {
     return this.academics.updateSeason(id, body);
@@ -43,7 +43,7 @@ export class SeasonsController {
   @ApiOperation({ summary: 'Delete season' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.academics.deleteSeason(id);
   }
 }

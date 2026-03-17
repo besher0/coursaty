@@ -49,7 +49,7 @@ export class CodeManagementService {
   async createCodeGroup(dto: CreateCodeGroupDto) {
     // Verify course exists
     const course = await this.prisma.course.findUnique({
-      where: { id: String(dto.courseId) },
+      where: { id: dto.courseId },
     });
 
     if (!course) {
@@ -58,7 +58,7 @@ export class CodeManagementService {
 
     return this.prisma.codeGroup.create({
       data: {
-        courseId: String(dto.courseId),
+        courseId: dto.courseId,
         batchName: dto.batchName,
         discountPercentage: dto.discountPercentage,
       },
@@ -74,7 +74,7 @@ export class CodeManagementService {
   async generateSingleCode(dto: GenerateCodesDto): Promise<CodeGeneratedDto> {
     // Verify code group exists
     const codeGroup = await this.prisma.codeGroup.findUnique({
-      where: { id: String(dto.codeGroupId) },
+      where: { id: dto.codeGroupId },
     });
 
     if (!codeGroup) {
@@ -94,7 +94,7 @@ export class CodeManagementService {
 
     const code = await this.prisma.code.create({
       data: {
-        codeGroupId: String(dto.codeGroupId),
+        codeGroupId: dto.codeGroupId,
         codeValue,
         status: 'ACTIVE',
         usageLimit: dto.usageLimit || null,
@@ -121,7 +121,7 @@ export class CodeManagementService {
   async generateBulkCodes(dto: BulkGenerateCodesDto): Promise<BulkCodesResponseDto> {
     // Verify code group exists
     const codeGroup = await this.prisma.codeGroup.findUnique({
-      where: { id: String(dto.codeGroupId) },
+      where: { id: dto.codeGroupId },
     });
 
     if (!codeGroup) {
@@ -145,7 +145,7 @@ export class CodeManagementService {
 
       const code = await this.prisma.code.create({
         data: {
-          codeGroupId: String(dto.codeGroupId),
+          codeGroupId: dto.codeGroupId,
           codeValue,
           status: 'ACTIVE',
           usageLimit: dto.usageLimit || null,

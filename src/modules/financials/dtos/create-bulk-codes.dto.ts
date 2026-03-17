@@ -1,10 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsISO8601, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsISO8601, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class CreateBulkCodesDto {
   @ApiProperty()
-  @IsNumber()
-  codeGroupId: number;
+  @IsUUID('4')
+  codeGroupId: string;
 
   @ApiProperty({ description: 'How many codes to generate' })
   @IsInt()

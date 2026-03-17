@@ -1,10 +1,10 @@
-import { IsNumber, IsString, IsOptional, IsEmail, Min, Max } from 'class-validator';
+import { IsNumber, IsString, IsOptional, IsEmail, IsUUID, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateCodeGroupDto {
-  @ApiProperty({ example: 1, description: 'Course ID' })
-  @IsNumber()
-  courseId: number;
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Course ID' })
+  @IsUUID('4')
+  courseId: string;
 
   @ApiProperty({ example: 'Spring 2026 Batch', description: 'Batch/Group name' })
   @IsString()
@@ -18,9 +18,9 @@ export class CreateCodeGroupDto {
 }
 
 export class GenerateCodesDto {
-  @ApiProperty({ example: 1, description: 'Code group ID' })
-  @IsNumber()
-  codeGroupId: number;
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Code group ID' })
+  @IsUUID('4')
+  codeGroupId: string;
 
   @ApiProperty({ example: 50, description: 'Number of codes to generate' })
   @IsNumber()
@@ -52,9 +52,9 @@ export class GenerateCodesDto {
 }
 
 export class BulkGenerateCodesDto {
-  @ApiProperty({ example: 1, description: 'Code group ID' })
-  @IsNumber()
-  codeGroupId: number;
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Code group ID' })
+  @IsUUID('4')
+  codeGroupId: string;
 
   @ApiProperty({
     example: 100,

@@ -8,10 +8,10 @@ import { UpdateStudentProfileDto } from '../dtos/update-student-profile.dto';
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async updateFcmToken(id: number, fcmToken: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: String(id) } });
+  async updateFcmToken(id: string, fcmToken: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
-    return this.prisma.user.update({ where: { id: String(id) }, data: { fcmToken } });
+    return this.prisma.user.update({ where: { id }, data: { fcmToken } });
   }
 
   async getProfile(userId: string | number) {

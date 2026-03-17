@@ -11,37 +11,37 @@ export class FinancialsService {
   constructor(private readonly prisma: PrismaService) {}
 
   // CodeGroups
-  createCodeGroup(courseId: number, batchName: string, discountPercentage: number) {
+  createCodeGroup(courseId: string, batchName: string, discountPercentage: number) {
     return this.prisma.codeGroup.create({
       data: {
-        courseId: String(courseId),
+        courseId,
         batchName,
         discountPercentage: discountPercentage as any,
       },
     });
   }
-  listCodeGroups(courseId?: number) {
-    return this.prisma.codeGroup.findMany({ where: courseId ? { courseId: String(courseId) } : undefined });
+  listCodeGroups(courseId?: string) {
+    return this.prisma.codeGroup.findMany({ where: courseId ? { courseId } : undefined });
   }
 
-  updateCodeGroup(id: number, dto: UpdateCodeGroupDto) {
+  updateCodeGroup(id: string, dto: UpdateCodeGroupDto) {
     const data: any = {};
     if (dto.batchName !== undefined) data.batchName = dto.batchName;
     if (dto.discountPercentage !== undefined) data.discountPercentage = dto.discountPercentage as any;
 
     return this.prisma.codeGroup.update({
-      where: { id: String(id) },
+      where: { id },
       data,
     });
   }
 
-  deleteCodeGroup(id: number) {
-    return this.prisma.codeGroup.delete({ where: { id: String(id) } });
+  deleteCodeGroup(id: string) {
+    return this.prisma.codeGroup.delete({ where: { id } });
   }
 
   // Codes
   createCode(
-    codeGroupId: number,
+    codeGroupId: string,
     codeValue?: string,
     allowedUniversityNumber?: string,
     usageLimit?: number,
@@ -54,7 +54,7 @@ export class FinancialsService {
     const createWithValue = async (value: string) =>
       this.prisma.code.create({
         data: {
-          codeGroupId: String(codeGroupId),
+          codeGroupId,
           codeValue: value,
           allowedUniversityNumber,
           usageLimit,
@@ -69,8 +69,8 @@ export class FinancialsService {
 
     return this.createWithGeneratedCode(createWithValue);
   }
-  listCodes(codeGroupId?: number) {
-    return this.prisma.code.findMany({ where: codeGroupId ? { codeGroupId: String(codeGroupId) } : undefined });
+  listCodes(codeGroupId?: string) {
+    return this.prisma.code.findMany({ where: codeGroupId ? { codeGroupId } : undefined });
   }
 
   async createBulkCodes(dto: CreateBulkCodesDto) {
@@ -80,7 +80,7 @@ export class FinancialsService {
     const prefix = dto.prefix ?? '';
     const length = dto.length ?? 6;
 
-    const group = await this.prisma.codeGroup.findUnique({ where: { id: String(dto.codeGroupId) } });
+    const group = await this.prisma.codeGroup.findUnique({ where: { id: dto.codeGroupId } });
     if (!group) throw new NotFoundException('Code group not found');
 
     let created = 0;
@@ -97,7 +97,7 @@ export class FinancialsService {
       }
 
       const data = Array.from(codes).map((codeValue) => ({
-        codeGroupId: String(dto.codeGroupId),
+        codeGroupId: dto.codeGroupId,
         codeValue,
         usageLimit: dto.usageLimit,
         validForDays: dto.validForDays,
@@ -116,7 +116,7 @@ export class FinancialsService {
     return { createdCount: created };
   }
 
-  updateCode(id: number, dto: UpdateCodeDto) {
+  updateCode(id: string, dto: UpdateCodeDto) {
     this.ensureValidCodeExpiry(dto.validForDays, dto.validUntil);
     const validUntilDate = this.parseValidUntil(dto.validUntil);
 
@@ -124,7 +124,7 @@ export class FinancialsService {
     const allowed: $Enums.CodeStatus[] = ['ACTIVE', 'USED', 'INACTIVE'];
     if (status && !allowed.includes(status)) throw new BadRequestException('Invalid status');
     return this.prisma.code.update({
-      where: { id: String(id) },
+      where: { id },
       data: {
         status,
         validForDays: dto.validForDays,
@@ -133,15 +133,15 @@ export class FinancialsService {
     });
   }
 
-  deleteCode(id: number) {
-    return this.prisma.code.delete({ where: { id: String(id) } });
+  deleteCode(id: string) {
+    return this.prisma.code.delete({ where: { id } });
   }
 
-  activateCode(id: number) {
+  activateCode(id: string) {
     return this.updateCode(id, { status: 'ACTIVE' });
   }
 
-  deactivateCode(id: number) {
+  deactivateCode(id: string) {
     return this.updateCode(id, { status: 'INACTIVE' });
   }
 
@@ -262,11 +262,11 @@ export class FinancialsService {
     return subscription;
   }
 
-  listSubscriptions(filters?: { studentId?: number; courseId?: number }) {
+  listSubscriptions(filters?: { studentId?: string; courseId?: string }) {
     return this.prisma.studentSubscription.findMany({
       where: {
-        studentId: filters?.studentId ? String(filters.studentId) : undefined,
-        courseId: filters?.courseId ? String(filters.courseId) : undefined,
+        studentId: filters?.studentId,
+        courseId: filters?.courseId,
       },
       include: {
         course: true,

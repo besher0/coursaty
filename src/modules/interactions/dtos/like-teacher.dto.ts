@@ -1,9 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber } from 'class-validator';
+import { IsNotEmpty, IsUUID } from 'class-validator';
 
 export class LikeTeacherDto {
   @ApiProperty()
-  @IsNumber()
+  @IsUUID('4')
   @IsNotEmpty()
-  teacherId: number;
+  teacherId: string;
 }

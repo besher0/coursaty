@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { LecturesService } from '../services/lectures.service';
@@ -14,6 +14,8 @@ import { CreateVideoDto } from '../dtos/create-video.dto';
 import { UploadVideoDto } from '../dtos/upload-video.dto';
 import { CreateQuestionDto } from '../dtos/create-question.dto';
 import { UpdateQuestionDto } from '../dtos/update-question.dto';
+import { CreateVideoSegmentDto } from '../dtos/create-video-segment.dto';
+import { UpdateVideoSegmentDto } from '../dtos/update-video-segment.dto';
 
 @ApiTags('lectures')
 @ApiBearerAuth()
@@ -33,14 +35,14 @@ export class LecturesController {
   @Get('course/:courseId')
   @ApiOperation({ summary: 'List lectures for course' })
   @UseGuards(JwtAuthGuard)
-  list(@Param('courseId', ParseIntPipe) courseId: number, @Req() req: any) {
+  list(@Param('courseId', new ParseUUIDPipe({ version: '4' })) courseId: string, @Req() req: any) {
     return this.lectures.listLectures(courseId, req.user);
   }
 
   @Get(':lectureId/details')
   @ApiOperation({ summary: 'Get lecture details with files, videos, and automated questions' })
   @UseGuards(JwtAuthGuard)
-  getDetails(@Param('lectureId', ParseIntPipe) lectureId: number, @Req() req: any) {
+  getDetails(@Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string, @Req() req: any) {
     return this.lectures.getLectureDetails(lectureId, req.user);
   }
 
@@ -48,7 +50,7 @@ export class LecturesController {
   @ApiOperation({ summary: 'Update lecture' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  update(@Param('lectureId', ParseIntPipe) lectureId: number, @Body() body: UpdateLectureDto, @Req() req: any) {
+  update(@Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string, @Body() body: UpdateLectureDto, @Req() req: any) {
     return this.lectures.updateLecture(lectureId, body, req.user);
   }
 
@@ -56,7 +58,7 @@ export class LecturesController {
   @ApiOperation({ summary: 'Delete lecture' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  remove(@Param('lectureId', ParseIntPipe) lectureId: number, @Req() req: any) {
+  remove(@Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string, @Req() req: any) {
     return this.lectures.deleteLecture(lectureId, req.user);
   }
 
@@ -74,7 +76,7 @@ export class LecturesController {
   @UseInterceptors(FileInterceptor('file'))
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  uploadFile(@Param('lectureId', ParseIntPipe) lectureId: number, @UploadedFile() file: any, @Req() req: any) {
+  uploadFile(@Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string, @UploadedFile() file: any, @Req() req: any) {
     return this.lectures.uploadLectureFile(lectureId, file, req.user);
   }
 
@@ -90,7 +92,7 @@ export class LecturesController {
   @ApiOperation({ summary: 'Delete lecture file' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  removeFile(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+  removeFile(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
     return this.lectures.deleteLectureFile(id, req.user);
   }
 
@@ -98,7 +100,7 @@ export class LecturesController {
   @ApiOperation({ summary: 'Update lecture file metadata (owner or admin only)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  updateFile(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateLectureFileDto, @Req() req: any) {
+  updateFile(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Body() dto: UpdateLectureFileDto, @Req() req: any) {
     return this.lectures.updateLectureFile(id, dto, req.user);
   }
 
@@ -127,7 +129,7 @@ export class LecturesController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
   uploadVideo(
-    @Param('lectureId', ParseIntPipe) lectureId: number,
+    @Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string,
     @UploadedFile() file: any,
     @Body() body: UploadVideoDto,
     @Req() req: any,
@@ -139,7 +141,7 @@ export class LecturesController {
   @ApiOperation({ summary: 'Update video metadata (owner or admin only)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  updateVideo(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateVideoDto, @Req() req: any) {
+  updateVideo(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Body() dto: UpdateVideoDto, @Req() req: any) {
     return this.lectures.updateVideo(id, dto, req.user);
   }
 
@@ -147,22 +149,69 @@ export class LecturesController {
   @ApiOperation({ summary: 'Delete video and related records (owner or admin only)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  deleteVideo(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+  deleteVideo(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
     return this.lectures.deleteVideo(id, req.user);
+  }
+
+  @Post('videos/:videoId/segments')
+  @ApiOperation({ summary: 'Create a video segment (owner or admin only)' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  createVideoSegment(
+    @Param('videoId', new ParseUUIDPipe({ version: '4' })) videoId: string,
+    @Body() dto: CreateVideoSegmentDto,
+    @Req() req: any,
+  ) {
+    return this.lectures.createVideoSegment(videoId, dto, req.user);
+  }
+
+  @Get('videos/:videoId/segments')
+  @ApiOperation({ summary: 'List video segments' })
+  @UseGuards(JwtAuthGuard)
+  listVideoSegments(
+    @Param('videoId', new ParseUUIDPipe({ version: '4' })) videoId: string,
+    @Req() req: any,
+  ) {
+    return this.lectures.listVideoSegments(videoId, req.user);
+  }
+
+  @Patch('videos/:videoId/segments/:segmentId')
+  @ApiOperation({ summary: 'Update a video segment (owner or admin only)' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  updateVideoSegment(
+    @Param('videoId', new ParseUUIDPipe({ version: '4' })) videoId: string,
+    @Param('segmentId', new ParseUUIDPipe({ version: '4' })) segmentId: string,
+    @Body() dto: UpdateVideoSegmentDto,
+    @Req() req: any,
+  ) {
+    return this.lectures.updateVideoSegment(videoId, segmentId, dto, req.user);
+  }
+
+  @Delete('videos/:videoId/segments/:segmentId')
+  @ApiOperation({ summary: 'Delete a video segment (owner or admin only)' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  deleteVideoSegment(
+    @Param('videoId', new ParseUUIDPipe({ version: '4' })) videoId: string,
+    @Param('segmentId', new ParseUUIDPipe({ version: '4' })) segmentId: string,
+    @Req() req: any,
+  ) {
+    return this.lectures.deleteVideoSegment(videoId, segmentId, req.user);
   }
 
   @Post(':lectureId/questions')
   @ApiOperation({ summary: 'Create question with options for lecture' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  createQuestion(@Param('lectureId', ParseIntPipe) lectureId: number, @Body() dto: CreateQuestionDto, @Req() req: any) {
+  createQuestion(@Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string, @Body() dto: CreateQuestionDto, @Req() req: any) {
     return this.lectures.createQuestion({ ...dto, lectureId }, req.user);
   }
 
   @Get(':lectureId/questions')
   @ApiOperation({ summary: 'List questions for lecture' })
   @UseGuards(JwtAuthGuard)
-  listQuestions(@Param('lectureId', ParseIntPipe) lectureId: number, @Req() req: any) {
+  listQuestions(@Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string, @Req() req: any) {
     return this.lectures.listQuestions(lectureId, req.user);
   }
 
@@ -170,7 +219,7 @@ export class LecturesController {
   @ApiOperation({ summary: 'Update question' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  updateQuestion(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateQuestionDto, @Req() req: any) {
+  updateQuestion(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Body() dto: UpdateQuestionDto, @Req() req: any) {
     return this.lectures.updateQuestion(id, dto, req.user);
   }
 
@@ -178,7 +227,7 @@ export class LecturesController {
   @ApiOperation({ summary: 'Delete question' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  deleteQuestion(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+  deleteQuestion(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
     return this.lectures.deleteQuestion(id, req.user);
   }
 }

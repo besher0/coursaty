@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ProvincesService } from './provinces.service';
 import { CreateProvinceDto } from './dtos/create-province.dto';
@@ -32,7 +32,7 @@ export class ProvincesController {
   @ApiOperation({ summary: 'Update province' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateProvinceDto) {
+  update(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Body() dto: UpdateProvinceDto) {
     return this.provinces.update(id, dto);
   }
 
@@ -41,7 +41,7 @@ export class ProvincesController {
   @ApiOperation({ summary: 'Delete province' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.provinces.remove(id);
   }
 }

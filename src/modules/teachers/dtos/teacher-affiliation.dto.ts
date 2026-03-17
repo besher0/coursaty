@@ -1,20 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsPositive } from 'class-validator';
+import { IsOptional, IsUUID } from 'class-validator';
 
 export class TeacherAffiliationDto {
   @ApiProperty()
-  @IsNumber()
-  @IsPositive()
-  universityId: number;
+  @IsUUID('4')
+  universityId: string;
 
   @ApiProperty()
-  @IsNumber()
-  @IsPositive()
-  collegeId: number;
+  @IsUUID('4')
+  collegeId: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  departmentId?: number;
+  @IsUUID('4')
+  departmentId?: string;
 }

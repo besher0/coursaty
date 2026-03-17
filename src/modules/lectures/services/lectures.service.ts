@@ -9,6 +9,8 @@ import { UpdateVideoDto } from '../dtos/update-video.dto';
 import { CreateQuestionDto } from '../dtos/create-question.dto';
 import { UpdateQuestionDto } from '../dtos/update-question.dto';
 import { UploadVideoDto } from '../dtos/upload-video.dto';
+import { CreateVideoSegmentDto } from '../dtos/create-video-segment.dto';
+import { UpdateVideoSegmentDto } from '../dtos/update-video-segment.dto';
 
 @Injectable()
 export class LecturesService {
@@ -27,7 +29,7 @@ export class LecturesService {
     });
   }
 
-  async listLectures(courseId: number, user?: { userId: string | number; type: string }) {
+  async listLectures(courseId: string, user?: { userId: string | number; type: string }) {
     const { hasAccess, isOwnerOrAdmin, isStudent } = await this.getCourseAccess(user, courseId);
     const lectures = await this.prisma.lecture.findMany({
       where: { courseId: String(courseId) },
@@ -63,7 +65,7 @@ export class LecturesService {
     }));
   }
 
-  async updateLecture(id: number, data: UpdateLectureDto, user?: { userId: string | number; type: string }) {
+  async updateLecture(id: string, data: UpdateLectureDto, user?: { userId: string | number; type: string }) {
     await this.assertLectureOwnership(user, id);
     const update: any = {};
     if (data.title !== undefined) update.title = data.title;
@@ -77,15 +79,15 @@ export class LecturesService {
     });
   }
 
-  async deleteLecture(id: number, user?: { userId: string | number; type: string }) {
+  async deleteLecture(id: string, user?: { userId: string | number; type: string }) {
     await this.assertLectureOwnership(user, id);
     return this.prisma.lecture.delete({ where: { id: String(id) } });
   }
 
-  async uploadLectureFile(lectureId: number, file: any, user?: { userId: string | number; type: string }) {
+  async uploadLectureFile(lectureId: string, file: any, user?: { userId: string | number; type: string }) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
     if (!lecture) throw new NotFoundException('Lecture not found');
-    await this.assertCourseOwnership(user, Number(lecture.courseId));
+    await this.assertCourseOwnership(user, lecture.courseId);
 
     const path = `lectures/${lectureId}/${file.originalname}`;
     const url = await this.bunny.uploadImage(path, file);
@@ -113,10 +115,10 @@ export class LecturesService {
     });
   }
 
-  async updateLectureFile(id: number, dto: UpdateLectureFileDto, user?: { userId: string | number; type: string }) {
+  async updateLectureFile(id: string, dto: UpdateLectureFileDto, user?: { userId: string | number; type: string }) {
     const file = await this.prisma.lectureFile.findUnique({ where: { id: String(id) } });
     if (!file) throw new NotFoundException('Lecture file not found');
-    await this.assertLectureOwnership(user, Number(file.lectureId));
+    await this.assertLectureOwnership(user, file.lectureId);
 
     const data: any = {};
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
@@ -124,14 +126,14 @@ export class LecturesService {
     return this.prisma.lectureFile.update({ where: { id: String(id) }, data });
   }
 
-  async deleteLectureFile(id: number, user?: { userId: string | number; type: string }) {
+  async deleteLectureFile(id: string, user?: { userId: string | number; type: string }) {
     const file = await this.prisma.lectureFile.findUnique({ where: { id: String(id) } });
     if (!file) throw new NotFoundException('Lecture file not found');
-    await this.assertLectureOwnership(user, Number(file.lectureId));
+    await this.assertLectureOwnership(user, file.lectureId);
     return this.prisma.lectureFile.delete({ where: { id: String(id) } });
   }
 
-  private async assertStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: number) {
+  private async assertStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {
     if (!user || user.type !== 'STUDENT') return;
 
     const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
@@ -155,7 +157,7 @@ export class LecturesService {
     if (!subscription) throw new ForbiddenException('Subscription required');
   }
 
-  private async hasStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: number) {
+  private async hasStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {
     if (!user || user.type !== 'STUDENT') return false;
 
     const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
@@ -170,7 +172,7 @@ export class LecturesService {
     return !!subscription;
   }
 
-  private async getCourseAccess(user: { userId: string | number; type: string } | undefined, courseId: number) {
+  private async getCourseAccess(user: { userId: string | number; type: string } | undefined, courseId: string) {
     const course = await this.prisma.course.findUnique({
       where: { id: String(courseId) },
       select: { id: true, teacherId: true, isFree: true, expiresAt: true },
@@ -198,7 +200,10 @@ export class LecturesService {
     return { hasAccess: (course.isFree || isSubscribed) && !isExpired, isOwnerOrAdmin: false, isStudent: true };
   }
 
-  private async assertCourseOwnership(user: { userId: string | number; type: string } | undefined, courseId: number) {
+  private async assertCourseOwnership(
+    user: { userId: string | number; type: string } | undefined,
+    courseId: string | number,
+  ) {
     if (!user || user.type === 'ADMIN') return;
     if (user.type !== 'TEACHER') throw new ForbiddenException('Teacher role required');
 
@@ -212,27 +217,36 @@ export class LecturesService {
     }
   }
 
-  private async assertLectureOwnership(user: { userId: string | number; type: string } | undefined, lectureId: number) {
+  private async assertLectureOwnership(
+    user: { userId: string | number; type: string } | undefined,
+    lectureId: string | number,
+  ) {
     if (!user || user.type === 'ADMIN') return;
     const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
     if (!lecture) throw new NotFoundException('Lecture not found');
-    return this.assertCourseOwnership(user, Number(lecture.courseId));
+    return this.assertCourseOwnership(user, lecture.courseId);
   }
 
-  async getLectureDetails(lectureId: number, user?: { userId: string | number; type: string }) {
+  async getLectureDetails(lectureId: string, user?: { userId: string | number; type: string }) {
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: String(lectureId) },
       include: {
         course: { select: { id: true } },
         files: true,
-        videos: true,
+        videos: {
+          include: {
+            segments: {
+              orderBy: [{ sortOrder: 'asc' }, { startSeconds: 'asc' }],
+            },
+          },
+        },
         questions: { include: { options: true } },
       },
     });
 
     if (!lecture) throw new NotFoundException('Lecture not found');
 
-    const { hasAccess, isOwnerOrAdmin, isStudent } = await this.getCourseAccess(user, Number(lecture.course.id));
+    const { hasAccess, isOwnerOrAdmin, isStudent } = await this.getCourseAccess(user, lecture.course.id);
 
     if (!isOwnerOrAdmin && isStudent && !hasAccess) {
       return {
@@ -276,7 +290,7 @@ export class LecturesService {
   }
 
   async createVideo(
-    dto: { lectureId: number; videoName: string; videoUrl: string; durationSeconds?: number; isFree?: boolean },
+    dto: { lectureId: string; videoName: string; videoUrl: string; durationSeconds?: number; isFree?: boolean },
     user?: { userId: string | number; type: string },
   ) {
     await this.assertLectureOwnership(user, dto.lectureId);
@@ -291,14 +305,14 @@ export class LecturesService {
   }
 
   async uploadLectureVideo(
-    lectureId: number,
+    lectureId: string,
     file: any,
     dto: UploadVideoDto,
     user?: { userId: string | number; type: string },
   ) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
     if (!lecture) throw new NotFoundException('Lecture not found');
-    await this.assertCourseOwnership(user, Number(lecture.courseId));
+    await this.assertCourseOwnership(user, lecture.courseId);
 
     const title = dto.videoName || file.originalname || 'video';
     const { guid } = await this.bunny.createStreamVideo(title);
@@ -316,13 +330,13 @@ export class LecturesService {
     });
   }
 
-  async updateVideo(id: number, dto: UpdateVideoDto, user?: { userId: string | number; type: string }) {
+  async updateVideo(id: string, dto: UpdateVideoDto, user?: { userId: string | number; type: string }) {
     const video = await this.prisma.video.findUnique({
       where: { id: String(id) },
       include: { lecture: { select: { courseId: true } } },
     });
     if (!video) throw new NotFoundException('Video not found');
-    await this.assertCourseOwnership(user, Number(video.lecture.courseId));
+    await this.assertCourseOwnership(user, video.lecture.courseId);
 
     const data: any = {};
     if (dto.videoName !== undefined) data.videoName = dto.videoName;
@@ -331,13 +345,13 @@ export class LecturesService {
     return this.prisma.video.update({ where: { id: String(id) }, data });
   }
 
-  async deleteVideo(id: number, user?: { userId: string | number; type: string }) {
+  async deleteVideo(id: string, user?: { userId: string | number; type: string }) {
     const video = await this.prisma.video.findUnique({
       where: { id: String(id) },
       include: { lecture: { select: { courseId: true } } },
     });
     if (!video) throw new NotFoundException('Video not found');
-    await this.assertCourseOwnership(user, Number(video.lecture.courseId));
+    await this.assertCourseOwnership(user, video.lecture.courseId);
 
     // Clean up related records manually (e.g., interactions); extend here for other related models
     await this.prisma.$transaction([
@@ -347,11 +361,120 @@ export class LecturesService {
     return { success: true };
   }
 
+  async createVideoSegment(
+    videoId: string,
+    dto: CreateVideoSegmentDto,
+    user?: { userId: string | number; type: string },
+  ) {
+    if (dto.endSeconds <= dto.startSeconds) {
+      throw new BadRequestException('endSeconds must be greater than startSeconds');
+    }
+
+    const video = await this.prisma.video.findUnique({
+      where: { id: String(videoId) },
+      include: { lecture: { select: { courseId: true } } },
+    });
+    if (!video) throw new NotFoundException('Video not found');
+
+    await this.assertCourseOwnership(user, video.lecture.courseId);
+
+    return this.prisma.videoSegment.create({
+      data: {
+        videoId: String(videoId),
+        segmentName: dto.segmentName,
+        startSeconds: dto.startSeconds,
+        endSeconds: dto.endSeconds,
+        sortOrder: dto.sortOrder ?? null,
+      },
+    });
+  }
+
+  async listVideoSegments(videoId: string, user?: { userId: string | number; type: string }) {
+    const video = await this.prisma.video.findUnique({
+      where: { id: String(videoId) },
+      include: { lecture: { select: { courseId: true } } },
+    });
+    if (!video) throw new NotFoundException('Video not found');
+
+    await this.assertStudentSubscription(user, video.lecture.courseId);
+
+    return this.prisma.videoSegment.findMany({
+      where: { videoId: String(videoId) },
+      orderBy: [{ sortOrder: 'asc' }, { startSeconds: 'asc' }],
+    });
+  }
+
+  async updateVideoSegment(
+    videoId: string,
+    segmentId: string,
+    dto: UpdateVideoSegmentDto,
+    user?: { userId: string | number; type: string },
+  ) {
+    const segment = await this.prisma.videoSegment.findUnique({
+      where: { id: String(segmentId) },
+      include: {
+        video: {
+          include: {
+            lecture: { select: { courseId: true } },
+          },
+        },
+      },
+    });
+
+    if (!segment || segment.videoId !== String(videoId)) {
+      throw new NotFoundException('Video segment not found');
+    }
+
+    await this.assertCourseOwnership(user, segment.video.lecture.courseId);
+
+    const nextStart = dto.startSeconds ?? segment.startSeconds;
+    const nextEnd = dto.endSeconds ?? segment.endSeconds;
+    if (nextEnd <= nextStart) {
+      throw new BadRequestException('endSeconds must be greater than startSeconds');
+    }
+
+    const data: any = {};
+    if (dto.segmentName !== undefined) data.segmentName = dto.segmentName;
+    if (dto.startSeconds !== undefined) data.startSeconds = dto.startSeconds;
+    if (dto.endSeconds !== undefined) data.endSeconds = dto.endSeconds;
+    if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
+
+    return this.prisma.videoSegment.update({
+      where: { id: String(segmentId) },
+      data,
+    });
+  }
+
+  async deleteVideoSegment(
+    videoId: string,
+    segmentId: string,
+    user?: { userId: string | number; type: string },
+  ) {
+    const segment = await this.prisma.videoSegment.findUnique({
+      where: { id: String(segmentId) },
+      include: {
+        video: {
+          include: {
+            lecture: { select: { courseId: true } },
+          },
+        },
+      },
+    });
+
+    if (!segment || segment.videoId !== String(videoId)) {
+      throw new NotFoundException('Video segment not found');
+    }
+
+    await this.assertCourseOwnership(user, segment.video.lecture.courseId);
+
+    return this.prisma.videoSegment.delete({ where: { id: String(segmentId) } });
+  }
+
   // Questions
   async createQuestion(dto: CreateQuestionDto, user?: { userId: string | number; type: string }) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: String(dto.lectureId) } });
     if (!lecture) throw new NotFoundException('Lecture not found');
-    await this.assertLectureOwnership(user, Number(lecture.id));
+    await this.assertLectureOwnership(user, lecture.id);
 
     if (!dto.questionText && !dto.imageUrl) {
       throw new BadRequestException('questionText or imageUrl is required');
@@ -396,10 +519,10 @@ export class LecturesService {
     });
   }
 
-  async listQuestions(lectureId: number, user?: { userId: string | number; type: string }) {
+  async listQuestions(lectureId: string, user?: { userId: string | number; type: string }) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
     if (!lecture) throw new NotFoundException('Lecture not found');
-    await this.assertStudentSubscription(user, Number(lecture.courseId));
+    await this.assertStudentSubscription(user, lecture.courseId);
 
     return this.prisma.question.findMany({
       where: { lectureId: String(lectureId) },
@@ -408,13 +531,13 @@ export class LecturesService {
     });
   }
 
-  async updateQuestion(id: number, dto: UpdateQuestionDto, user?: { userId: string | number; type: string }) {
+  async updateQuestion(id: string, dto: UpdateQuestionDto, user?: { userId: string | number; type: string }) {
     const question = await this.prisma.question.findUnique({
       where: { id: String(id) },
       select: { id: true, lectureId: true, questionText: true, imageUrl: true, questionType: true },
     });
     if (!question) throw new NotFoundException('Question not found');
-    await this.assertLectureOwnership(user, Number(question.lectureId));
+    await this.assertLectureOwnership(user, question.lectureId);
 
     const data: any = {};
     if (dto.questionText !== undefined) data.questionText = dto.questionText;
@@ -463,13 +586,13 @@ export class LecturesService {
     return this.prisma.question.findUnique({ where: { id: String(updated.id) }, include: { options: true } });
   }
 
-  async deleteQuestion(id: number, user?: { userId: string | number; type: string }) {
+  async deleteQuestion(id: string, user?: { userId: string | number; type: string }) {
     const question = await this.prisma.question.findUnique({
       where: { id: String(id) },
       select: { id: true, lectureId: true },
     });
     if (!question) throw new NotFoundException('Question not found');
-    await this.assertLectureOwnership(user, Number(question.lectureId));
+    await this.assertLectureOwnership(user, question.lectureId);
 
     return this.prisma.question.delete({ where: { id: String(id) } });
   }}

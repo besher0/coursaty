@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -67,24 +68,24 @@ export class CodeManagementController {
   @ApiOperation({ summary: 'Update code status or settings' })
   @ApiOkResponse({ description: 'Code updated' })
   async updateCode(
-    @Param('codeId') codeId: string,
+    @Param('codeId', new ParseUUIDPipe({ version: '4' })) codeId: string,
     @Body() dto: UpdateCodeDto,
   ) {
-    return this.codeService.updateCode(String(codeId), dto);
+    return this.codeService.updateCode(codeId, dto);
   }
 
   @Delete(':codeId')
   @ApiOperation({ summary: 'Delete an unused active code' })
   @ApiOkResponse({ description: 'Code deleted' })
-  async deleteCode(@Param('codeId') codeId: string) {
-    return this.codeService.deleteCode(String(codeId));
+  async deleteCode(@Param('codeId', new ParseUUIDPipe({ version: '4' })) codeId: string) {
+    return this.codeService.deleteCode(codeId);
   }
 
   @Get('group/:groupId')
   @ApiOperation({ summary: 'Get code group details with all codes' })
   @ApiOkResponse({ description: 'Code group with details and statistics' })
-  async getCodeGroupDetails(@Param('groupId') groupId: string) {
-    return this.codeService.getCodeGroupDetails(String(groupId));
+  async getCodeGroupDetails(@Param('groupId', new ParseUUIDPipe({ version: '4' })) groupId: string) {
+    return this.codeService.getCodeGroupDetails(groupId);
   }
 
   @Get('group/:groupId/export')
@@ -98,16 +99,16 @@ export class CodeManagementController {
     description: 'Codes in multiple export formats',
   })
   async exportCodesByGroup(
-    @Param('groupId') groupId: string,
+    @Param('groupId', new ParseUUIDPipe({ version: '4' })) groupId: string,
     @Query('status') status?: 'ACTIVE' | 'USED' | 'INACTIVE',
   ): Promise<CodeExportDto> {
-    return this.codeService.getCodesByGroup(String(groupId), status);
+    return this.codeService.getCodesByGroup(groupId, status);
   }
 
   @Patch('group/:groupId/deactivate-all')
   @ApiOperation({ summary: 'Deactivate all active codes in a group' })
   @ApiOkResponse({ description: 'Codes deactivated' })
-  async deactivateCodeGroup(@Param('groupId') groupId: string) {
-    return this.codeService.deactivateCodeGroup(String(groupId));
+  async deactivateCodeGroup(@Param('groupId', new ParseUUIDPipe({ version: '4' })) groupId: string) {
+    return this.codeService.deactivateCodeGroup(groupId);
   }
 }

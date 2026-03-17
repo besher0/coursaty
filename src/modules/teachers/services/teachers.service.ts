@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -13,6 +13,32 @@ export class TeachersService {
   ) {}
 
   async create(dto: CreateTeacherDto) {
+    const hasAnyAffiliationField =
+      dto.universityId !== undefined || dto.collegeId !== undefined || dto.departmentId !== undefined;
+
+    if (hasAnyAffiliationField && (!dto.universityId || !dto.collegeId)) {
+      throw new BadRequestException('universityId and collegeId are required when creating initial affiliation');
+    }
+
+    if (dto.universityId && dto.collegeId) {
+      const university = await this.prisma.university.findUnique({ where: { id: dto.universityId } });
+      if (!university) throw new NotFoundException('University not found');
+
+      const college = await this.prisma.college.findUnique({ where: { id: dto.collegeId } });
+      if (!college) throw new NotFoundException('College not found');
+      if (college.universityId !== dto.universityId) {
+        throw new ForbiddenException('College does not belong to university');
+      }
+
+      if (dto.departmentId !== undefined) {
+        const department = await this.prisma.department.findUnique({ where: { id: dto.departmentId } });
+        if (!department) throw new NotFoundException('Department not found');
+        if (department.collegeId !== dto.collegeId) {
+          throw new ForbiddenException('Department does not belong to college');
+        }
+      }
+    }
+
     const teacher = await this.prisma.teacher.create({
       data: {
         name: dto.name,
@@ -20,6 +46,18 @@ export class TeachersService {
         image: dto.image,
       },
     });
+
+    if (dto.universityId && dto.collegeId) {
+      await this.prisma.teacherAffiliation.create({
+        data: {
+          teacherId: teacher.id,
+          universityId: dto.universityId,
+          collegeId: dto.collegeId,
+          departmentId: dto.departmentId ?? null,
+        },
+      });
+    }
+
     return teacher;
   }
 
@@ -46,17 +84,17 @@ export class TeachersService {
     return { dbUser, teacher };
   }
 
-  private async getTeacherById(teacherId: number) {
-    const teacher = await this.prisma.teacher.findUnique({ where: { id: String(teacherId) } });
+  private async getTeacherById(teacherId: string) {
+    const teacher = await this.prisma.teacher.findUnique({ where: { id: teacherId } });
     if (!teacher) throw new NotFoundException('Teacher not found');
     return teacher;
   }
 
-  private normalizeSubjectIds(subjectIds: number[]) {
-    return Array.from(new Set(subjectIds)).map((id) => String(id));
+  private normalizeSubjectIds(subjectIds: string[]) {
+    return Array.from(new Set(subjectIds));
   }
 
-  private async ensureSubjectsExist(subjectIds: number[]) {
+  private async ensureSubjectsExist(subjectIds: string[]) {
     const subjectIdsBig = this.normalizeSubjectIds(subjectIds);
     const subjects = await this.prisma.subject.findMany({ where: { id: { in: subjectIdsBig } } });
     if (subjects.length !== subjectIdsBig.length) {
@@ -71,20 +109,20 @@ export class TeachersService {
     return { page: safePage, limit: safeLimit, skip, take: safeLimit };
   }
 
-  private async validateAffiliationScope(universityId: number, collegeId: number, departmentId?: number) {
-    const university = await this.prisma.university.findUnique({ where: { id: String(universityId) } });
+  private async validateAffiliationScope(universityId: string, collegeId: string, departmentId?: string) {
+    const university = await this.prisma.university.findUnique({ where: { id: universityId } });
     if (!university) throw new NotFoundException('University not found');
 
-    const college = await this.prisma.college.findUnique({ where: { id: String(collegeId) } });
+    const college = await this.prisma.college.findUnique({ where: { id: collegeId } });
     if (!college) throw new NotFoundException('College not found');
-    if (college.universityId.toString() !== universityId.toString()) {
+    if (college.universityId !== universityId) {
       throw new ForbiddenException('College does not belong to university');
     }
 
     if (departmentId !== undefined) {
-      const department = await this.prisma.department.findUnique({ where: { id: String(departmentId) } });
+      const department = await this.prisma.department.findUnique({ where: { id: departmentId } });
       if (!department) throw new NotFoundException('Department not found');
-      if (department.collegeId.toString() !== collegeId.toString()) {
+      if (department.collegeId !== collegeId) {
         throw new ForbiddenException('Department does not belong to college');
       }
     }
@@ -101,9 +139,9 @@ export class TeachersService {
 
   async addMyAffiliation(
     user: { userId: string | number; type: string },
-    universityId: number,
-    collegeId: number,
-    departmentId?: number,
+    universityId: string,
+    collegeId: string,
+    departmentId?: string,
   ) {
     const { teacher } = await this.getTeacherContext(user);
     await this.validateAffiliationScope(universityId, collegeId, departmentId);
@@ -111,9 +149,9 @@ export class TeachersService {
     const existing = await this.prisma.teacherAffiliation.findFirst({
       where: {
         teacherId: teacher.id,
-        universityId: String(universityId),
-        collegeId: String(collegeId),
-        departmentId: departmentId ? String(departmentId) : null,
+        universityId,
+        collegeId,
+        departmentId: departmentId ?? null,
       },
     });
 
@@ -122,26 +160,26 @@ export class TeachersService {
     return this.prisma.teacherAffiliation.create({
       data: {
         teacherId: teacher.id,
-        universityId: String(universityId),
-        collegeId: String(collegeId),
-        departmentId: departmentId ? String(departmentId) : null,
+        universityId,
+        collegeId,
+        departmentId: departmentId ?? null,
       },
     });
   }
 
   async removeMyAffiliation(
     user: { userId: string | number; type: string },
-    universityId: number,
-    collegeId: number,
-    departmentId?: number,
+    universityId: string,
+    collegeId: string,
+    departmentId?: string,
   ) {
     const { teacher } = await this.getTeacherContext(user);
     const affiliation = await this.prisma.teacherAffiliation.findFirst({
       where: {
         teacherId: teacher.id,
-        universityId: String(universityId),
-        collegeId: String(collegeId),
-        departmentId: departmentId ? String(departmentId) : null,
+        universityId,
+        collegeId,
+        departmentId: departmentId ?? null,
       },
     });
 
@@ -426,11 +464,11 @@ export class TeachersService {
 
   
 
-  async listAllowedSubjects(teacherId: number) {
+  async listAllowedSubjects(teacherId: string) {
     await this.getTeacherById(teacherId);
 
     const permissions = await this.prisma.teacherSubjectPermission.findMany({
-      where: { teacherId: String(teacherId) },
+      where: { teacherId },
       include: {
         subject: {
           select: {
@@ -462,10 +500,10 @@ export class TeachersService {
 
   async listMyAllowedSubjects(user: { userId: string | number; type: string }) {
     const { teacher } = await this.getTeacherContext(user);
-    return this.listAllowedSubjects(Number(teacher.id));
+    return this.listAllowedSubjects(teacher.id);
   }
 
-  async addAllowedSubjects(teacherId: number, subjectIds: number[]) {
+  async addAllowedSubjects(teacherId: string, subjectIds: string[]) {
     await this.getTeacherById(teacherId);
     await this.ensureSubjectsExist(subjectIds);
 
@@ -473,7 +511,7 @@ export class TeachersService {
 
     await this.prisma.teacherSubjectPermission.createMany({
       data: subjectIdsBig.map((subjectId) => ({
-        teacherId: String(teacherId),
+        teacherId,
         subjectId,
       })),
       skipDuplicates: true,
@@ -482,12 +520,12 @@ export class TeachersService {
     return { addedCount: subjectIdsBig.length };
   }
 
-  async removeAllowedSubjects(teacherId: number, subjectIds: number[]) {
+  async removeAllowedSubjects(teacherId: string, subjectIds: string[]) {
     await this.getTeacherById(teacherId);
 
     const subjectIdsBig = this.normalizeSubjectIds(subjectIds);
     const result = await this.prisma.teacherSubjectPermission.deleteMany({
-      where: { teacherId: String(teacherId), subjectId: { in: subjectIdsBig } },
+      where: { teacherId, subjectId: { in: subjectIdsBig } },
     });
 
     return { removedCount: result.count };

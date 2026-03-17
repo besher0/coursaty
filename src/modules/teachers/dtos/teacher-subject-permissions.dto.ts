@@ -1,11 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ArrayNotEmpty, IsArray, IsNumber, IsPositive } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsUUID } from 'class-validator';
 
 export class TeacherSubjectPermissionsDto {
-  @ApiProperty({ type: [Number] })
+  @ApiProperty({ type: [String] })
   @IsArray()
   @ArrayNotEmpty()
-  @IsNumber({}, { each: true })
-  @IsPositive({ each: true })
-  subjectIds: number[];
+  @IsUUID('4', { each: true })
+  subjectIds: string[];
 }

@@ -43,16 +43,16 @@ export class CourseService {
     });
   }
 
-  async updateCourseCategory(id: number, name?: string, isProgram?: boolean) {
+  async updateCourseCategory(id: string, name?: string, isProgram?: boolean) {
     return this.prisma.courseCategory.update({
-      where: { id: String(id) },
+      where: { id },
       data: { name, isProgram },
     });
   }
 
-  async deleteCourseCategory(id: number) {
+  async deleteCourseCategory(id: string) {
     return this.prisma.courseCategory.delete({
-      where: { id: String(id) },
+      where: { id },
     });
   }
 
@@ -307,16 +307,6 @@ export class CourseService {
         lectures: {
           include: {
             _count: { select: { videos: true, files: true, questions: true } },
-            videos: {
-              select: {
-                id: true,
-                videoName: true,
-                videoUrl: true,
-                durationSeconds: true,
-                viewsCount: true,
-                isFree: true,
-              },
-            },
           },
           orderBy: { sortOrder: 'asc' },
         },
@@ -377,22 +367,6 @@ export class CourseService {
         filesCount: totalFiles,
         questionsCount: totalQuestions,
       },
-      videos: course.lectures.flatMap((lec) =>
-        lec.videos.map((video) => {
-          const unlocked = hasAccess || video.isFree;
-          return {
-            id: video.id,
-            lectureId: lec.id,
-            lectureTitle: lec.title,
-            name: video.videoName,
-            durationSeconds: video.durationSeconds,
-            viewsCount: video.viewsCount,
-            isFree: video.isFree,
-            locked: !unlocked,
-            videoUrl: unlocked ? video.videoUrl : null,
-          };
-        }),
-      ),
       lectures: course.lectures.map((lec) => ({
         id: lec.id,
         title: lec.title,
@@ -550,8 +524,8 @@ export class CourseService {
     };
   }
 
-  async uploadLectureVideo(lectureId: number, file: any, user?: { userId: string | number; type: string }) {
-    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
+  async uploadLectureVideo(lectureId: string, file: any, user?: { userId: string | number; type: string }) {
+    const lecture = await this.prisma.lecture.findUnique({ where: { id: lectureId } });
     if (!lecture) throw new NotFoundException('Lecture not found');
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
 
@@ -562,7 +536,7 @@ export class CourseService {
 
     return this.prisma.video.create({
       data: {
-        lectureId: String(lectureId),
+        lectureId,
         videoName: file.originalname,
         videoUrl: playbackUrl,
         durationSeconds: null,

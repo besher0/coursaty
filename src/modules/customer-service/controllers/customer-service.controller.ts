@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CustomerServiceService } from '../services/customer-service.service';
 import { CreateCustomerServiceDto } from '../dtos/create-customer-service.dto';
@@ -29,7 +29,7 @@ export class CustomerServiceController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get customer service by ID' })
-  findOne(@Param('id', ParseIntPipe) id: number) {
+  findOne(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.service.findOne(id);
   }
 
@@ -38,7 +38,7 @@ export class CustomerServiceController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCustomerServiceDto) {
+  update(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Body() dto: UpdateCustomerServiceDto) {
     return this.service.update(id, dto);
   }
 
@@ -47,7 +47,7 @@ export class CustomerServiceController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.service.remove(id);
   }
 }

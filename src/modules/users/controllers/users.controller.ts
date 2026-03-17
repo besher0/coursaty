@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, UseGuards, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, UseGuards, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UsersService } from '../services/users.service';
 import { UpdateFcmDto } from '../dtos/update-fcm.dto';
@@ -16,7 +16,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Update user FCM token' })
   @ApiOkResponse({ description: 'FCM token updated' })
   async updateFcm(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() body: UpdateFcmDto,
   ) {
     return this.users.updateFcmToken(id, body.fcmToken);

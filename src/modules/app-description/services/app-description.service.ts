@@ -22,26 +22,26 @@ export class AppDescriptionService {
     });
   }
 
-  async findOne(id: number) {
+  async findOne(id: string) {
     const description = await this.prisma.appDescription.findUnique({
-      where: { id: String(id) },
+      where: { id },
     });
     if (!description) throw new NotFoundException('App description not found');
     return description;
   }
 
-  async update(id: number, dto: UpdateAppDescriptionDto) {
+  async update(id: string, dto: UpdateAppDescriptionDto) {
     await this.findOne(id);
     return this.prisma.appDescription.update({
-      where: { id: String(id) },
+      where: { id },
       data: dto,
     });
   }
 
-  async remove(id: number) {
+  async remove(id: string) {
     await this.findOne(id);
     return this.prisma.appDescription.delete({
-      where: { id: String(id) },
+      where: { id },
     });
   }
 }

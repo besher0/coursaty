@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CourseService } from '../services/course.service';
@@ -45,7 +45,7 @@ export class CourseController {
   @ApiOperation({ summary: 'Update course category' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  updateCourseCategory(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCourseCategoryDto) {
+  updateCourseCategory(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Body() dto: UpdateCourseCategoryDto) {
     return this.courseService.updateCourseCategory(id, dto.name, dto.isProgram);
   }
 
@@ -53,7 +53,7 @@ export class CourseController {
   @ApiOperation({ summary: 'Delete course category' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  deleteCourseCategory(@Param('id', ParseIntPipe) id: number) {
+  deleteCourseCategory(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.courseService.deleteCourseCategory(id);
   }
 
@@ -132,7 +132,7 @@ export class CourseController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
   async uploadLectureVideo(
-    @Param('lectureId', ParseIntPipe) lectureId: number,
+    @Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string,
     @UploadedFile() file: any,
     @Req() req: any,
   ) {

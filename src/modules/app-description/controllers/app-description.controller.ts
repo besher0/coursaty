@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AppDescriptionService } from '../services/app-description.service';
 import { CreateAppDescriptionDto } from '../dtos/create-app-description.dto';
@@ -29,7 +29,7 @@ export class AppDescriptionController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get app description by ID' })
-  findOne(@Param('id', ParseIntPipe) id: number) {
+  findOne(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.service.findOne(id);
   }
 
@@ -38,7 +38,7 @@ export class AppDescriptionController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateAppDescriptionDto) {
+  update(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Body() dto: UpdateAppDescriptionDto) {
     return this.service.update(id, dto);
   }
 
@@ -47,7 +47,7 @@ export class AppDescriptionController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.service.remove(id);
   }
 }

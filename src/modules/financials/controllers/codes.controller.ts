@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { FinancialsService } from '../services/financials.service';
 import { $Enums } from '@prisma/client';
@@ -44,14 +44,14 @@ export class CodesController {
   @ApiOperation({ summary: 'List codes' })
   @ApiQuery({ name: 'codeGroupId', required: false })
   list(@Query('codeGroupId') codeGroupId?: string) {
-    return this.financials.listCodes(codeGroupId ? Number(codeGroupId) : undefined);
+    return this.financials.listCodes(codeGroupId);
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update code status' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateCodeDto) {
+  update(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Body() body: UpdateCodeDto) {
     return this.financials.updateCode(id, body);
   }
 
@@ -59,7 +59,7 @@ export class CodesController {
   @ApiOperation({ summary: 'Delete code' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  remove(@Param('id', ParseIntPipe) id: number) {
+  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.financials.deleteCode(id);
   }
 
@@ -67,7 +67,7 @@ export class CodesController {
   @ApiOperation({ summary: 'Activate code' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  activate(@Param('id', ParseIntPipe) id: number) {
+  activate(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.financials.activateCode(id);
   }
 
@@ -75,7 +75,7 @@ export class CodesController {
   @ApiOperation({ summary: 'Deactivate code' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  deactivate(@Param('id', ParseIntPipe) id: number) {
+  deactivate(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.financials.deactivateCode(id);
   }
 }

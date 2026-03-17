@@ -31,29 +31,29 @@ export class CustomerServiceService {
     });
   }
 
-  async findOne(id: number) {
+  async findOne(id: string) {
     const service = await this.prisma.customerService.findUnique({
-      where: { id: String(id) },
+      where: { id },
     });
     if (!service) throw new CustomerServiceNotFoundError();
     return service;
   }
 
-  async update(id: number, dto: UpdateCustomerServiceDto) {
+  async update(id: string, dto: UpdateCustomerServiceDto) {
     const existing = await this.findOne(id);
     const entity = CustomerServiceMapper.toDomain(existing);
     entity.update(dto);
 
     return this.prisma.customerService.update({
-      where: { id: String(id) },
+      where: { id },
       data: CustomerServiceMapper.toPersistenceUpdate(entity),
     });
   }
 
-  async remove(id: number) {
+  async remove(id: string) {
     await this.findOne(id);
     return this.prisma.customerService.delete({
-      where: { id: String(id) },
+      where: { id },
     });
   }
 }
