@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { LecturesService } from '../services/lectures.service';
 import { CreateLectureDto } from '../dtos/create-lecture.dto';
@@ -34,6 +34,7 @@ export class LecturesController {
 
   @Get('course/:courseId')
   @ApiOperation({ summary: 'List lectures for course' })
+  @ApiParam({ name: 'courseId', type: String, format: 'uuid', description: 'Course UUID' })
   @UseGuards(JwtAuthGuard)
   list(@Param('courseId', new ParseUUIDPipe({ version: '4' })) courseId: string, @Req() req: any) {
     return this.lectures.listLectures(courseId, req.user);

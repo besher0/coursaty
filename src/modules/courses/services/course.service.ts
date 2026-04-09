@@ -524,6 +524,107 @@ export class CourseService {
     };
   }
 
+  async getCourseStatistics(courseId: string, user: { userId: string | number; type: string }) {
+    await this.assertCourseOwnership(user, courseId);
+
+    const course = await this.prisma.course.findUnique({
+      where: { id: String(courseId) },
+      select: {
+        id: true,
+        name: true,
+        createdAt: true,
+        expiresAt: true,
+        price: true,
+        courseDiscountPercentage: true,
+        teacherPercentage: true,
+      },
+    });
+
+    if (!course) throw new NotFoundException('Course not found');
+
+    const [subscriptionsAgg, subscriptionsCount, ratingsAgg, uniqueRaters] = await this.prisma.$transaction([
+      this.prisma.studentSubscription.aggregate({
+        where: { courseId: course.id },
+        _sum: {
+          finalPrice: true,
+        },
+      }),
+      this.prisma.studentSubscription.count({
+        where: { courseId: course.id },
+      }),
+      this.prisma.videoInteraction.aggregate({
+        where: {
+          rating: { not: null },
+          video: {
+            lecture: {
+              courseId: course.id,
+            },
+          },
+        },
+        _avg: { rating: true },
+      }),
+      this.prisma.videoInteraction.findMany({
+        where: {
+          rating: { not: null },
+          video: {
+            lecture: {
+              courseId: course.id,
+            },
+          },
+        },
+        distinct: ['userId'],
+        select: { userId: true },
+      }),
+    ]);
+
+    const basePrice = Number(course.price ?? 0);
+    const discountPercentage = Number(course.courseDiscountPercentage ?? 0);
+    const discountedPrice = Math.max(0, basePrice - (basePrice * discountPercentage) / 100);
+
+    const grossRevenue = Number(subscriptionsAgg._sum.finalPrice ?? 0);
+    const teacherPercentage = Number(course.teacherPercentage ?? 0);
+    const platformPercentage = Math.max(0, 100 - teacherPercentage);
+
+    const requesterType = user?.type;
+    const myPercentage = requesterType === 'TEACHER' ? teacherPercentage : platformPercentage;
+    const netRevenue = (grossRevenue * myPercentage) / 100;
+
+    return {
+      course: {
+        id: course.id,
+        name: course.name,
+        publishedAt: course.createdAt,
+        expiresAt: course.expiresAt,
+      },
+      subscriptionPrice: {
+        beforeDiscount: Number(basePrice.toFixed(2)),
+        discountPercentage: Number(discountPercentage.toFixed(2)),
+        afterDiscount: Number(discountedPrice.toFixed(2)),
+        hasDiscount: discountPercentage > 0,
+      },
+      subscriptions: {
+        count: subscriptionsCount,
+      },
+      rating: {
+        outOf: 5,
+        average: Number((Number(ratingsAgg._avg.rating ?? 0)).toFixed(2)),
+        ratersCount: uniqueRaters.length,
+      },
+      revenue: {
+        beforePercentage: Number(grossRevenue.toFixed(2)),
+        afterPercentage: Number(netRevenue.toFixed(2)),
+      },
+      percentages: {
+        myPercentage: Number(myPercentage.toFixed(2)),
+        teacherPercentage: Number(teacherPercentage.toFixed(2)),
+        platformPercentage: Number(platformPercentage.toFixed(2)),
+      },
+      context: {
+        role: requesterType,
+      },
+    };
+  }
+
   async uploadLectureVideo(lectureId: string, file: any, user?: { userId: string | number; type: string }) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: lectureId } });
     if (!lecture) throw new NotFoundException('Lecture not found');

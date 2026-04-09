@@ -79,6 +79,14 @@ export class CourseController {
     return this.courseService.getAdminCourseDetails(id);
   }
 
+  @Get(':id/statistics')
+  @ApiOperation({ summary: 'Get course statistics for admin or course owner teacher' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'TEACHER')
+  async getCourseStatistics(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
+    return this.courseService.getCourseStatistics(id, req.user);
+  }
+
   @Get()
   @ApiOperation({ summary: 'List courses with counts' })
   async listCourses() {
