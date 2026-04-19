@@ -4,6 +4,7 @@
   "description": "University LMS backend built with NestJS, Prisma, PostgreSQL",
   "main": "dist/main.js",
   "scripts": {
+    "prebuild": "prisma generate",
     "build": "nest build",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
