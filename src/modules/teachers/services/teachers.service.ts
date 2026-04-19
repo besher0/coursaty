@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+﻿import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -17,24 +17,24 @@ export class TeachersService {
       dto.universityId !== undefined || dto.collegeId !== undefined || dto.departmentId !== undefined;
 
     if (hasAnyAffiliationField && (!dto.universityId || !dto.collegeId)) {
-      throw new BadRequestException('universityId and collegeId are required when creating initial affiliation');
+      throw new BadRequestException('عند إنشاء الانتساب الأولي، حقلا universityId و collegeId مطلوبان');
     }
 
     if (dto.universityId && dto.collegeId) {
       const university = await this.prisma.university.findUnique({ where: { id: dto.universityId } });
-      if (!university) throw new NotFoundException('University not found');
+      if (!university) throw new NotFoundException('الجامعة غير موجودة');
 
       const college = await this.prisma.college.findUnique({ where: { id: dto.collegeId } });
-      if (!college) throw new NotFoundException('College not found');
+      if (!college) throw new NotFoundException('الكلية غير موجودة');
       if (college.universityId !== dto.universityId) {
-        throw new ForbiddenException('College does not belong to university');
+        throw new ForbiddenException('الكلية لا تتبع للجامعة');
       }
 
       if (dto.departmentId !== undefined) {
         const department = await this.prisma.department.findUnique({ where: { id: dto.departmentId } });
-        if (!department) throw new NotFoundException('Department not found');
+        if (!department) throw new NotFoundException('القسم غير موجود');
         if (department.collegeId !== dto.collegeId) {
-          throw new ForbiddenException('Department does not belong to college');
+          throw new ForbiddenException('القسم لا يتبع للكلية');
         }
       }
     }
@@ -73,20 +73,20 @@ export class TeachersService {
   }
 
   private async getTeacherContext(user: { userId: string | number; type: string }) {
-    if (!user || user.type !== 'TEACHER') throw new ForbiddenException('Teacher role required');
+    if (!user || user.type !== 'TEACHER') throw new ForbiddenException('صلاحية مدرس مطلوبة');
 
     const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new NotFoundException('User not found');
+    if (!dbUser) throw new NotFoundException('المستخدم غير موجود');
 
     const teacher = await this.prisma.teacher.findUnique({ where: { id: dbUser.userableId } });
-    if (!teacher) throw new NotFoundException('Teacher not found');
+    if (!teacher) throw new NotFoundException('المدرس غير موجود');
 
     return { dbUser, teacher };
   }
 
   private async getTeacherById(teacherId: string) {
     const teacher = await this.prisma.teacher.findUnique({ where: { id: teacherId } });
-    if (!teacher) throw new NotFoundException('Teacher not found');
+    if (!teacher) throw new NotFoundException('المدرس غير موجود');
     return teacher;
   }
 
@@ -98,7 +98,7 @@ export class TeachersService {
     const subjectIdsBig = this.normalizeSubjectIds(subjectIds);
     const subjects = await this.prisma.subject.findMany({ where: { id: { in: subjectIdsBig } } });
     if (subjects.length !== subjectIdsBig.length) {
-      throw new NotFoundException('Some subjects were not found');
+      throw new NotFoundException('بعض المواد غير موجودة');
     }
   }
 
@@ -111,19 +111,19 @@ export class TeachersService {
 
   private async validateAffiliationScope(universityId: string, collegeId: string, departmentId?: string) {
     const university = await this.prisma.university.findUnique({ where: { id: universityId } });
-    if (!university) throw new NotFoundException('University not found');
+    if (!university) throw new NotFoundException('الجامعة غير موجودة');
 
     const college = await this.prisma.college.findUnique({ where: { id: collegeId } });
-    if (!college) throw new NotFoundException('College not found');
+    if (!college) throw new NotFoundException('الكلية غير موجودة');
     if (college.universityId !== universityId) {
-      throw new ForbiddenException('College does not belong to university');
+      throw new ForbiddenException('الكلية لا تتبع للجامعة');
     }
 
     if (departmentId !== undefined) {
       const department = await this.prisma.department.findUnique({ where: { id: departmentId } });
-      if (!department) throw new NotFoundException('Department not found');
+      if (!department) throw new NotFoundException('القسم غير موجود');
       if (department.collegeId !== collegeId) {
-        throw new ForbiddenException('Department does not belong to college');
+        throw new ForbiddenException('القسم لا يتبع للكلية');
       }
     }
   }
@@ -183,7 +183,7 @@ export class TeachersService {
       },
     });
 
-    if (!affiliation) throw new NotFoundException('Affiliation not found');
+    if (!affiliation) throw new NotFoundException('الانتساب غير موجود');
 
     return this.prisma.teacherAffiliation.delete({ where: { id: affiliation.id } });
   }
@@ -531,3 +531,5 @@ export class TeachersService {
     return { removedCount: result.count };
   }
 }
+
+

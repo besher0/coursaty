@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { BunnyService } from '@/shared/bunny/bunny.service';
 import { CreateLectureDto } from '../dtos/create-lecture.dto';
@@ -86,7 +86,7 @@ export class LecturesService {
 
   async uploadLectureFile(lectureId: string, file: any, user?: { userId: string | number; type: string }) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
-    if (!lecture) throw new NotFoundException('Lecture not found');
+    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
     await this.assertCourseOwnership(user, lecture.courseId);
 
     const path = `lectures/${lectureId}/${file.originalname}`;
@@ -117,7 +117,7 @@ export class LecturesService {
 
   async updateLectureFile(id: string, dto: UpdateLectureFileDto, user?: { userId: string | number; type: string }) {
     const file = await this.prisma.lectureFile.findUnique({ where: { id: String(id) } });
-    if (!file) throw new NotFoundException('Lecture file not found');
+    if (!file) throw new NotFoundException('ملف المحاضرة غير موجود');
     await this.assertLectureOwnership(user, file.lectureId);
 
     const data: any = {};
@@ -128,7 +128,7 @@ export class LecturesService {
 
   async deleteLectureFile(id: string, user?: { userId: string | number; type: string }) {
     const file = await this.prisma.lectureFile.findUnique({ where: { id: String(id) } });
-    if (!file) throw new NotFoundException('Lecture file not found');
+    if (!file) throw new NotFoundException('ملف المحاضرة غير موجود');
     await this.assertLectureOwnership(user, file.lectureId);
     return this.prisma.lectureFile.delete({ where: { id: String(id) } });
   }
@@ -137,15 +137,15 @@ export class LecturesService {
     if (!user || user.type !== 'STUDENT') return;
 
     const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new ForbiddenException('User not found');
+    if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
 
     const course = await this.prisma.course.findUnique({
       where: { id: String(courseId) },
       select: { expiresAt: true },
     });
-    if (!course) throw new NotFoundException('Course not found');
+    if (!course) throw new NotFoundException('الكورس غير موجود');
     if (course.expiresAt && course.expiresAt.getTime() <= Date.now()) {
-      throw new ForbiddenException('Course access expired');
+      throw new ForbiddenException('انتهت صلاحية الوصول للكورس');
     }
 
     const subscription = await this.prisma.studentSubscription.findUnique({
@@ -154,7 +154,7 @@ export class LecturesService {
       },
     });
 
-    if (!subscription) throw new ForbiddenException('Subscription required');
+    if (!subscription) throw new ForbiddenException('يلزم اشتراك');
   }
 
   private async hasStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {
@@ -177,7 +177,7 @@ export class LecturesService {
       where: { id: String(courseId) },
       select: { id: true, teacherId: true, isFree: true, expiresAt: true },
     });
-    if (!course) throw new NotFoundException('Course not found');
+    if (!course) throw new NotFoundException('الكورس غير موجود');
 
     const isExpired = !!course.expiresAt && course.expiresAt.getTime() <= Date.now();
 
@@ -191,7 +191,7 @@ export class LecturesService {
 
     if (user.type === 'TEACHER') {
       const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-      if (!dbUser) throw new ForbiddenException('User not found');
+      if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
       const isOwner = course.teacherId.toString() === dbUser.userableId.toString();
       return { hasAccess: isOwner, isOwnerOrAdmin: isOwner, isStudent: false };
     }
@@ -205,15 +205,15 @@ export class LecturesService {
     courseId: string | number,
   ) {
     if (!user || user.type === 'ADMIN') return;
-    if (user.type !== 'TEACHER') throw new ForbiddenException('Teacher role required');
+    if (user.type !== 'TEACHER') throw new ForbiddenException('صلاحية مدرس مطلوبة');
 
     const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new ForbiddenException('User not found');
+    if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
 
     const course = await this.prisma.course.findUnique({ where: { id: String(courseId) } });
-    if (!course) throw new NotFoundException('Course not found');
+    if (!course) throw new NotFoundException('الكورس غير موجود');
     if (course.teacherId.toString() !== dbUser.userableId.toString()) {
-      throw new ForbiddenException('You do not own this course');
+      throw new ForbiddenException('أنت لا تملك هذا الكورس');
     }
   }
 
@@ -223,7 +223,7 @@ export class LecturesService {
   ) {
     if (!user || user.type === 'ADMIN') return;
     const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
-    if (!lecture) throw new NotFoundException('Lecture not found');
+    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
     return this.assertCourseOwnership(user, lecture.courseId);
   }
 
@@ -244,7 +244,7 @@ export class LecturesService {
       },
     });
 
-    if (!lecture) throw new NotFoundException('Lecture not found');
+    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
 
     const { hasAccess, isOwnerOrAdmin, isStudent } = await this.getCourseAccess(user, lecture.course.id);
 
@@ -311,7 +311,7 @@ export class LecturesService {
     user?: { userId: string | number; type: string },
   ) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
-    if (!lecture) throw new NotFoundException('Lecture not found');
+    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
     await this.assertCourseOwnership(user, lecture.courseId);
 
     const title = dto.videoName || file.originalname || 'video';
@@ -335,7 +335,7 @@ export class LecturesService {
       where: { id: String(id) },
       include: { lecture: { select: { courseId: true } } },
     });
-    if (!video) throw new NotFoundException('Video not found');
+    if (!video) throw new NotFoundException('الفيديو غير موجود');
     await this.assertCourseOwnership(user, video.lecture.courseId);
 
     const data: any = {};
@@ -350,7 +350,7 @@ export class LecturesService {
       where: { id: String(id) },
       include: { lecture: { select: { courseId: true } } },
     });
-    if (!video) throw new NotFoundException('Video not found');
+    if (!video) throw new NotFoundException('الفيديو غير موجود');
     await this.assertCourseOwnership(user, video.lecture.courseId);
 
     // Clean up related records manually (e.g., interactions); extend here for other related models
@@ -367,14 +367,14 @@ export class LecturesService {
     user?: { userId: string | number; type: string },
   ) {
     if (dto.endSeconds <= dto.startSeconds) {
-      throw new BadRequestException('endSeconds must be greater than startSeconds');
+      throw new BadRequestException('يجب أن تكون endSeconds أكبر من startSeconds');
     }
 
     const video = await this.prisma.video.findUnique({
       where: { id: String(videoId) },
       include: { lecture: { select: { courseId: true } } },
     });
-    if (!video) throw new NotFoundException('Video not found');
+    if (!video) throw new NotFoundException('الفيديو غير موجود');
 
     await this.assertCourseOwnership(user, video.lecture.courseId);
 
@@ -394,7 +394,7 @@ export class LecturesService {
       where: { id: String(videoId) },
       include: { lecture: { select: { courseId: true } } },
     });
-    if (!video) throw new NotFoundException('Video not found');
+    if (!video) throw new NotFoundException('الفيديو غير موجود');
 
     await this.assertStudentSubscription(user, video.lecture.courseId);
 
@@ -422,7 +422,7 @@ export class LecturesService {
     });
 
     if (!segment || segment.videoId !== String(videoId)) {
-      throw new NotFoundException('Video segment not found');
+      throw new NotFoundException('مقطع الفيديو غير موجود');
     }
 
     await this.assertCourseOwnership(user, segment.video.lecture.courseId);
@@ -430,7 +430,7 @@ export class LecturesService {
     const nextStart = dto.startSeconds ?? segment.startSeconds;
     const nextEnd = dto.endSeconds ?? segment.endSeconds;
     if (nextEnd <= nextStart) {
-      throw new BadRequestException('endSeconds must be greater than startSeconds');
+      throw new BadRequestException('يجب أن تكون endSeconds أكبر من startSeconds');
     }
 
     const data: any = {};
@@ -462,7 +462,7 @@ export class LecturesService {
     });
 
     if (!segment || segment.videoId !== String(videoId)) {
-      throw new NotFoundException('Video segment not found');
+      throw new NotFoundException('مقطع الفيديو غير موجود');
     }
 
     await this.assertCourseOwnership(user, segment.video.lecture.courseId);
@@ -473,26 +473,26 @@ export class LecturesService {
   // Questions
   async createQuestion(dto: CreateQuestionDto, user?: { userId: string | number; type: string }) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: String(dto.lectureId) } });
-    if (!lecture) throw new NotFoundException('Lecture not found');
+    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
     await this.assertLectureOwnership(user, lecture.id);
 
     if (!dto.questionText && !dto.imageUrl) {
-      throw new BadRequestException('questionText or imageUrl is required');
+      throw new BadRequestException('يجب توفير questionText أو imageUrl');
     }
 
     if (dto.questionType === 'short_answer' && dto.options?.length) {
-      throw new BadRequestException('options are not allowed for short_answer');
+      throw new BadRequestException('لا يسمح بخيارات مع short_answer');
     }
 
     if (dto.questionType === 'true_false') {
       if (!dto.options || dto.options.length !== 2) {
-        throw new BadRequestException('true_false requires exactly 2 options');
+        throw new BadRequestException('نوع true_false يتطلب خيارين بالضبط');
       }
     }
 
     if (dto.questionType === 'multiple_choice') {
       if (!dto.options || dto.options.length < 2 || dto.options.length > 6) {
-        throw new BadRequestException('multiple_choice requires 2 to 6 options');
+        throw new BadRequestException('نوع multiple_choice يتطلب من 2 إلى 6 خيارات');
       }
     }
 
@@ -521,7 +521,7 @@ export class LecturesService {
 
   async listQuestions(lectureId: string, user?: { userId: string | number; type: string }) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
-    if (!lecture) throw new NotFoundException('Lecture not found');
+    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
     await this.assertStudentSubscription(user, lecture.courseId);
 
     return this.prisma.question.findMany({
@@ -536,7 +536,7 @@ export class LecturesService {
       where: { id: String(id) },
       select: { id: true, lectureId: true, questionText: true, imageUrl: true, questionType: true },
     });
-    if (!question) throw new NotFoundException('Question not found');
+    if (!question) throw new NotFoundException('السؤال غير موجود');
     await this.assertLectureOwnership(user, question.lectureId);
 
     const data: any = {};
@@ -552,18 +552,18 @@ export class LecturesService {
     const nextImage = dto.imageUrl ?? question.imageUrl;
 
     if (!nextText && !nextImage) {
-      throw new BadRequestException('questionText or imageUrl is required');
+      throw new BadRequestException('يجب توفير questionText أو imageUrl');
     }
 
     if (dto.options) {
       if (nextType === 'short_answer') {
-        throw new BadRequestException('options are not allowed for short_answer');
+        throw new BadRequestException('لا يسمح بخيارات مع short_answer');
       }
       if (nextType === 'true_false' && dto.options.length !== 2) {
-        throw new BadRequestException('true_false requires exactly 2 options');
+        throw new BadRequestException('نوع true_false يتطلب خيارين بالضبط');
       }
       if (nextType === 'multiple_choice' && (dto.options.length < 2 || dto.options.length > 6)) {
-        throw new BadRequestException('multiple_choice requires 2 to 6 options');
+        throw new BadRequestException('نوع multiple_choice يتطلب من 2 إلى 6 خيارات');
       }
     }
 
@@ -591,8 +591,9 @@ export class LecturesService {
       where: { id: String(id) },
       select: { id: true, lectureId: true },
     });
-    if (!question) throw new NotFoundException('Question not found');
+    if (!question) throw new NotFoundException('السؤال غير موجود');
     await this.assertLectureOwnership(user, question.lectureId);
 
     return this.prisma.question.delete({ where: { id: String(id) } });
   }}
+

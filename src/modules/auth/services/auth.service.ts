@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+﻿import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RegisterDto } from '../dtos/register.dto';
 import { LoginDto } from '../dtos/login.dto';
@@ -41,7 +41,7 @@ export class AuthService {
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         // Unique constraint violation (e.g., phone already taken)
-        throw new ConflictException('Phone is already registered');
+        throw new ConflictException('رقم الهاتف مسجل مسبقا');
       }
       throw err;
     }
@@ -49,9 +49,9 @@ export class AuthService {
 
   async validateUser(phone: string, password: string) {
     const user = await this.prisma.user.findUnique({ where: { phone } });
-    if (!user) throw new UnauthorizedException('Invalid credentials');
+    if (!user) throw new UnauthorizedException('بيانات الدخول غير صحيحة');
     const ok = await bcrypt.compare(password, user.password);
-    if (!ok) throw new UnauthorizedException('Invalid credentials');
+    if (!ok) throw new UnauthorizedException('بيانات الدخول غير صحيحة');
     return user;
   }
 
@@ -69,3 +69,4 @@ export class AuthService {
     };
   }
 }
+

@@ -7,16 +7,12 @@ import {
   Param,
   Delete,
   ParseUUIDPipe,
-  UseGuards,
   Req,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PointOfSalesService } from '../services/point-of-sales.service';
 import { CreatePointOfSaleDto } from '../dtos/create-point-of-sale.dto';
 import { UpdatePointOfSaleDto } from '../dtos/update-point-of-sale.dto';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../../auth/guards/roles.guard';
-import { Roles } from '../../auth/roles.decorator';
 
 @ApiTags('point-of-sales')
 @Controller('point-of-sales')
@@ -41,8 +37,6 @@ export class PointOfSalesController {
   @Get('university')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get point of sales for student university' })
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('STUDENT')
   findByStudentUniversity(@Req() req: any) {
     return this.pointOfSalesService.findByStudentToken(req.user);
   }

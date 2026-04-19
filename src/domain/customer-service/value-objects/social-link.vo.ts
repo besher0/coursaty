@@ -1,9 +1,9 @@
-export class SocialLink {
+﻿export class SocialLink {
   private constructor(private readonly value: string) {}
 
   static create(raw: string): SocialLink {
     if (!raw || typeof raw !== 'string') {
-      throw new Error('Social link is required');
+      throw new Error('رابط التواصل مطلوب');
     }
 
     const normalized = raw.trim();
@@ -12,11 +12,11 @@ export class SocialLink {
     try {
       url = new URL(normalized);
     } catch {
-      throw new Error('Invalid social link URL');
+      throw new Error('رابط التواصل غير صالح');
     }
 
     if (!['http:', 'https:'].includes(url.protocol)) {
-      throw new Error('Social link must be http or https');
+      throw new Error('رابط التواصل يجب أن يبدأ بـ http أو https');
     }
 
     return new SocialLink(normalized);
@@ -26,3 +26,4 @@ export class SocialLink {
     return this.value;
   }
 }
+

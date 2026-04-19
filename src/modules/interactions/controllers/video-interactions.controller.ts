@@ -44,7 +44,8 @@ export class VideoInteractionsController {
 
   @Post(':id/view')
   @ApiOperation({ summary: 'Increment video view with access control' })
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('STUDENT')
   incrementView(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
     return this.interactions.incrementVideoView(id, req.user);
   }

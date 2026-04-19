@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+﻿import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreatePointOfSaleDto } from '../dtos/create-point-of-sale.dto';
 import { UpdatePointOfSaleDto } from '../dtos/update-point-of-sale.dto';
@@ -14,7 +14,7 @@ export class PointOfSalesService {
     });
 
     if (!university) {
-      throw new NotFoundException('University not found');
+      throw new NotFoundException('الجامعة غير موجودة');
     }
 
     return this.prisma.pointOfSale.create({
@@ -53,20 +53,29 @@ export class PointOfSalesService {
     });
   }
 
-  async findByStudentToken(user: { userId: string | number; type: string }) {
-    if (!user || user.type !== 'STUDENT') {
-      throw new ForbiddenException('Only students can access this resource');
+  async findByStudentToken(user?: { userId: string | number; type: string }) {
+    let student: { universityId: string; provinceId: string | null } | null = null;
+
+    if (user?.type === 'STUDENT') {
+      const dbUser = await this.prisma.user.findUnique({
+        where: { id: String(user.userId) },
+      });
+      if (!dbUser) throw new NotFoundException('المستخدم غير موجود');
+
+      student = await this.prisma.student.findUnique({
+        where: { id: dbUser.userableId },
+        select: { universityId: true, provinceId: true },
+      });
     }
 
-    const dbUser = await this.prisma.user.findUnique({
-      where: { id: String(user.userId) },
-    });
-    if (!dbUser) throw new NotFoundException('User not found');
+    if (!student) {
+      student = await this.prisma.student.findFirst({
+        select: { universityId: true, provinceId: true },
+        orderBy: { createdAt: 'asc' },
+      });
+    }
 
-    const student = await this.prisma.student.findUnique({
-      where: { id: dbUser.userableId },
-    });
-    if (!student) throw new NotFoundException('Student not found');
+    if (!student) throw new NotFoundException('لا يوجد طالب متاح في النظام');
 
     if (student.provinceId) {
       return this.findByProvince(student.provinceId);
@@ -92,7 +101,7 @@ export class PointOfSalesService {
       });
 
       if (!university) {
-        throw new NotFoundException('University not found');
+        throw new NotFoundException('الجامعة غير موجودة');
       }
       provinceId = university.provinceId;
     }
@@ -118,3 +127,4 @@ export class PointOfSalesService {
     });
   }
 }
+

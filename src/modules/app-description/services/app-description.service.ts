@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+﻿import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateAppDescriptionDto } from '../dtos/create-app-description.dto';
 import { UpdateAppDescriptionDto } from '../dtos/update-app-description.dto';
@@ -26,7 +26,7 @@ export class AppDescriptionService {
     const description = await this.prisma.appDescription.findUnique({
       where: { id },
     });
-    if (!description) throw new NotFoundException('App description not found');
+    if (!description) throw new NotFoundException('وصف التطبيق غير موجود');
     return description;
   }
 
@@ -45,3 +45,4 @@ export class AppDescriptionService {
     });
   }
 }
+

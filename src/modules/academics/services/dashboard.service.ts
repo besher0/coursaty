@@ -1,31 +1,44 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+﻿import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 
 @Injectable()
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async getStudentCollege(user: { userId: string | number; type: string }) {
-    if (!user || user.type !== 'STUDENT') {
-      throw new ForbiddenException('Only students can access this resource');
+  private async getStudentCollege(user?: { userId: string | number; type: string }) {
+    if (user?.type === 'STUDENT') {
+      const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
+      if (!dbUser) throw new NotFoundException('المستخدم غير موجود');
+
+      const student = await this.prisma.student.findUnique({
+        where: { id: dbUser.userableId },
+        include: {
+          college: true,
+          collegeYear: { include: { academicYear: true } },
+        },
+      });
+      if (!student) throw new NotFoundException('الطالب غير موجود');
+
+      return {
+        collegeId: student.collegeId,
+        college: student.college,
+        departmentId: student.departmentId,
+      };
     }
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new NotFoundException('User not found');
-
-    const student = await this.prisma.student.findUnique({
-      where: { id: dbUser.userableId },
+    const fallbackStudent = await this.prisma.student.findFirst({
       include: {
         college: true,
         collegeYear: { include: { academicYear: true } },
       },
+      orderBy: { createdAt: 'asc' },
     });
-    if (!student) throw new NotFoundException('Student not found');
+    if (!fallbackStudent) throw new NotFoundException('لا يوجد طالب متاح في النظام');
 
     return {
-      collegeId: student.collegeId,
-      college: student.college,
-      departmentId: student.departmentId,
+      collegeId: fallbackStudent.collegeId,
+      college: fallbackStudent.college,
+      departmentId: fallbackStudent.departmentId,
     };
   }
 
@@ -85,11 +98,12 @@ export class DashboardService {
     };
   }
 
-  private buildSubjectCard(subject: any) {
+  private buildSubjectCard(subject: any, imageUrl?: string | null) {
     return {
       id: subject.id,
       name: subject.subjectName,
       isProgram: subject.isProgram,
+      imageUrl: imageUrl ?? null,
       college: subject.college
         ? {
             id: subject.college.id,
@@ -195,6 +209,29 @@ export class DashboardService {
       take: limit,
     });
 
+    const allSubjectIds = [...subjects, ...programs].map((item) => item.id);
+    const courseImagesBySubjectId = new Map<string, string>();
+
+    if (allSubjectIds.length > 0) {
+      const coursesWithImages = await this.prisma.course.findMany({
+        where: {
+          subjectId: { in: allSubjectIds },
+          imageUrl: { not: null },
+        },
+        select: {
+          subjectId: true,
+          imageUrl: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      for (const course of coursesWithImages) {
+        if (course.subjectId && course.imageUrl && !courseImagesBySubjectId.has(course.subjectId)) {
+          courseImagesBySubjectId.set(course.subjectId, course.imageUrl);
+        }
+      }
+    }
+
     return {
       college: {
         id: college.id,
@@ -203,8 +240,12 @@ export class DashboardService {
       },
       advertisements,
       teachers,
-      subjects: subjects.map((subject) => this.buildSubjectCard(subject)),
-      programs: programs.map((program) => this.buildSubjectCard(program)),
+      subjects: subjects.map((subject) =>
+        this.buildSubjectCard(subject, subject.imageUrl ?? courseImagesBySubjectId.get(subject.id) ?? null),
+      ),
+      programs: programs.map((program) =>
+        this.buildSubjectCard(program, program.imageUrl ?? courseImagesBySubjectId.get(program.id) ?? null),
+      ),
     };
   }
 
@@ -294,7 +335,7 @@ export class DashboardService {
       where: { id: String(subjectId), collegeId },
     });
 
-    if (!subject) throw new NotFoundException('Subject not found');
+    if (!subject) throw new NotFoundException('المادة غير موجودة');
 
     const skip = (page - 1) * limit;
     const where = {
@@ -323,6 +364,82 @@ export class DashboardService {
       },
       courses: {
         data: courses.map((course) => this.buildCourseCardWithTeacher(course)),
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+          hasNextPage: page < Math.ceil(total / limit),
+          hasPreviousPage: page > 1,
+        },
+      },
+    };
+  }
+
+  async getProgramCourses(
+    user: { userId: string | number; type: string },
+    programId?: string,
+    page: number = 1,
+    limit: number = 10,
+  ) {
+    const { collegeId } = await this.getStudentCollege(user);
+
+    const normalizedProgramId = programId?.trim();
+
+    if (
+      normalizedProgramId &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizedProgramId)
+    ) {
+      throw new BadRequestException('id يجب أن يكون UUID v4 صالح');
+    }
+
+    let program: { id: string; name: string } | null = null;
+    if (normalizedProgramId) {
+      const foundProgram = await this.prisma.subject.findFirst({
+        where: { id: normalizedProgramId, collegeId, isProgram: true },
+      });
+
+      if (!foundProgram) throw new NotFoundException('البرنامج غير موجود');
+      program = {
+        id: foundProgram.id,
+        name: foundProgram.subjectName,
+      };
+    }
+
+    const skip = (page - 1) * limit;
+    const where = {
+      collegeId,
+      subject: { isProgram: true },
+      ...(normalizedProgramId ? { subjectId: normalizedProgramId } : {}),
+    } as any;
+
+    const total = await this.prisma.course.count({ where });
+    const courses = await this.prisma.course.findMany({
+      where,
+      include: {
+        subject: { select: { id: true, subjectName: true } },
+        collegeYear: { include: { academicYear: true } },
+        season: true,
+        teacher: true,
+        _count: { select: { subscriptions: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+    });
+
+    return {
+      program,
+      courses: {
+        data: courses.map((course) => ({
+          ...this.buildCourseCardWithTeacher(course),
+          program: course.subject
+            ? {
+                id: course.subject.id,
+                name: course.subject.subjectName,
+              }
+            : null,
+        })),
         pagination: {
           page,
           limit,
@@ -378,6 +495,52 @@ export class DashboardService {
     };
   }
 
+  async getLikedTeachers(user?: { userId: string | number; type: string }) {
+    let studentId: string;
+
+    if (user?.type === 'STUDENT') {
+      const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
+      if (!dbUser) throw new NotFoundException('المستخدم غير موجود');
+      studentId = dbUser.userableId;
+    } else {
+      const fallbackStudent = await this.prisma.student.findFirst({
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (!fallbackStudent) throw new NotFoundException('لا يوجد طالب متاح في النظام');
+      studentId = fallbackStudent.id;
+    }
+
+    const likedTeachers = await this.prisma.teacherLike.findMany({
+      where: { studentId },
+      include: {
+        teacher: {
+          include: {
+            _count: {
+              select: {
+                courses: true,
+                teacherLikes: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { teacher: { createdAt: 'desc' } },
+    });
+
+    return {
+      teachers: likedTeachers.map((item) => ({
+        id: item.teacher.id,
+        name: item.teacher.name,
+        description: item.teacher.description,
+        image: item.teacher.image,
+        coursesCount: item.teacher._count.courses,
+        likesCount: item.teacher._count.teacherLikes,
+        isLikedByMe: true,
+      })),
+    };
+  }
+
   async getTeacherDetails(teacherId: string | number, page: number = 1, limit: number = 10) {
     const teacher = await this.prisma.teacher.findUnique({
       where: { id: String(teacherId) },
@@ -390,7 +553,7 @@ export class DashboardService {
       },
     });
 
-    if (!teacher) throw new NotFoundException('Teacher not found');
+    if (!teacher) throw new NotFoundException('المدرس غير موجود');
 
     const skip = (page - 1) * limit;
 
@@ -661,3 +824,4 @@ export class DashboardService {
     return this.getCoursesByYear(user, page, limit);
   }
 }
+

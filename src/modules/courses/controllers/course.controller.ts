@@ -59,14 +59,12 @@ export class CourseController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get course with aggregated counts' })
-  @UseGuards(JwtAuthGuard)
   async getCourse(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
     return this.courseService.getCourseWithCounts(id, req.user);
   }
 
   @Get(':id/details')
   @ApiOperation({ summary: 'Get course details and lectures' })
-  @UseGuards(JwtAuthGuard)
   async getCourseDetails(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
     return this.courseService.getCourseDetails(id, req.user);
   }

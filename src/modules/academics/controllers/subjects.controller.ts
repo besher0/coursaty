@@ -26,6 +26,7 @@ export class SubjectsController {
       body.subjectName,
       body.departmentId,
       body.isProgram,
+      body.imageUrl,
     );
   }
 

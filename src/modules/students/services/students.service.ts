@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+﻿import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateStudentDto } from '../dtos/create-student.dto';
 
@@ -10,7 +10,7 @@ export class StudentsService {
     const university = await this.prisma.university.findUnique({
       where: { id: dto.universityId },
     });
-    if (!university) throw new NotFoundException('University not found');
+    if (!university) throw new NotFoundException('الجامعة غير موجودة');
 
     const student = await this.prisma.student.create({
       data: {
@@ -26,3 +26,4 @@ export class StudentsService {
     return student;
   }
 }
+

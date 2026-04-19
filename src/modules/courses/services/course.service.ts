@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateCourseDto } from '../dtos/create-course.dto';
 import { BunnyService } from '../../../shared/bunny/bunny.service';
@@ -58,7 +58,7 @@ export class CourseService {
 
   async createCourse(dto: CreateCourseDto, user?: { userId: string | number; type: string }) {
     if (!dto.categoryId) {
-      throw new BadRequestException('categoryId is required');
+      throw new BadRequestException('حقل categoryId مطلوب');
     }
 
     if (dto.collegeYearId !== undefined || dto.seasonId !== undefined) {
@@ -72,20 +72,20 @@ export class CourseService {
     let teacherId: string;
     if (user?.type === 'TEACHER') {
       const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-      if (!dbUser) throw new BadRequestException('User not found');
+      if (!dbUser) throw new BadRequestException('المستخدم غير موجود');
       teacherId = dbUser.userableId;
     } else {
-      if (!dto.teacherId) throw new BadRequestException('teacherId is required for admin');
+      if (!dto.teacherId) throw new BadRequestException('حقل teacherId مطلوب للمدير');
       teacherId = await this.resolveTeacherIdForAdmin(String(dto.teacherId));
     }
 
     const category = await this.prisma.courseCategory.findUnique({
       where: { id: String(dto.categoryId) },
     });
-    if (!category) throw new BadRequestException('Course category not found');
+    if (!category) throw new BadRequestException('فئة الكورس غير موجودة');
 
     if (category.requiresAcademicLinks && !dto.subjectId) {
-      throw new BadRequestException('subjectId is required for this category');
+      throw new BadRequestException('حقل subjectId مطلوب لهذه الفئة');
     }
 
     let universityId: string | null = null;
@@ -100,9 +100,9 @@ export class CourseService {
         include: { college: true },
       });
 
-      if (!subject) throw new BadRequestException('Subject not found');
+      if (!subject) throw new BadRequestException('المادة غير موجودة');
       if (!subject.collegeYearId || !subject.seasonId) {
-        throw new BadRequestException('Subject academic identity is missing');
+        throw new BadRequestException('الهوية الأكاديمية للمادة غير مكتملة');
       }
 
       if (user?.type === 'TEACHER') {
@@ -116,7 +116,7 @@ export class CourseService {
         });
 
         if (!permission) {
-          throw new ForbiddenException('Teacher is not allowed to create courses for this subject');
+          throw new ForbiddenException('المدرس غير مخول بإنشاء كورسات لهذه المادة');
         }
       }
 
@@ -127,7 +127,7 @@ export class CourseService {
       departmentId = subject.departmentId ?? null;
     } else {
       if (!dto.universityId || !dto.collegeId) {
-        throw new BadRequestException('universityId and collegeId are required');
+        throw new BadRequestException('حقلا universityId و collegeId مطلوبان');
       }
 
       await this.ensureTeacherAffiliation(teacherId, dto.universityId, dto.collegeId, dto.departmentId);
@@ -183,13 +183,13 @@ export class CourseService {
       if (mappedTeacher) return mappedTeacher.id;
     }
 
-    throw new BadRequestException('teacherId is invalid. Use Teacher.id or a User.id of type TEACHER');
+    throw new BadRequestException('teacherId غير صالح. استخدم Teacher.id أو User.id من نوع TEACHER');
   }
 
   private async getAdminIdFromUser(user?: { userId: string | number; type: string }) {
-    if (!user || user.type !== 'ADMIN') throw new ForbiddenException('Admin role required');
+    if (!user || user.type !== 'ADMIN') throw new ForbiddenException('صلاحية مدير مطلوبة');
     const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new BadRequestException('User not found');
+    if (!dbUser) throw new BadRequestException('المستخدم غير موجود');
     return dbUser.userableId;
   }
 
@@ -197,7 +197,7 @@ export class CourseService {
     const adminId = await this.getAdminIdFromUser(user);
 
     if (Number.isNaN(teacherPercentage) || teacherPercentage < 0 || teacherPercentage > 100) {
-      throw new BadRequestException('teacherPercentage must be between 0 and 100');
+      throw new BadRequestException('نسبة المدرس يجب أن تكون بين 0 و 100');
     }
 
     return this.prisma.course.update({
@@ -254,9 +254,9 @@ export class CourseService {
     if (dto.introVideoUrl !== undefined) data.introVideoUrl = dto.introVideoUrl;
     if (dto.discussionGroupUrl !== undefined) data.discussionGroupUrl = dto.discussionGroupUrl;
     if (dto.categoryId !== undefined) {
-      if (!dto.categoryId) throw new BadRequestException('categoryId cannot be empty');
+      if (!dto.categoryId) throw new BadRequestException('لا يمكن أن يكون categoryId فارغا');
       const category = await this.prisma.courseCategory.findUnique({ where: { id: String(dto.categoryId) } });
-      if (!category) throw new BadRequestException('Course category not found');
+      if (!category) throw new BadRequestException('فئة الكورس غير موجودة');
       data.categoryId = String(dto.categoryId);
     }
 
@@ -283,7 +283,7 @@ export class CourseService {
       },
     });
 
-    if (!course) throw new NotFoundException('Course not found');
+    if (!course) throw new NotFoundException('الكورس غير موجود');
 
     const totalVideos = course.lectures.reduce((acc, lec) => acc + (lec._count?.videos ?? 0), 0);
     const totalFiles = course.lectures.reduce((acc, lec) => acc + (lec._count?.files ?? 0), 0);
@@ -314,7 +314,7 @@ export class CourseService {
       },
     });
 
-    if (!course) throw new NotFoundException('Course not found');
+    if (!course) throw new NotFoundException('الكورس غير موجود');
 
     const isOwnerOrAdmin = await this.isCourseOwnerOrAdmin(user, course.id);
     const isSubscribed = await this.hasStudentSubscription(user, course.id);
@@ -351,6 +351,9 @@ export class CourseService {
           image: course.teacher.image,
         },
         description: course.description,
+        introVideoUrl: course.introVideoUrl,
+        discussionGroupUrl: course.discussionGroupUrl,
+        telegramUrl: course.discussionGroupUrl,
         studentsCount: course._count.subscriptions,
         year: course.collegeYear?.academicYear
           ? {
@@ -434,7 +437,7 @@ export class CourseService {
       },
     });
 
-    if (!course) throw new NotFoundException('Course not found');
+    if (!course) throw new NotFoundException('الكورس غير موجود');
 
     const basePrice = Number(course.price);
     const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
@@ -540,9 +543,9 @@ export class CourseService {
       },
     });
 
-    if (!course) throw new NotFoundException('Course not found');
+    if (!course) throw new NotFoundException('الكورس غير موجود');
 
-    const [subscriptionsAgg, subscriptionsCount, ratingsAgg, uniqueRaters] = await this.prisma.$transaction([
+    const [subscriptionsAgg, subscriptionsCount, ratingsAgg] = await this.prisma.$transaction([
       this.prisma.studentSubscription.aggregate({
         where: { courseId: course.id },
         _sum: {
@@ -552,28 +555,12 @@ export class CourseService {
       this.prisma.studentSubscription.count({
         where: { courseId: course.id },
       }),
-      this.prisma.videoInteraction.aggregate({
+      this.prisma.courseRating.aggregate({
         where: {
-          rating: { not: null },
-          video: {
-            lecture: {
-              courseId: course.id,
-            },
-          },
+          courseId: course.id,
         },
         _avg: { rating: true },
-      }),
-      this.prisma.videoInteraction.findMany({
-        where: {
-          rating: { not: null },
-          video: {
-            lecture: {
-              courseId: course.id,
-            },
-          },
-        },
-        distinct: ['userId'],
-        select: { userId: true },
+        _count: { _all: true },
       }),
     ]);
 
@@ -608,7 +595,7 @@ export class CourseService {
       rating: {
         outOf: 5,
         average: Number((Number(ratingsAgg._avg.rating ?? 0)).toFixed(2)),
-        ratersCount: uniqueRaters.length,
+        ratersCount: ratingsAgg._count._all,
       },
       revenue: {
         beforePercentage: Number(grossRevenue.toFixed(2)),
@@ -627,7 +614,7 @@ export class CourseService {
 
   async uploadLectureVideo(lectureId: string, file: any, user?: { userId: string | number; type: string }) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: lectureId } });
-    if (!lecture) throw new NotFoundException('Lecture not found');
+    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
 
     const created = await this.bunny.createStreamVideo(file.originalname || 'lecture-video');
@@ -657,7 +644,7 @@ export class CourseService {
     if (!user || user.type !== 'STUDENT') return;
 
     const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new ForbiddenException('User not found');
+    if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
 
     const subscription = await this.prisma.studentSubscription.findUnique({
       where: {
@@ -665,7 +652,7 @@ export class CourseService {
       },
     });
 
-    if (!subscription) throw new ForbiddenException('Subscription required');
+    if (!subscription) throw new ForbiddenException('يلزم اشتراك');
   }
 
   private async hasStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {
@@ -685,15 +672,15 @@ export class CourseService {
 
   private async assertCourseOwnership(user: { userId: string | number; type: string } | undefined, courseId: string) {
     if (!user || user.type === 'ADMIN') return;
-    if (user.type !== 'TEACHER') throw new ForbiddenException('Teacher role required');
+    if (user.type !== 'TEACHER') throw new ForbiddenException('صلاحية مدرس مطلوبة');
 
     const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new ForbiddenException('User not found');
+    if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
 
     const course = await this.prisma.course.findUnique({ where: { id: String(courseId) } });
-    if (!course) throw new NotFoundException('Course not found');
+    if (!course) throw new NotFoundException('الكورس غير موجود');
     if (course.teacherId.toString() !== dbUser.userableId.toString()) {
-      throw new ForbiddenException('You do not own this course');
+      throw new ForbiddenException('أنت لا تملك هذا الكورس');
     }
   }
 
@@ -721,19 +708,19 @@ export class CourseService {
     departmentId?: string,
   ) {
     const university = await this.prisma.university.findUnique({ where: { id: String(universityId) } });
-    if (!university) throw new BadRequestException('University not found');
+    if (!university) throw new BadRequestException('الجامعة غير موجودة');
 
     const college = await this.prisma.college.findUnique({ where: { id: String(collegeId) } });
-    if (!college) throw new BadRequestException('College not found');
+    if (!college) throw new BadRequestException('الكلية غير موجودة');
     if (college.universityId.toString() !== universityId.toString()) {
-      throw new BadRequestException('College does not belong to university');
+      throw new BadRequestException('الكلية لا تتبع للجامعة');
     }
 
     if (departmentId !== undefined) {
       const department = await this.prisma.department.findUnique({ where: { id: String(departmentId) } });
-      if (!department) throw new BadRequestException('Department not found');
+      if (!department) throw new BadRequestException('القسم غير موجود');
       if (department.collegeId.toString() !== collegeId.toString()) {
-        throw new BadRequestException('Department does not belong to college');
+        throw new BadRequestException('القسم لا يتبع للكلية');
       }
     }
 
@@ -746,6 +733,8 @@ export class CourseService {
       },
     });
 
-    if (!affiliation) throw new BadRequestException('Teacher is not affiliated with selected scope');
+    if (!affiliation) throw new BadRequestException('المدرس غير منتسب للنطاق المحدد');
   }
 }
+
+

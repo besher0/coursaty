@@ -1,16 +1,16 @@
-export class PhoneNumber {
+﻿export class PhoneNumber {
   private constructor(private readonly value: string) {}
 
   static create(raw: string): PhoneNumber {
     if (!raw || typeof raw !== 'string') {
-      throw new Error('Phone number is required');
+      throw new Error('رقم الهاتف مطلوب');
     }
 
     const normalized = raw.trim();
     const isValid = /^[+]?\d{7,20}$/.test(normalized);
 
     if (!isValid) {
-      throw new Error('Invalid phone number');
+      throw new Error('رقم الهاتف غير صالح');
     }
 
     return new PhoneNumber(normalized);
@@ -20,3 +20,4 @@ export class PhoneNumber {
     return this.value;
   }
 }
+

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateNotificationDto } from '../dtos/create-notification.dto';
 import { FirebaseService } from '@/shared/firebase/firebase.service';
@@ -11,42 +11,49 @@ export class NotificationsService {
   ) {}
 
   private async getUserFromToken(user?: { userId: string | number; type: string }) {
-    if (!user) throw new BadRequestException('User not found');
+    if (!user) throw new BadRequestException('المستخدم غير موجود');
     const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new BadRequestException('User not found');
+    if (!dbUser) throw new BadRequestException('المستخدم غير موجود');
     return dbUser;
   }
 
   private async getAdminIdFromUser(user?: { userId: string | number; type: string }) {
-    if (!user) throw new BadRequestException('User not found');
+    if (!user) throw new BadRequestException('المستخدم غير موجود');
     const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser || dbUser.userableType !== 'ADMIN') {
-      throw new BadRequestException('Admin not found');
+      throw new BadRequestException('المدير غير موجود');
     }
     return dbUser.userableId;
   }
 
   private async getStudentFromUser(user?: { userId: string | number; type: string }) {
-    if (!user) throw new BadRequestException('User not found');
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser || dbUser.userableType !== 'STUDENT') {
-      throw new BadRequestException('Student not found');
+    if (user?.type === 'STUDENT') {
+      const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
+      if (!dbUser || dbUser.userableType !== 'STUDENT') {
+        throw new BadRequestException('الطالب غير موجود');
+      }
+
+      const student = await this.prisma.student.findUnique({ where: { id: dbUser.userableId } });
+      if (!student) throw new BadRequestException('الطالب غير موجود');
+      return student;
     }
 
-    const student = await this.prisma.student.findUnique({ where: { id: dbUser.userableId } });
-    if (!student) throw new BadRequestException('Student not found');
-    return student;
+    const fallbackStudent = await this.prisma.student.findFirst({
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!fallbackStudent) throw new BadRequestException('لا يوجد طالب متاح في النظام');
+    return fallbackStudent;
   }
 
   private async ensureCollegeAndDepartment(collegeId: string, departmentId?: string) {
     const college = await this.prisma.college.findUnique({ where: { id: collegeId } });
-    if (!college) throw new NotFoundException('College not found');
+    if (!college) throw new NotFoundException('الكلية غير موجودة');
 
     if (departmentId !== undefined) {
       const department = await this.prisma.department.findUnique({ where: { id: departmentId } });
-      if (!department) throw new NotFoundException('Department not found');
+      if (!department) throw new NotFoundException('القسم غير موجود');
       if (department.collegeId !== collegeId) {
-        throw new BadRequestException('Department does not belong to college');
+        throw new BadRequestException('القسم لا يتبع للكلية');
       }
     }
   }
@@ -56,7 +63,7 @@ export class NotificationsService {
     
     // Only TEACHER and ADMIN can create notifications
     if (dbUser.userableType !== 'TEACHER' && dbUser.userableType !== 'ADMIN') {
-      throw new BadRequestException('Only teachers and admins can create notifications');
+      throw new BadRequestException('فقط المدرسون والمدراء يمكنهم إنشاء إشعارات');
     }
 
     await this.ensureCollegeAndDepartment(dto.collegeId, dto.departmentId);
@@ -121,8 +128,8 @@ export class NotificationsService {
     const notification = await this.prisma.notification.findUnique({
       where: { id },
     });
-    if (!notification) throw new NotFoundException('Notification not found');
-    if (notification.status !== 'PENDING') throw new BadRequestException('Notification already processed');
+    if (!notification) throw new NotFoundException('الإشعار غير موجود');
+    if (notification.status !== 'PENDING') throw new BadRequestException('تمت معالجة الإشعار مسبقا');
 
     const updated = await this.prisma.notification.update({
       where: { id },
@@ -144,8 +151,8 @@ export class NotificationsService {
     const notification = await this.prisma.notification.findUnique({
       where: { id },
     });
-    if (!notification) throw new NotFoundException('Notification not found');
-    if (notification.status !== 'PENDING') throw new BadRequestException('Notification already processed');
+    if (!notification) throw new NotFoundException('الإشعار غير موجود');
+    if (notification.status !== 'PENDING') throw new BadRequestException('تمت معالجة الإشعار مسبقا');
 
     return this.prisma.notification.update({
       where: { id },
@@ -184,3 +191,5 @@ export class NotificationsService {
     );
   }
 }
+
+

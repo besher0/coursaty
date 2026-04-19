@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+﻿import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateProvinceDto } from './dtos/create-province.dto';
 import { UpdateProvinceDto } from './dtos/update-province.dto';
@@ -17,13 +17,14 @@ export class ProvincesService {
 
   async update(id: string, dto: UpdateProvinceDto) {
     const existing = await this.prisma.province.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException('Province not found');
+    if (!existing) throw new NotFoundException('المحافظة غير موجودة');
     return this.prisma.province.update({ where: { id }, data: { name: dto.name } });
   }
 
   async remove(id: string) {
     const existing = await this.prisma.province.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException('Province not found');
+    if (!existing) throw new NotFoundException('المحافظة غير موجودة');
     return this.prisma.province.delete({ where: { id } });
   }
 }
+

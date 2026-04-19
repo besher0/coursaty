@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+﻿import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { UpdateProfileDto } from '../dtos/update-profile.dto';
 import { UpdateUserProfileDto } from '../dtos/update-user-profile.dto';
@@ -10,7 +10,7 @@ export class UsersService {
 
   async updateFcmToken(id: string, fcmToken: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
     return this.prisma.user.update({ where: { id }, data: { fcmToken } });
   }
 
@@ -18,7 +18,7 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({
       where: { id: String(userId) },
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
 
     let userableData = null;
 
@@ -64,7 +64,7 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({
       where: { id: String(userId) },
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
 
     // Update User fields
     const userUpdateData: any = {};
@@ -103,7 +103,7 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({
       where: { id: String(userId) },
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
 
     const updateData: any = {};
     if (dto.phone !== undefined) updateData.phone = dto.phone;
@@ -121,10 +121,10 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({
       where: { id: String(userId) },
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
 
     if (user.userableType !== 'STUDENT') {
-      throw new ForbiddenException('User is not a student');
+      throw new ForbiddenException('المستخدم ليس طالبا');
     }
 
     const updateData: any = {};
@@ -133,7 +133,7 @@ export class UsersService {
       const university = await this.prisma.university.findUnique({
         where: { id: String(dto.universityId) },
       });
-      if (!university) throw new NotFoundException('University not found');
+      if (!university) throw new NotFoundException('الجامعة غير موجودة');
       updateData.universityId = String(dto.universityId);
       updateData.provinceId = university.provinceId;
     }
@@ -149,4 +149,5 @@ export class UsersService {
     return this.getProfile(userId);
   }
 }
+
 

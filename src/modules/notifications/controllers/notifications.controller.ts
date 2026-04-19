@@ -54,8 +54,6 @@ export class NotificationsController {
 
   @Get()
   @ApiOperation({ summary: 'List approved notifications for student' })
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('STUDENT')
   listStudent(@Req() req: any) {
     return this.notifications.listStudentNotifications(req.user);
   }

@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsUUID, IsString, IsNotEmpty } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsUUID, IsString, IsNotEmpty, IsOptional, IsUrl } from 'class-validator';
 
 export class CreateAdvertisementDto {
   @ApiProperty({ format: 'uuid' })
@@ -15,4 +15,9 @@ export class CreateAdvertisementDto {
   @IsString()
   @IsNotEmpty()
   imageUrl: string;
+
+  @ApiPropertyOptional({ description: 'Optional helper link shown with advertisement' })
+  @IsOptional()
+  @IsUrl({ require_tld: false })
+  helperLink?: string;
 }

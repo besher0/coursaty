@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { $Enums, Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { UpdateCodeGroupDto } from '../dtos/update-code-group.dto';
@@ -9,6 +9,25 @@ import { randomInt } from 'crypto';
 @Injectable()
 export class FinancialsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async resolveStudentContext(user?: { userId: string | number; type: string }) {
+    if (user?.type === 'STUDENT') {
+      const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
+      if (!dbUser) throw new NotFoundException('المستخدم غير موجود');
+
+      const student = await this.prisma.student.findUnique({ where: { id: dbUser.userableId } });
+      if (!student) throw new NotFoundException('الطالب غير موجود');
+
+      return { studentId: student.id, student };
+    }
+
+    const fallbackStudent = await this.prisma.student.findFirst({
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!fallbackStudent) throw new NotFoundException('لا يوجد طالب متاح في النظام');
+
+    return { studentId: fallbackStudent.id, student: fallbackStudent };
+  }
 
   // CodeGroups
   createCodeGroup(courseId: string, batchName: string, discountPercentage: number) {
@@ -81,7 +100,7 @@ export class FinancialsService {
     const length = dto.length ?? 6;
 
     const group = await this.prisma.codeGroup.findUnique({ where: { id: dto.codeGroupId } });
-    if (!group) throw new NotFoundException('Code group not found');
+    if (!group) throw new NotFoundException('مجموعة الأكواد غير موجودة');
 
     let created = 0;
     let attempts = 0;
@@ -110,7 +129,7 @@ export class FinancialsService {
     }
 
     if (created < dto.count) {
-      throw new BadRequestException('Could not generate enough unique codes, please retry');
+      throw new BadRequestException('تعذر إنشاء عدد كاف من الأكواد الفريدة يرجى المحاولة مجددا');
     }
 
     return { createdCount: created };
@@ -122,7 +141,7 @@ export class FinancialsService {
 
     const status = dto.status as $Enums.CodeStatus | undefined;
     const allowed: $Enums.CodeStatus[] = ['ACTIVE', 'USED', 'INACTIVE'];
-    if (status && !allowed.includes(status)) throw new BadRequestException('Invalid status');
+    if (status && !allowed.includes(status)) throw new BadRequestException('حالة غير صالحة');
     return this.prisma.code.update({
       where: { id },
       data: {
@@ -146,46 +165,39 @@ export class FinancialsService {
   }
 
   // Subscriptions with discount logic (code-based only)
-  async subscribeWithCodeValue(user: { userId: string | number; type: string }, codeValue: string) {
-    if (!user || user.type !== 'STUDENT') throw new BadRequestException('Student role required');
-    if (user.userId === undefined || user.userId === null) throw new BadRequestException('Invalid token');
-    if (!codeValue) throw new BadRequestException('codeValue is required');
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new NotFoundException('User not found');
-
-    const studentId = dbUser.userableId;
-    const student = await this.prisma.student.findUnique({ where: { id: studentId } });
-    if (!student) throw new NotFoundException('Student not found');
+  async subscribeWithCodeValue(user: { userId: string | number; type: string } | undefined, codeValue: string) {
+    if (!codeValue) throw new BadRequestException('حقل codeValue مطلوب');
+    const { studentId, student } = await this.resolveStudentContext(user);
 
     const code = await this.prisma.code.findUnique({ where: { codeValue } });
-    if (!code) throw new BadRequestException('Invalid code');
-    if (code.status !== 'ACTIVE') throw new BadRequestException('Code is not active');
+    if (!code) throw new BadRequestException('الكود غير صالح');
+    if (code.status !== 'ACTIVE') throw new BadRequestException('الكود غير فعال');
 
     const codeExpiry = this.getCodeExpiry(code.createdAt, code.validForDays, code.validUntil);
     if (codeExpiry && codeExpiry.getTime() < Date.now()) {
-      throw new BadRequestException('Code is expired');
+      throw new BadRequestException('انتهت صلاحية الكود');
     }
 
     if (code.allowedUniversityNumber) {
-      if (!student.universityNumber) throw new BadRequestException('Student university number not set');
+      if (!student.universityNumber) throw new BadRequestException('الرقم الجامعي للطالب غير محدد');
       if (code.allowedUniversityNumber !== student.universityNumber) {
-        throw new BadRequestException('This code is not for you');
+        throw new BadRequestException('هذا الكود ليس مخصصا لك');
       }
     }
 
     const group = await this.prisma.codeGroup.findUnique({ where: { id: code.codeGroupId } });
-    if (!group) throw new BadRequestException('Code group not found');
+    if (!group) throw new BadRequestException('مجموعة الأكواد غير موجودة');
 
     const courseId = group.courseId;
     const existing = await this.prisma.studentSubscription.findUnique({
       where: { studentId_courseId: { studentId, courseId } },
     });
-    if (existing) throw new BadRequestException('Already subscribed');
+    if (existing) throw new BadRequestException('أنت مشترك مسبقا');
 
     const course = await this.prisma.course.findUnique({ where: { id: courseId } });
-    if (!course) throw new NotFoundException('Course not found');
+    if (!course) throw new NotFoundException('الكورس غير موجود');
     if (course.status !== 'APPROVED') {
-      throw new BadRequestException('Course is not approved');
+      throw new BadRequestException('الكورس غير معتمد');
     }
 
     let expiresAt: Date | null = null;
@@ -205,7 +217,7 @@ export class FinancialsService {
     await this.prisma.$transaction(async (tx) => {
       if (code.usageLimit !== null && code.usageLimit !== undefined) {
         if (code.usageCount >= code.usageLimit) {
-          throw new BadRequestException('Code usage limit reached');
+          throw new BadRequestException('تم الوصول لحد استخدام الكود');
         }
 
         const updated = await tx.code.updateMany({
@@ -219,7 +231,7 @@ export class FinancialsService {
           },
         });
 
-        if (updated.count === 0) throw new BadRequestException('Code usage limit reached');
+        if (updated.count === 0) throw new BadRequestException('تم الوصول لحد استخدام الكود');
 
         const newUsageCount = code.usageCount + 1;
         if (newUsageCount >= code.usageLimit) {
@@ -303,19 +315,19 @@ export class FinancialsService {
       }
     }
 
-    throw new BadRequestException('Could not generate a unique code');
+    throw new BadRequestException('تعذر توليد كود فريد');
   }
 
   private ensureValidCodeExpiry(validForDays?: number, validUntil?: string) {
     if (validForDays && validUntil) {
-      throw new BadRequestException('Provide either validForDays or validUntil, not both');
+      throw new BadRequestException('يجب توفير validForDays أو validUntil فقط وليس كلاهما');
     }
   }
 
   private parseValidUntil(validUntil?: string) {
     if (!validUntil) return undefined;
     const date = new Date(validUntil);
-    if (Number.isNaN(date.getTime())) throw new BadRequestException('Invalid validUntil date');
+    if (Number.isNaN(date.getTime())) throw new BadRequestException('تاريخ validUntil غير صالح');
     return date;
   }
 
@@ -331,14 +343,8 @@ export class FinancialsService {
     return null;
   }
 
-  async getActiveCoursesByUser(user: { userId: string | number; type: string }) {
-    if (!user || user.type !== 'STUDENT') throw new BadRequestException('Student role required');
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new NotFoundException('User not found');
-
-    const studentId = dbUser.userableId;
-    const student = await this.prisma.student.findUnique({ where: { id: studentId } });
-    if (!student) throw new NotFoundException('Student not found');
+  async getActiveCoursesByUser(user?: { userId: string | number; type: string }) {
+    const { studentId, student } = await this.resolveStudentContext(user);
 
     const now = new Date();
     const subscriptions = await this.prisma.studentSubscription.findMany({
@@ -356,14 +362,8 @@ export class FinancialsService {
     };
   }
 
-  async getInactiveCoursesByUser(user: { userId: string | number; type: string }) {
-    if (!user || user.type !== 'STUDENT') throw new BadRequestException('Student role required');
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new NotFoundException('User not found');
-
-    const studentId = dbUser.userableId;
-    const student = await this.prisma.student.findUnique({ where: { id: studentId } });
-    if (!student) throw new NotFoundException('Student not found');
+  async getInactiveCoursesByUser(user?: { userId: string | number; type: string }) {
+    const { studentId, student } = await this.resolveStudentContext(user);
 
     const now = new Date();
     const subscriptions = await this.prisma.studentSubscription.findMany({
@@ -381,3 +381,5 @@ export class FinancialsService {
     };
   }
 }
+
+

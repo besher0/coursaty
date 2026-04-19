@@ -77,6 +77,7 @@ model Student {
   department Department? @relation(fields: [departmentId], references: [id])
   collegeYear CollegeYear @relation(fields: [collegeYearId], references: [id])
   subscriptions StudentSubscription[]
+  courseRatings CourseRating[]
   teacherLikes   TeacherLike[]
   usedCodes       Code[] @relation("UsedCodes")
 
@@ -191,6 +192,7 @@ model Advertisement {
   collegeId String
   title     String
   imageUrl  String
+  helperLink String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -281,6 +283,7 @@ model Subject {
   departmentId String?
   subjectName  String
   isProgram    Boolean  @default(false)
+  imageUrl     String?
 
   college    College    @relation(fields: [collegeId], references: [id])
   collegeYear       CollegeYear?      @relation(fields: [collegeYearId], references: [id])
@@ -333,6 +336,7 @@ model Course {
   lectures       Lecture[]
   codeGroups     CodeGroup[]
   subscriptions  StudentSubscription[]
+  courseRatings  CourseRating[]
 
   @@index([teacherId])
   @@index([subjectId])
@@ -344,6 +348,22 @@ model Course {
   @@index([categoryId])
   @@index([status])
   @@index([approvedById])
+}
+
+model CourseRating {
+  id        String   @id @default(uuid())
+  courseId  String
+  studentId String
+  rating    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course  Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, studentId])
+  @@index([courseId])
+  @@index([studentId])
 }
 
 model CourseCategory {

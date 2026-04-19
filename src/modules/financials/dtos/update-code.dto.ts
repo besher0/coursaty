@@ -1,10 +1,10 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+﻿import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsISO8601, IsInt, IsOptional, Min } from 'class-validator';
 
 export class UpdateCodeDto {
 	@ApiPropertyOptional({ enum: ['ACTIVE', 'USED', 'INACTIVE'] })
 	@IsOptional()
-	@IsEnum(['ACTIVE', 'USED', 'INACTIVE'], { message: 'status must be ACTIVE, USED or INACTIVE' })
+	@IsEnum(['ACTIVE', 'USED', 'INACTIVE'], { message: 'الحالة يجب أن تكون ACTIVE أو USED أو INACTIVE' })
 	status?: 'ACTIVE' | 'USED' | 'INACTIVE';
 
 	@ApiPropertyOptional({ description: 'Valid for N days starting from code creation date' })
@@ -18,3 +18,4 @@ export class UpdateCodeDto {
 	@IsISO8601()
 	validUntil?: string;
 }
+

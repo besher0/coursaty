@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+﻿import { Injectable, NotFoundException } from '@nestjs/common';
 import { UpdateUniversityDto } from '../dtos/update-university.dto';
 import { UpdateCollegeDto } from '../dtos/update-college.dto';
 import { UpdateDepartmentDto } from '../dtos/update-department.dto';
@@ -16,7 +16,7 @@ export class AcademicsService {
   // Universities
     async createUniversity(name: string, provinceId: string) {
     const province = await this.prisma.province.findUnique({ where: { id: provinceId } });
-    if (!province) throw new NotFoundException('Province not found');
+    if (!province) throw new NotFoundException('المحافظة غير موجودة');
 
     return this.prisma.university.create({
       data: { name, provinceId },
@@ -31,7 +31,7 @@ export class AcademicsService {
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.provinceId !== undefined) {
       const province = await this.prisma.province.findUnique({ where: { id: dto.provinceId } });
-      if (!province) throw new NotFoundException('Province not found');
+      if (!province) throw new NotFoundException('المحافظة غير موجودة');
       data.provinceId = dto.provinceId;
     }
     return this.prisma.university.update({ where: { id }, data });
@@ -85,6 +85,7 @@ export class AcademicsService {
     subjectName: string,
     departmentId?: string,
     isProgram?: boolean,
+    imageUrl?: string,
   ) {
     return this.prisma.subject.create({
       data: {
@@ -94,6 +95,7 @@ export class AcademicsService {
         departmentId: departmentId || undefined,
         subjectName,
         isProgram: isProgram ?? false,
+        imageUrl: imageUrl || undefined,
       },
     });
   }
@@ -115,6 +117,7 @@ export class AcademicsService {
     if (dto.subjectName !== undefined) data.subjectName = dto.subjectName;
     if (dto.departmentId !== undefined) data.departmentId = dto.departmentId || null;
     if (dto.isProgram !== undefined) data.isProgram = dto.isProgram;
+    if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl || null;
     return this.prisma.subject.update({ where: { id }, data });
   }
 
@@ -196,3 +199,4 @@ export class AcademicsService {
     return this.prisma.season.delete({ where: { id } });
   }
 }
+

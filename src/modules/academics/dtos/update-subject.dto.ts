@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUrl, IsUUID } from 'class-validator';
 
 export class UpdateSubjectDto {
 	@ApiPropertyOptional()
@@ -17,4 +17,9 @@ export class UpdateSubjectDto {
 	@IsOptional()
 	@IsBoolean()
 	isProgram?: boolean;
+
+	@ApiPropertyOptional({ description: 'Subject/program image URL' })
+	@IsOptional()
+	@IsUrl({ require_tld: false })
+	imageUrl?: string;
 }

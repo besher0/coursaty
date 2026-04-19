@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+﻿import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
   CreateCodeGroupDto,
@@ -53,7 +53,7 @@ export class CodeManagementService {
     });
 
     if (!course) {
-      throw new BadRequestException('Course not found');
+      throw new BadRequestException('الكورس غير موجود');
     }
 
     return this.prisma.codeGroup.create({
@@ -78,7 +78,7 @@ export class CodeManagementService {
     });
 
     if (!codeGroup) {
-      throw new BadRequestException('Code group not found');
+      throw new BadRequestException('مجموعة الأكواد غير موجودة');
     }
 
     // Generate unique code
@@ -125,7 +125,7 @@ export class CodeManagementService {
     });
 
     if (!codeGroup) {
-      throw new BadRequestException('Code group not found');
+      throw new BadRequestException('مجموعة الأكواد غير موجودة');
     }
 
     const prefix = dto.prefix || 'CODE';
@@ -190,7 +190,7 @@ export class CodeManagementService {
     });
 
     if (!code) {
-      throw new BadRequestException('Code not found');
+      throw new BadRequestException('الكود غير موجود');
     }
 
     const newStatus = (dto.status as any) || code.status;
@@ -218,7 +218,7 @@ export class CodeManagementService {
     });
 
     if (!code) {
-      throw new BadRequestException('Code not found');
+      throw new BadRequestException('الكود غير موجود');
     }
 
     // Only allow deleting ACTIVE codes that haven't been used
@@ -295,7 +295,7 @@ export class CodeManagementService {
     });
 
     if (!codeGroup) {
-      throw new BadRequestException('Code group not found');
+      throw new BadRequestException('مجموعة الأكواد غير موجودة');
     }
 
     // Calculate statistics
@@ -326,7 +326,7 @@ export class CodeManagementService {
     });
 
     if (!codeGroup) {
-      throw new BadRequestException('Code group not found');
+      throw new BadRequestException('مجموعة الأكواد غير موجودة');
     }
 
     const result = await this.prisma.code.updateMany({
@@ -340,3 +340,4 @@ export class CodeManagementService {
     };
   }
 }
+
