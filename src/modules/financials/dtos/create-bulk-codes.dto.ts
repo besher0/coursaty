@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsISO8601, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { Equals, IsISO8601, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class CreateBulkCodesDto {
   @ApiProperty()
@@ -17,11 +17,10 @@ export class CreateBulkCodesDto {
   @IsString()
   prefix?: string;
 
-  @ApiPropertyOptional({ description: 'Random suffix length', default: 6 })
+  @ApiPropertyOptional({ description: 'Deprecated: code length is fixed to 6', default: 6 })
   @IsOptional()
   @IsInt()
-  @Min(4)
-  @Max(24)
+  @Equals(6, { message: 'length يجب أن يساوي 6' })
   length?: number;
 
   @ApiPropertyOptional({ description: 'Max total uses per code; null means unlimited' })

@@ -8,6 +8,8 @@ import { randomInt } from 'crypto';
 
 @Injectable()
 export class FinancialsService {
+  private static readonly FIXED_CODE_LENGTH = 6;
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async resolveStudentContext(user?: { userId: string | number; type: string }) {
@@ -59,7 +61,7 @@ export class FinancialsService {
   }
 
   // Codes
-  createCode(
+  async createCode(
     codeGroupId: string,
     codeValue?: string,
     allowedUniversityNumber?: string,
@@ -69,6 +71,11 @@ export class FinancialsService {
   ) {
     this.ensureValidCodeExpiry(validForDays, validUntil);
     const validUntilDate = this.parseValidUntil(validUntil);
+    const normalizedCodeValue = codeValue?.trim();
+
+    if (normalizedCodeValue && normalizedCodeValue.length !== FinancialsService.FIXED_CODE_LENGTH) {
+      throw new BadRequestException(`الكود يجب أن يتكون من ${FinancialsService.FIXED_CODE_LENGTH} خانات`);
+    }
 
     const createWithValue = async (value: string) =>
       this.prisma.code.create({
@@ -82,8 +89,15 @@ export class FinancialsService {
         },
       });
 
-    if (codeValue) {
-      return createWithValue(codeValue);
+    if (normalizedCodeValue) {
+      try {
+        return await createWithValue(normalizedCodeValue);
+      } catch (err) {
+        if (this.isUniqueConstraintError(err)) {
+          throw new BadRequestException('الكود موجود مسبقا');
+        }
+        throw err;
+      }
     }
 
     return this.createWithGeneratedCode(createWithValue);
@@ -96,8 +110,11 @@ export class FinancialsService {
     this.ensureValidCodeExpiry(dto.validForDays, dto.validUntil);
     const validUntilDate = this.parseValidUntil(dto.validUntil);
 
-    const prefix = dto.prefix ?? '';
-    const length = dto.length ?? 6;
+    const prefix = (dto.prefix ?? '').trim();
+    if (prefix.length >= FinancialsService.FIXED_CODE_LENGTH) {
+      throw new BadRequestException(`prefix يجب أن يكون أقل من ${FinancialsService.FIXED_CODE_LENGTH} خانات`);
+    }
+    const randomLength = FinancialsService.FIXED_CODE_LENGTH - prefix.length;
 
     const group = await this.prisma.codeGroup.findUnique({ where: { id: dto.codeGroupId } });
     if (!group) throw new NotFoundException('مجموعة الأكواد غير موجودة');
@@ -112,7 +129,7 @@ export class FinancialsService {
       const codes = new Set<string>();
 
       while (codes.size < batchSize) {
-        codes.add(`${prefix}${this.generateRandom(length)}`);
+        codes.add(`${prefix}${this.generateRandom(randomLength)}`);
       }
 
       const data = Array.from(codes).map((codeValue) => ({
@@ -298,7 +315,7 @@ export class FinancialsService {
 
   private async createWithGeneratedCode(
     creator: (value: string) => Promise<unknown>,
-    length = 8,
+    length = FinancialsService.FIXED_CODE_LENGTH,
   ) {
     let attempts = 0;
     const maxAttempts = 10;
@@ -307,7 +324,7 @@ export class FinancialsService {
       try {
         return await creator(value);
       } catch (err) {
-        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        if (this.isUniqueConstraintError(err)) {
           attempts += 1;
           continue;
         }
@@ -316,6 +333,10 @@ export class FinancialsService {
     }
 
     throw new BadRequestException('تعذر توليد كود فريد');
+  }
+
+  private isUniqueConstraintError(err: unknown) {
+    return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
   }
 
   private ensureValidCodeExpiry(validForDays?: number, validUntil?: string) {
@@ -358,7 +379,11 @@ export class FinancialsService {
 
     return {
       studentName: student.name,
-      courses: subscriptions.map((s) => s.course),
+      courses: subscriptions.map((s) => ({
+        ...s.course,
+        subscribedAt: s.createdAt,
+        subscriptionExpiresAt: s.expiresAt,
+      })),
     };
   }
 
@@ -377,7 +402,11 @@ export class FinancialsService {
 
     return {
       studentName: student.name,
-      courses: subscriptions.map((s) => s.course),
+      courses: subscriptions.map((s) => ({
+        ...s.course,
+        subscribedAt: s.createdAt,
+        subscriptionExpiresAt: s.expiresAt,
+      })),
     };
   }
 }
