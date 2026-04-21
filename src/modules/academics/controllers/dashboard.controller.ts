@@ -1,5 +1,5 @@
 import { Controller, Get, Req, Param, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiOkResponse } from '@nestjs/swagger';
 import { DashboardService } from '../services/dashboard.service';
 
 @ApiTags('dashboard')
@@ -133,6 +133,13 @@ export class DashboardController {
       parseInt(page),
       parseInt(limit),
     );
+  }
+
+  @Get('programs')
+@ApiOperation({ summary: 'Get only programs (isProgram=true) for the student\'s college' })
+  @ApiOkResponse({ description: 'List of programs' })
+  getStudentPrograms(@Req() req: any) {
+    return this.dashboardService.getStudentPrograms(req.user);
   }
 }
 
