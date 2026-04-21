@@ -171,6 +171,12 @@ export class DashboardService {
           } 
         },
         season: true,
+        college: {
+    select: {
+      id: true,
+      name: true,
+    },
+  },
       },
       orderBy: [
         { collegeYear: { academicYear: { yearNumber: 'asc' } } },
