@@ -11,6 +11,8 @@ import { UpdateQuestionDto } from '../dtos/update-question.dto';
 import { UploadVideoDto } from '../dtos/upload-video.dto';
 import { CreateVideoSegmentDto } from '../dtos/create-video-segment.dto';
 import { UpdateVideoSegmentDto } from '../dtos/update-video-segment.dto';
+import { randomUUID } from 'crypto';
+import * as path from 'path';
 
 @Injectable()
 export class LecturesService {
@@ -315,12 +317,21 @@ export class LecturesService {
     await this.assertCourseOwnership(user, lecture.courseId);
 
     const title = dto.videoName || file.originalname || 'video';
-    const { guid } = await this.bunny.createStreamVideo(title);
-    await this.bunny.uploadStreamVideo(guid, file);
+    const ext = path.extname(file.originalname || '') || '.mp4';
+    const fileName = `${randomUUID()}${ext}`;
+    const storagePath = `lectures/${lectureId}/videos/${fileName}`;
+    const videoUrl = await this.bunny.uploadImage(storagePath, file);
 
-    const videoUrl = this.bunny.getStreamEmbedUrl(guid);
+    let streamEmbedUrl: string | null = null;
+    try {
+      const { guid } = await this.bunny.createStreamVideo(title);
+      await this.bunny.uploadStreamVideo(guid, file);
+      streamEmbedUrl = this.bunny.getStreamEmbedUrl(guid);
+    } catch {
+      streamEmbedUrl = null;
+    }
 
-    return this.prisma.video.create({
+    const created = await this.prisma.video.create({
       data: {
         lectureId: String(lectureId),
         videoName: title,
@@ -328,6 +339,12 @@ export class LecturesService {
         isFree: dto.isFree ?? false,
       },
     });
+
+    return {
+      ...created,
+      downloadUrl: videoUrl,
+      streamEmbedUrl,
+    };
   }
 
   async updateVideo(id: string, dto: UpdateVideoDto, user?: { userId: string | number; type: string }) {

@@ -4,6 +4,8 @@ import { CreateCourseDto } from '../dtos/create-course.dto';
 import { BunnyService } from '../../../shared/bunny/bunny.service';
 import { UpdateCourseDto } from '../dtos/update-course.dto';
 import { DomainException } from '@/common/errors/domain.exception';
+import { randomUUID } from 'crypto';
+import * as path from 'path';
 
 @Injectable()
 export class CourseService {
@@ -617,19 +619,34 @@ export class CourseService {
     if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
 
-    const created = await this.bunny.createStreamVideo(file.originalname || 'lecture-video');
-    await this.bunny.uploadStreamVideo(created.guid, file);
+    const ext = path.extname(file.originalname || '') || '.mp4';
+    const fileName = `${randomUUID()}${ext}`;
+    const storagePath = `lectures/${lectureId}/videos/${fileName}`;
+    const videoUrl = await this.bunny.uploadImage(storagePath, file);
 
-    const playbackUrl = `https://video.bunnycdn.com/play/${created.guid}`;
+    let streamEmbedUrl: string | null = null;
+    try {
+      const createdStream = await this.bunny.createStreamVideo(file.originalname || 'lecture-video');
+      await this.bunny.uploadStreamVideo(createdStream.guid, file);
+      streamEmbedUrl = this.bunny.getStreamEmbedUrl(createdStream.guid);
+    } catch {
+      streamEmbedUrl = null;
+    }
 
-    return this.prisma.video.create({
+    const created = await this.prisma.video.create({
       data: {
         lectureId,
         videoName: file.originalname,
-        videoUrl: playbackUrl,
+        videoUrl,
         durationSeconds: null,
       },
     });
+
+    return {
+      ...created,
+      downloadUrl: videoUrl,
+      streamEmbedUrl,
+    };
   }
 
   async listCourses() {

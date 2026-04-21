@@ -21,13 +21,29 @@ export class UploadsService {
 
   async uploadVideo(file: any, title?: string) {
     const videoTitle = title || file.originalname || `video-${randomUUID()}`;
-    const { guid } = await this.bunny.createStreamVideo(videoTitle);
-    await this.bunny.uploadStreamVideo(guid, file);
+    const ext = path.extname(file.originalname || '') || '.mp4';
+    const fileName = `${randomUUID()}${ext}`;
+    const storagePath = `uploads/videos/${fileName}`;
+    const videoUrl = await this.bunny.uploadImage(storagePath, file);
+
+    let guid: string | null = null;
+    let embedUrl: string | null = null;
+    try {
+      const streamVideo = await this.bunny.createStreamVideo(videoTitle);
+      await this.bunny.uploadStreamVideo(streamVideo.guid, file);
+      guid = streamVideo.guid;
+      embedUrl = this.bunny.getStreamEmbedUrl(streamVideo.guid);
+    } catch {
+      guid = null;
+      embedUrl = null;
+    }
 
     return {
       guid,
       title: videoTitle,
-      embedUrl: this.bunny.getStreamEmbedUrl(guid),
+      videoUrl,
+      downloadUrl: videoUrl,
+      embedUrl,
     };
   }
 }
