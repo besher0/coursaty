@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AdminsService } from '../services/admins.service';
 import { AdminDashboardService } from '../services/admin-dashboard.service';
@@ -80,6 +80,78 @@ export class AdminsController {
   @ApiOkResponse({ description: 'Programs search results' })
   async searchPrograms(@Query('name') name?: string) {
     return this.admins.searchPrograms(name);
+  }
+
+  @Get('getSubjectsByCollageId')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get subjects by college id' })
+  @ApiQuery({ name: 'collegeId', required: true, description: 'College UUID' })
+  async getSubjectsByCollageId(
+    @Query('collegeId', new ParseUUIDPipe({ version: '4' })) collegeId: string,
+  ) {
+    return this.admins.getSubjectsByCollegeId(collegeId);
+  }
+
+  @Get('getSubjectsByDeptarmentId')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get subjects by department id' })
+  @ApiQuery({ name: 'departmentId', required: true, description: 'Department UUID' })
+  async getSubjectsByDeptarmentId(
+    @Query('departmentId', new ParseUUIDPipe({ version: '4' })) departmentId: string,
+  ) {
+    return this.admins.getSubjectsByDepartmentId(departmentId);
+  }
+
+  @Get('getProgramsByCollageId')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get programs by college id' })
+  @ApiQuery({ name: 'collegeId', required: true, description: 'College UUID' })
+  async getProgramsByCollageId(
+    @Query('collegeId', new ParseUUIDPipe({ version: '4' })) collegeId: string,
+  ) {
+    return this.admins.getProgramsByCollegeId(collegeId);
+  }
+
+  @Get('getTeachersByCollageID')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get teachers by college id' })
+  @ApiQuery({ name: 'collegeId', required: true, description: 'College UUID' })
+  async getTeachersByCollageID(
+    @Query('collegeId', new ParseUUIDPipe({ version: '4' })) collegeId: string,
+  ) {
+    return this.admins.getTeachersByCollegeId(collegeId);
+  }
+
+  @Get('getTeachersByDeptaramentId')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get teachers by department id' })
+  @ApiQuery({ name: 'departmentId', required: true, description: 'Department UUID' })
+  async getTeachersByDeptaramentId(
+    @Query('departmentId', new ParseUUIDPipe({ version: '4' })) departmentId: string,
+  ) {
+    return this.admins.getTeachersByDepartmentId(departmentId);
+  }
+
+  @Get('getYearsOfCollage')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get years of college' })
+  @ApiQuery({ name: 'collegeId', required: true, description: 'College UUID' })
+  async getYearsOfCollage(
+    @Query('collegeId', new ParseUUIDPipe({ version: '4' })) collegeId: string,
+  ) {
+    return this.admins.getYearsOfCollege(collegeId);
   }
 
   @Get('search/courses')

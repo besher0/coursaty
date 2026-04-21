@@ -255,6 +255,167 @@ export class AdminsService {
     });
   }
 
+  async getSubjectsByCollegeId(collegeId: string) {
+    return this.prisma.subject.findMany({
+      where: {
+        collegeId,
+        isProgram: false,
+      },
+      select: {
+        id: true,
+        subjectName: true,
+        imageUrl: true,
+        college: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        subjectName: 'asc',
+      },
+    });
+  }
+
+  async getSubjectsByDepartmentId(departmentId: string) {
+    return this.prisma.subject.findMany({
+      where: {
+        departmentId,
+        isProgram: false,
+      },
+      select: {
+        id: true,
+        subjectName: true,
+        imageUrl: true,
+        college: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        subjectName: 'asc',
+      },
+    });
+  }
+
+  async getProgramsByCollegeId(collegeId: string) {
+    return this.prisma.subject.findMany({
+      where: {
+        collegeId,
+        isProgram: true,
+      },
+      select: {
+        id: true,
+        subjectName: true,
+        imageUrl: true,
+        college: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        subjectName: 'asc',
+      },
+    });
+  }
+
+  async getTeachersByCollegeId(collegeId: string) {
+    return this.prisma.teacher.findMany({
+      where: {
+        affiliations: {
+          some: {
+            collegeId,
+          },
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        image: true,
+        likesCount: true,
+        _count: {
+          select: {
+            courses: true,
+          },
+        },
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+  }
+
+  async getTeachersByDepartmentId(departmentId: string) {
+    return this.prisma.teacher.findMany({
+      where: {
+        affiliations: {
+          some: {
+            departmentId,
+          },
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        image: true,
+        likesCount: true,
+        _count: {
+          select: {
+            courses: true,
+          },
+        },
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+  }
+
+  async getYearsOfCollege(collegeId: string) {
+    return this.prisma.academicYear.findMany({
+      where: {
+        collegeYears: {
+          some: {
+            collegeId,
+          },
+        },
+      },
+      select: {
+        id: true,
+        yearNumber: true,
+        yearName: true,
+      },
+      orderBy: {
+        yearNumber: 'asc',
+      },
+    });
+  }
+
   async searchCourses(
     name?: string,
     relatedTo?: 'subject' | 'program',
