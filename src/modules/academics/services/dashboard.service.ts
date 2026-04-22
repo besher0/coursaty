@@ -195,9 +195,7 @@ export class DashboardService {
         ? {
             OR: [{ departmentId: null }, { departmentId }],
           }
-        : {
-            departmentId: null,
-          }),
+        : {}),
     };
 
     const programs = await this.prisma.subject.findMany({
@@ -304,9 +302,7 @@ export class DashboardService {
         ? {
             OR: [{ departmentId: null }, { departmentId }],
           }
-        : {
-            departmentId: null,
-          }),
+        : {}),
     };
 
     const subjects = await this.prisma.subject.findMany({
@@ -401,9 +397,7 @@ export class DashboardService {
               ? {
                   OR: [{ departmentId: null }, { departmentId }],
                 }
-              : {
-                  departmentId: null,
-                }),
+              : {}),
           },
           include: {
             season: true,

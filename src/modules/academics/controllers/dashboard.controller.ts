@@ -8,17 +8,9 @@ import { DashboardService } from '../services/dashboard.service';
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
-  private buildGuestFilter(query: {
-    deviceId?: string;
-    universityId?: string;
-    collegeId?: string;
-    departmentId?: string;
-  }) {
+  private buildGuestFilter(query: { deviceId?: string }) {
     return {
       deviceId: query.deviceId,
-      universityId: query.universityId,
-      collegeId: query.collegeId,
-      departmentId: query.departmentId,
     };
   }
 
@@ -26,26 +18,16 @@ export class DashboardController {
   @ApiOperation({ summary: 'Get college advertisements, teachers, subjects, and programs for the student college/department' })
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items limit, default is 7' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
-  @ApiQuery({ name: 'universityId', required: false, description: 'Optional guest university id' })
-  @ApiQuery({
-    name: 'collegeId',
-    required: false,
-    description: 'Optional for logged-in student, required for guest browsing',
-  })
-  @ApiQuery({ name: 'departmentId', required: false, description: 'Optional guest department id' })
   getStudentCollegeInfo(
     @Req() req: any,
     @Query('limit') limit: string = '7',
     @Query('deviceId') deviceId?: string,
-    @Query('universityId') universityId?: string,
-    @Query('collegeId') collegeId?: string,
-    @Query('departmentId') departmentId?: string,
   ) {
     const parsedLimit = parseInt(limit);
     return this.dashboardService.getStudentCollegeInfo(
       req.user,
       Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 7,
-      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+      this.buildGuestFilter({ deviceId }),
     );
   }
 
@@ -53,25 +35,15 @@ export class DashboardController {
   @ApiOperation({ summary: 'Get courses organized by college, year, and season' })
   @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
-  @ApiQuery({ name: 'universityId', required: false, description: 'Optional guest university id' })
-  @ApiQuery({
-    name: 'collegeId',
-    required: false,
-    description: 'Optional for logged-in student, required for guest browsing',
-  })
-  @ApiQuery({ name: 'departmentId', required: false, description: 'Optional guest department id' })
   getCoursesByCollege(
     @Req() req: any,
     @Query('collegeYearId') collegeYearId?: string,
     @Query('deviceId') deviceId?: string,
-    @Query('universityId') universityId?: string,
-    @Query('collegeId') collegeId?: string,
-    @Query('departmentId') departmentId?: string,
   ) {
     return this.dashboardService.getCoursesByCollege(
       req.user,
       collegeYearId,
-      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+      this.buildGuestFilter({ deviceId }),
     );
   }
 
@@ -80,22 +52,12 @@ export class DashboardController {
   @ApiQuery({ name: 'page', required: false, description: 'Optional page number, default is 1' })
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items per page, default is 10' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
-  @ApiQuery({ name: 'universityId', required: false, description: 'Optional guest university id' })
-  @ApiQuery({
-    name: 'collegeId',
-    required: false,
-    description: 'Optional for logged-in student, required for guest browsing',
-  })
-  @ApiQuery({ name: 'departmentId', required: false, description: 'Optional guest department id' })
   getSubjectCourses(
     @Req() req: any,
     @Param('id') subjectId: string,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
     @Query('deviceId') deviceId?: string,
-    @Query('universityId') universityId?: string,
-    @Query('collegeId') collegeId?: string,
-    @Query('departmentId') departmentId?: string,
   ) {
     const parsedPage = parseInt(page);
     const parsedLimit = parseInt(limit);
@@ -105,7 +67,7 @@ export class DashboardController {
       subjectId,
       Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1,
       Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10,
-      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+      this.buildGuestFilter({ deviceId }),
     );
   }
 
@@ -115,22 +77,12 @@ export class DashboardController {
   @ApiQuery({ name: 'page', required: false, description: 'Optional page number, default is 1' })
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items per page, default is 10' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
-  @ApiQuery({ name: 'universityId', required: false, description: 'Optional guest university id' })
-  @ApiQuery({
-    name: 'collegeId',
-    required: false,
-    description: 'Optional for logged-in student, required for guest browsing',
-  })
-  @ApiQuery({ name: 'departmentId', required: false, description: 'Optional guest department id' })
   getProgramCourses(
     @Req() req: any,
     @Query('id') programId?: string,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
     @Query('deviceId') deviceId?: string,
-    @Query('universityId') universityId?: string,
-    @Query('collegeId') collegeId?: string,
-    @Query('departmentId') departmentId?: string,
   ) {
     const parsedPage = parseInt(page);
     const parsedLimit = parseInt(limit);
@@ -140,30 +92,20 @@ export class DashboardController {
       programId,
       Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1,
       Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10,
-      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+      this.buildGuestFilter({ deviceId }),
     );
   }
 
   @Get('college-teachers')
   @ApiOperation({ summary: 'Get all teachers in the student college with likes and courses count' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
-  @ApiQuery({ name: 'universityId', required: false, description: 'Optional guest university id' })
-  @ApiQuery({
-    name: 'collegeId',
-    required: false,
-    description: 'Optional for logged-in student, required for guest browsing',
-  })
-  @ApiQuery({ name: 'departmentId', required: false, description: 'Optional guest department id' })
   getCollegeTeachers(
     @Req() req: any,
     @Query('deviceId') deviceId?: string,
-    @Query('universityId') universityId?: string,
-    @Query('collegeId') collegeId?: string,
-    @Query('departmentId') departmentId?: string,
   ) {
     return this.dashboardService.getCollegeTeachers(
       req.user,
-      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+      this.buildGuestFilter({ deviceId }),
     );
   }
 
@@ -188,27 +130,17 @@ export class DashboardController {
   @ApiQuery({ name: 'page', required: false, description: 'Optional page number, default is 1' })
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items per page, default is 10' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
-  @ApiQuery({ name: 'universityId', required: false, description: 'Optional guest university id' })
-  @ApiQuery({
-    name: 'collegeId',
-    required: false,
-    description: 'Optional for logged-in student, required for guest browsing',
-  })
-  @ApiQuery({ name: 'departmentId', required: false, description: 'Optional guest department id' })
   getCoursesByCategory(
     @Req() req: any,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
     @Query('deviceId') deviceId?: string,
-    @Query('universityId') universityId?: string,
-    @Query('collegeId') collegeId?: string,
-    @Query('departmentId') departmentId?: string,
   ) {
     return this.dashboardService.getCoursesByCategory(
       req.user,
       parseInt(page),
       parseInt(limit),
-      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+      this.buildGuestFilter({ deviceId }),
     );
   }
 
@@ -217,27 +149,17 @@ export class DashboardController {
   @ApiQuery({ name: 'page', required: false, description: 'Optional page number, default is 1' })
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items per page, default is 10' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
-  @ApiQuery({ name: 'universityId', required: false, description: 'Optional guest university id' })
-  @ApiQuery({
-    name: 'collegeId',
-    required: false,
-    description: 'Optional for logged-in student, required for guest browsing',
-  })
-  @ApiQuery({ name: 'departmentId', required: false, description: 'Optional guest department id' })
   getCoursesByPopular(
     @Req() req: any,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
     @Query('deviceId') deviceId?: string,
-    @Query('universityId') universityId?: string,
-    @Query('collegeId') collegeId?: string,
-    @Query('departmentId') departmentId?: string,
   ) {
     return this.dashboardService.getCoursesByPopular(
       req.user,
       parseInt(page),
       parseInt(limit),
-      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+      this.buildGuestFilter({ deviceId }),
     );
   }
 
@@ -246,27 +168,17 @@ export class DashboardController {
   @ApiQuery({ name: 'page', required: false, description: 'Optional page number, default is 1' })
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items per page, default is 10' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
-  @ApiQuery({ name: 'universityId', required: false, description: 'Optional guest university id' })
-  @ApiQuery({
-    name: 'collegeId',
-    required: false,
-    description: 'Optional for logged-in student, required for guest browsing',
-  })
-  @ApiQuery({ name: 'departmentId', required: false, description: 'Optional guest department id' })
   getCoursesByYear(
     @Req() req: any,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
     @Query('deviceId') deviceId?: string,
-    @Query('universityId') universityId?: string,
-    @Query('collegeId') collegeId?: string,
-    @Query('departmentId') departmentId?: string,
   ) {
     return this.dashboardService.getCoursesByYear(
       req.user,
       parseInt(page),
       parseInt(limit),
-      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+      this.buildGuestFilter({ deviceId }),
     );
   }
 
@@ -277,13 +189,6 @@ export class DashboardController {
   @ApiQuery({ name: 'page', required: false, description: 'Optional page number, default is 1' })
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items per page, default is 10' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
-  @ApiQuery({ name: 'universityId', required: false, description: 'Optional guest university id' })
-  @ApiQuery({
-    name: 'collegeId',
-    required: false,
-    description: 'Optional for logged-in student, required for guest browsing',
-  })
-  @ApiQuery({ name: 'departmentId', required: false, description: 'Optional guest department id' })
   getCoursesUnified(
     @Req() req: any,
     @Query('filter') filter: string = 'all',
@@ -291,9 +196,6 @@ export class DashboardController {
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
     @Query('deviceId') deviceId?: string,
-    @Query('universityId') universityId?: string,
-    @Query('collegeId') collegeId?: string,
-    @Query('departmentId') departmentId?: string,
   ) {
     return this.dashboardService.getCoursesUnified(
       req.user,
@@ -301,7 +203,7 @@ export class DashboardController {
       categoryId,
       parseInt(page),
       parseInt(limit),
-      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+      this.buildGuestFilter({ deviceId }),
     );
   }
 
@@ -309,23 +211,13 @@ export class DashboardController {
   @ApiOperation({ summary: 'Get only programs (isProgram=true) for the student\'s college' })
   @ApiOkResponse({ description: 'List of programs' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
-  @ApiQuery({ name: 'universityId', required: false, description: 'Optional guest university id' })
-  @ApiQuery({
-    name: 'collegeId',
-    required: false,
-    description: 'Optional for logged-in student, required for guest browsing',
-  })
-  @ApiQuery({ name: 'departmentId', required: false, description: 'Optional guest department id' })
   getStudentPrograms(
     @Req() req: any,
     @Query('deviceId') deviceId?: string,
-    @Query('universityId') universityId?: string,
-    @Query('collegeId') collegeId?: string,
-    @Query('departmentId') departmentId?: string,
   ) {
     return this.dashboardService.getStudentPrograms(
       req.user,
-      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+      this.buildGuestFilter({ deviceId }),
     );
   }
 }
