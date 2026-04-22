@@ -8,8 +8,10 @@ import { YearsController } from './controllers/years.controller';
 import { AcademicYearsController } from './controllers/academic-years.controller';
 import { SeasonsController } from './controllers/seasons.controller';
 import { DashboardController } from './controllers/dashboard.controller';
+import { GuestPreferencesController } from './controllers/guest-preferences.controller';
 import { AcademicsService } from './services/academics.service';
 import { DashboardService } from './services/dashboard.service';
+import { GuestPreferencesService } from './services/guest-preferences.service';
 
 @Module({
   imports: [PrismaModule],
@@ -22,8 +24,9 @@ import { DashboardService } from './services/dashboard.service';
     AcademicYearsController,
     SeasonsController,
     DashboardController,
+    GuestPreferencesController,
   ],
-  providers: [AcademicsService, DashboardService],
-  exports: [AcademicsService, DashboardService],
+  providers: [AcademicsService, DashboardService, GuestPreferencesService],
+  exports: [AcademicsService, DashboardService, GuestPreferencesService],
 })
 export class AcademicsModule {}

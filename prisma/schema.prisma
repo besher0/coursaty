@@ -136,6 +136,7 @@ model University {
   pointsOfSales PointOfSale[]
   students  Student[]
   teacherAffiliations TeacherAffiliation[]
+  guestPreferences GuestPreference[]
 
   @@index([provinceId])
 }
@@ -164,6 +165,7 @@ model College {
   notifications Notification[]
   students   Student[]
   teacherAffiliations TeacherAffiliation[]
+  guestPreferences GuestPreference[]
 
   @@index([universityId])
 }
@@ -237,8 +239,27 @@ model Department {
   notifications Notification[]
   teacherAffiliations TeacherAffiliation[]
   courses Course[]
+  guestPreferences GuestPreference[]
 
   @@index([collegeId])
+}
+
+model GuestPreference {
+  id           String   @id @default(uuid())
+  deviceId     String   @unique
+  universityId String
+  collegeId    String
+  departmentId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  university University @relation(fields: [universityId], references: [id])
+  college    College    @relation(fields: [collegeId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@index([universityId])
+  @@index([collegeId])
+  @@index([departmentId])
 }
 
 model AcademicYear {

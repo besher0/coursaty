@@ -12,6 +12,30 @@ type DashboardGuestFilter = {
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async resolveGuestFilter(guestFilter?: DashboardGuestFilter): Promise<DashboardGuestFilter> {
+    if (guestFilter?.collegeId) return guestFilter;
+
+    if (!guestFilter?.deviceId) {
+      throw new BadRequestException('للزائر يجب إرسال deviceId أو collegeId في الفلاتر');
+    }
+
+    const guestPreferenceRepo = (this.prisma as any).guestPreference;
+    const savedPreference = await guestPreferenceRepo.findUnique({
+      where: { deviceId: guestFilter.deviceId },
+    });
+
+    if (!savedPreference) {
+      throw new BadRequestException('لا يوجد تفضيل محفوظ لهذا الجهاز');
+    }
+
+    return {
+      ...guestFilter,
+      universityId: guestFilter.universityId ?? savedPreference.universityId,
+      collegeId: savedPreference.collegeId,
+      departmentId: guestFilter.departmentId ?? savedPreference.departmentId ?? undefined,
+    };
+  }
+
   private async getStudentCollege(
     user?: { userId: string | number; type: string },
     guestFilter?: DashboardGuestFilter,
@@ -36,25 +60,23 @@ export class DashboardService {
       };
     }
 
-    if (!guestFilter?.collegeId) {
-      throw new BadRequestException('للزائر يجب إرسال collegeId في الفلاتر');
-    }
+    const resolvedGuestFilter = await this.resolveGuestFilter(guestFilter);
 
     const college = await this.prisma.college.findUnique({
-      where: { id: String(guestFilter.collegeId) },
+      where: { id: String(resolvedGuestFilter.collegeId) },
     });
     if (!college) throw new NotFoundException('الكلية غير موجودة');
 
     if (
-      guestFilter.universityId &&
-      college.universityId.toString() !== String(guestFilter.universityId)
+      resolvedGuestFilter.universityId &&
+      college.universityId.toString() !== String(resolvedGuestFilter.universityId)
     ) {
       throw new BadRequestException('الكلية لا تتبع للجامعة المحددة');
     }
 
-    if (guestFilter.departmentId) {
+    if (resolvedGuestFilter.departmentId) {
       const department = await this.prisma.department.findUnique({
-        where: { id: String(guestFilter.departmentId) },
+        where: { id: String(resolvedGuestFilter.departmentId) },
       });
 
       if (!department) throw new NotFoundException('القسم غير موجود');
@@ -66,7 +88,7 @@ export class DashboardService {
     return {
       collegeId: college.id,
       college,
-      departmentId: guestFilter.departmentId ? String(guestFilter.departmentId) : null,
+      departmentId: resolvedGuestFilter.departmentId ? String(resolvedGuestFilter.departmentId) : null,
     };
   }
 
@@ -688,6 +710,8 @@ export class DashboardService {
     const formattedCourses = courses.map((course) => ({
       id: course.id,
       name: course.name,
+
+      imageUrl: course.imageUrl ?? null,
       studentsCount: course._count.subscriptions,
       duration: course.duration,
       year: course.collegeYear?.academicYear

@@ -57,6 +57,11 @@ export class AuthService {
 
   async login(dto: LoginDto) {
     const user = await this.validateUser(dto.phone, dto.password);
+
+    if (user.userableType === 'STUDENT' && dto.deviceId?.trim()) {
+      await this.applyGuestPreferenceToStudent(user.userableId, dto.deviceId.trim());
+    }
+
     const payload = { sub: user.id.toString(), type: user.userableType };
     const accessToken = await this.jwt.signAsync(payload);
     return {
@@ -67,6 +72,57 @@ export class AuthService {
         userableId: user.userableId.toString(),
       },
     };
+  }
+
+  private async applyGuestPreferenceToStudent(studentId: string, deviceId: string) {
+    const guestPreferenceRepo = (this.prisma as any).guestPreference;
+
+    const guestPreference = await guestPreferenceRepo.findUnique({
+      where: { deviceId },
+    });
+
+    if (!guestPreference) return;
+
+    const college = await this.prisma.college.findUnique({
+      where: { id: String(guestPreference.collegeId) },
+    });
+
+    if (!college) {
+      await guestPreferenceRepo.delete({ where: { deviceId } });
+      return;
+    }
+
+    const university = await this.prisma.university.findUnique({
+      where: { id: String(college.universityId) },
+    });
+
+    if (!university) {
+      await guestPreferenceRepo.delete({ where: { deviceId } });
+      return;
+    }
+
+    let departmentId: string | null = null;
+    if (guestPreference.departmentId) {
+      const department = await this.prisma.department.findUnique({
+        where: { id: String(guestPreference.departmentId) },
+      });
+
+      if (department && department.collegeId.toString() === college.id.toString()) {
+        departmentId = department.id;
+      }
+    }
+
+    await this.prisma.student.update({
+      where: { id: studentId },
+      data: {
+        universityId: university.id,
+        provinceId: university.provinceId,
+        collegeId: college.id,
+        departmentId,
+      },
+    });
+
+    await guestPreferenceRepo.delete({ where: { deviceId } });
   }
 }
 
