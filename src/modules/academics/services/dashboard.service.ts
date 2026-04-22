@@ -1,11 +1,21 @@
 ﻿import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 
+type DashboardGuestFilter = {
+  deviceId?: string;
+  universityId?: string;
+  collegeId?: string;
+  departmentId?: string;
+};
+
 @Injectable()
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async getStudentCollege(user?: { userId: string | number; type: string }) {
+  private async getStudentCollege(
+    user?: { userId: string | number; type: string },
+    guestFilter?: DashboardGuestFilter,
+  ) {
     if (user?.type === 'STUDENT') {
       const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
       if (!dbUser) throw new NotFoundException('المستخدم غير موجود');
@@ -26,19 +36,37 @@ export class DashboardService {
       };
     }
 
-    const fallbackStudent = await this.prisma.student.findFirst({
-      include: {
-        college: true,
-        collegeYear: { include: { academicYear: true } },
-      },
-      orderBy: { createdAt: 'asc' },
+    if (!guestFilter?.collegeId) {
+      throw new BadRequestException('للزائر يجب إرسال collegeId في الفلاتر');
+    }
+
+    const college = await this.prisma.college.findUnique({
+      where: { id: String(guestFilter.collegeId) },
     });
-    if (!fallbackStudent) throw new NotFoundException('لا يوجد طالب متاح في النظام');
+    if (!college) throw new NotFoundException('الكلية غير موجودة');
+
+    if (
+      guestFilter.universityId &&
+      college.universityId.toString() !== String(guestFilter.universityId)
+    ) {
+      throw new BadRequestException('الكلية لا تتبع للجامعة المحددة');
+    }
+
+    if (guestFilter.departmentId) {
+      const department = await this.prisma.department.findUnique({
+        where: { id: String(guestFilter.departmentId) },
+      });
+
+      if (!department) throw new NotFoundException('القسم غير موجود');
+      if (department.collegeId.toString() !== college.id.toString()) {
+        throw new BadRequestException('القسم لا يتبع للكلية المحددة');
+      }
+    }
 
     return {
-      collegeId: fallbackStudent.collegeId,
-      college: fallbackStudent.college,
-      departmentId: fallbackStudent.departmentId,
+      collegeId: college.id,
+      college,
+      departmentId: guestFilter.departmentId ? String(guestFilter.departmentId) : null,
     };
   }
 
@@ -133,8 +161,11 @@ export class DashboardService {
     };
   }
 
-  async getStudentPrograms(user: { userId: string | number; type: string }) {
-    const { collegeId, departmentId } = await this.getStudentCollege(user);
+  async getStudentPrograms(
+    user: { userId: string | number; type: string },
+    guestFilter?: DashboardGuestFilter,
+  ) {
+    const { collegeId, departmentId } = await this.getStudentCollege(user, guestFilter);
 
     const subjectWhere = {
       collegeId,
@@ -214,8 +245,12 @@ export class DashboardService {
     ));
   }
 
-  async getStudentCollegeInfo(user: { userId: string | number; type: string }, limit: number = 7) {
-    const { collegeId, college, departmentId } = await this.getStudentCollege(user);
+  async getStudentCollegeInfo(
+    user: { userId: string | number; type: string },
+    limit: number = 7,
+    guestFilter?: DashboardGuestFilter,
+  ) {
+    const { collegeId, college, departmentId } = await this.getStudentCollege(user, guestFilter);
 
     // Get advertisements for the college
     const advertisements = await this.prisma.advertisement.findMany({
@@ -271,7 +306,7 @@ export class DashboardService {
       take: limit,
     });
 
-    const programs = await this.getStudentPrograms(user);
+    const programs = await this.getStudentPrograms(user, guestFilter);
 
     const allSubjectIds = [...subjects, ...programs].map((item) => item.id);
     const courseImagesBySubjectId = new Map<string, string>();
@@ -311,8 +346,12 @@ export class DashboardService {
     };
   }
 
-  async getCoursesByCollege(user: { userId: string | number; type: string }, collegeYearId?: string) {
-    const { collegeId, college, departmentId } = await this.getStudentCollege(user);
+  async getCoursesByCollege(
+    user: { userId: string | number; type: string },
+    collegeYearId?: string,
+    guestFilter?: DashboardGuestFilter,
+  ) {
+    const { collegeId, college, departmentId } = await this.getStudentCollege(user, guestFilter);
     const seasons = await this.prisma.season.findMany({
       orderBy: { seasonNumber: 'asc' },
     });
@@ -390,8 +429,9 @@ export class DashboardService {
     subjectId: string,
     page: number = 1,
     limit: number = 10,
+    guestFilter?: DashboardGuestFilter,
   ) {
-    const { collegeId } = await this.getStudentCollege(user);
+    const { collegeId } = await this.getStudentCollege(user, guestFilter);
 
     const subject = await this.prisma.subject.findFirst({
       where: { id: String(subjectId), collegeId },
@@ -443,8 +483,9 @@ export class DashboardService {
     programId?: string,
     page: number = 1,
     limit: number = 10,
+    guestFilter?: DashboardGuestFilter,
   ) {
-    const { collegeId } = await this.getStudentCollege(user);
+    const { collegeId } = await this.getStudentCollege(user, guestFilter);
 
     const normalizedProgramId = programId?.trim();
 
@@ -514,8 +555,11 @@ export class DashboardService {
     };
   }
 
-  async getCollegeTeachers(user: { userId: string | number; type: string }) {
-    const { collegeId, college } = await this.getStudentCollege(user);
+  async getCollegeTeachers(
+    user: { userId: string | number; type: string },
+    guestFilter?: DashboardGuestFilter,
+  ) {
+    const { collegeId, college } = await this.getStudentCollege(user, guestFilter);
 
     // Get all teachers who teach in this college
     const teachers = await this.prisma.teacher.findMany({
@@ -684,8 +728,13 @@ export class DashboardService {
     };
   }
 
-  async getCoursesByCategory(user: { userId: string | number; type: string }, page: number = 1, limit: number = 10) {
-    const { collegeId, college } = await this.getStudentCollege(user);
+  async getCoursesByCategory(
+    user: { userId: string | number; type: string },
+    page: number = 1,
+    limit: number = 10,
+    guestFilter?: DashboardGuestFilter,
+  ) {
+    const { collegeId, college } = await this.getStudentCollege(user, guestFilter);
 
     const years = await this.prisma.collegeYear.findMany({
       where: { collegeId },
@@ -757,8 +806,13 @@ export class DashboardService {
     };
   }
 
-  async getCoursesByPopular(user: { userId: string | number; type: string }, page: number = 1, limit: number = 10) {
-    const { collegeId, college } = await this.getStudentCollege(user);
+  async getCoursesByPopular(
+    user: { userId: string | number; type: string },
+    page: number = 1,
+    limit: number = 10,
+    guestFilter?: DashboardGuestFilter,
+  ) {
+    const { collegeId, college } = await this.getStudentCollege(user, guestFilter);
 
     const years = await this.prisma.collegeYear.findMany({
       where: { collegeId },
@@ -809,8 +863,13 @@ export class DashboardService {
     };
   }
 
-  async getCoursesByYear(user: { userId: string | number; type: string }, page: number = 1, limit: number = 10) {
-    const { collegeId, college } = await this.getStudentCollege(user);
+  async getCoursesByYear(
+    user: { userId: string | number; type: string },
+    page: number = 1,
+    limit: number = 10,
+    guestFilter?: DashboardGuestFilter,
+  ) {
+    const { collegeId, college } = await this.getStudentCollege(user, guestFilter);
 
     const years = await this.prisma.collegeYear.findMany({
       where: { collegeId },
@@ -867,13 +926,14 @@ export class DashboardService {
     categoryId?: string,
     page: number = 1,
     limit: number = 10,
+    guestFilter?: DashboardGuestFilter,
   ) {
     if (filter === 'popular') {
-      return this.getCoursesByPopular(user, page, limit);
+      return this.getCoursesByPopular(user, page, limit, guestFilter);
     }
 
     if (categoryId) {
-      const result = await this.getCoursesByCategory(user, page, limit);
+      const result = await this.getCoursesByCategory(user, page, limit, guestFilter);
       const matched = result.categories.find((c) => c.category.id === categoryId);
       return {
         college: result.college,
@@ -883,7 +943,7 @@ export class DashboardService {
       };
     }
 
-    return this.getCoursesByYear(user, page, limit);
+    return this.getCoursesByYear(user, page, limit, guestFilter);
   }
 }
 

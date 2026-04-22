@@ -150,22 +150,13 @@ export class InteractionsService {
   }
 
   private async ensureStudentContext(user?: { userId: string | number; type: string }) {
-    if (user?.type === 'STUDENT') {
-      const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-      if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
-      return { dbUser, studentId: dbUser.userableId };
+    if (user?.type !== 'STUDENT') {
+      throw new ForbiddenException('يجب تسجيل الدخول بحساب طالب');
     }
 
-    const fallbackUser = await this.prisma.user.findFirst({
-      where: { userableType: 'STUDENT' },
-      orderBy: { createdAt: 'asc' },
-    });
-    if (!fallbackUser) throw new ForbiddenException('لا يوجد حساب طالب افتراضي');
-
-    const student = await this.prisma.student.findUnique({ where: { id: fallbackUser.userableId } });
-    if (!student) throw new ForbiddenException('لا يوجد طالب افتراضي صالح');
-
-    return { dbUser: fallbackUser, studentId: fallbackUser.userableId };
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
+    if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
+    return { dbUser, studentId: dbUser.userableId };
   }
 
   private async ensureVideoAccess(videoId: string, user: { userId: string | number; type: string } | undefined) {

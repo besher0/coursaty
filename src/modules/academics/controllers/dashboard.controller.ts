@@ -8,20 +8,53 @@ import { DashboardService } from '../services/dashboard.service';
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
+  private buildGuestFilter(query: {
+    deviceId?: string;
+    universityId?: string;
+    collegeId?: string;
+    departmentId?: string;
+  }) {
+    return {
+      deviceId: query.deviceId,
+      universityId: query.universityId,
+      collegeId: query.collegeId,
+      departmentId: query.departmentId,
+    };
+  }
+
   @Get('student-college-info')
   @ApiOperation({ summary: 'Get college advertisements, teachers, subjects, and programs for the student college/department' })
-  getStudentCollegeInfo(@Req() req: any, @Query('limit') limit: string = '7') {
+  getStudentCollegeInfo(
+    @Req() req: any,
+    @Query('limit') limit: string = '7',
+    @Query('deviceId') deviceId?: string,
+    @Query('universityId') universityId?: string,
+    @Query('collegeId') collegeId?: string,
+    @Query('departmentId') departmentId?: string,
+  ) {
     const parsedLimit = parseInt(limit);
     return this.dashboardService.getStudentCollegeInfo(
       req.user,
       Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 7,
+      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
     );
   }
 
   @Get('courses-by-subjects')
   @ApiOperation({ summary: 'Get courses organized by college, year, and season' })
-  getCoursesByCollege(@Req() req: any, @Query('collegeYearId') collegeYearId?: string) {
-    return this.dashboardService.getCoursesByCollege(req.user, collegeYearId);
+  getCoursesByCollege(
+    @Req() req: any,
+    @Query('collegeYearId') collegeYearId?: string,
+    @Query('deviceId') deviceId?: string,
+    @Query('universityId') universityId?: string,
+    @Query('collegeId') collegeId?: string,
+    @Query('departmentId') departmentId?: string,
+  ) {
+    return this.dashboardService.getCoursesByCollege(
+      req.user,
+      collegeYearId,
+      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+    );
   }
 
   @Get('subjects/:id/courses')
@@ -31,6 +64,10 @@ export class DashboardController {
     @Param('id') subjectId: string,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
+    @Query('deviceId') deviceId?: string,
+    @Query('universityId') universityId?: string,
+    @Query('collegeId') collegeId?: string,
+    @Query('departmentId') departmentId?: string,
   ) {
     const parsedPage = parseInt(page);
     const parsedLimit = parseInt(limit);
@@ -40,6 +77,7 @@ export class DashboardController {
       subjectId,
       Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1,
       Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10,
+      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
     );
   }
 
@@ -51,6 +89,10 @@ export class DashboardController {
     @Query('id') programId?: string,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
+    @Query('deviceId') deviceId?: string,
+    @Query('universityId') universityId?: string,
+    @Query('collegeId') collegeId?: string,
+    @Query('departmentId') departmentId?: string,
   ) {
     const parsedPage = parseInt(page);
     const parsedLimit = parseInt(limit);
@@ -60,13 +102,23 @@ export class DashboardController {
       programId,
       Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1,
       Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10,
+      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
     );
   }
 
   @Get('college-teachers')
   @ApiOperation({ summary: 'Get all teachers in the student college with likes and courses count' })
-  getCollegeTeachers(@Req() req: any) {
-    return this.dashboardService.getCollegeTeachers(req.user);
+  getCollegeTeachers(
+    @Req() req: any,
+    @Query('deviceId') deviceId?: string,
+    @Query('universityId') universityId?: string,
+    @Query('collegeId') collegeId?: string,
+    @Query('departmentId') departmentId?: string,
+  ) {
+    return this.dashboardService.getCollegeTeachers(
+      req.user,
+      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+    );
   }
 
   @Get('liked-teachers')
@@ -91,8 +143,17 @@ export class DashboardController {
     @Req() req: any,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
+    @Query('deviceId') deviceId?: string,
+    @Query('universityId') universityId?: string,
+    @Query('collegeId') collegeId?: string,
+    @Query('departmentId') departmentId?: string,
   ) {
-    return this.dashboardService.getCoursesByCategory(req.user, parseInt(page), parseInt(limit));
+    return this.dashboardService.getCoursesByCategory(
+      req.user,
+      parseInt(page),
+      parseInt(limit),
+      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+    );
   }
 
   @Get('courses-by-popular')
@@ -101,8 +162,17 @@ export class DashboardController {
     @Req() req: any,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
+    @Query('deviceId') deviceId?: string,
+    @Query('universityId') universityId?: string,
+    @Query('collegeId') collegeId?: string,
+    @Query('departmentId') departmentId?: string,
   ) {
-    return this.dashboardService.getCoursesByPopular(req.user, parseInt(page), parseInt(limit));
+    return this.dashboardService.getCoursesByPopular(
+      req.user,
+      parseInt(page),
+      parseInt(limit),
+      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+    );
   }
 
   @Get('courses-by-year')
@@ -111,8 +181,17 @@ export class DashboardController {
     @Req() req: any,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
+    @Query('deviceId') deviceId?: string,
+    @Query('universityId') universityId?: string,
+    @Query('collegeId') collegeId?: string,
+    @Query('departmentId') departmentId?: string,
   ) {
-    return this.dashboardService.getCoursesByYear(req.user, parseInt(page), parseInt(limit));
+    return this.dashboardService.getCoursesByYear(
+      req.user,
+      parseInt(page),
+      parseInt(limit),
+      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+    );
   }
 
   @Get('courses')
@@ -125,6 +204,10 @@ export class DashboardController {
     @Query('categoryId') categoryId?: string,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
+    @Query('deviceId') deviceId?: string,
+    @Query('universityId') universityId?: string,
+    @Query('collegeId') collegeId?: string,
+    @Query('departmentId') departmentId?: string,
   ) {
     return this.dashboardService.getCoursesUnified(
       req.user,
@@ -132,14 +215,24 @@ export class DashboardController {
       categoryId,
       parseInt(page),
       parseInt(limit),
+      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
     );
   }
 
   @Get('programs')
 @ApiOperation({ summary: 'Get only programs (isProgram=true) for the student\'s college' })
   @ApiOkResponse({ description: 'List of programs' })
-  getStudentPrograms(@Req() req: any) {
-    return this.dashboardService.getStudentPrograms(req.user);
+  getStudentPrograms(
+    @Req() req: any,
+    @Query('deviceId') deviceId?: string,
+    @Query('universityId') universityId?: string,
+    @Query('collegeId') collegeId?: string,
+    @Query('departmentId') departmentId?: string,
+  ) {
+    return this.dashboardService.getStudentPrograms(
+      req.user,
+      this.buildGuestFilter({ deviceId, universityId, collegeId, departmentId }),
+    );
   }
 }
 

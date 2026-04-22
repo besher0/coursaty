@@ -1,4 +1,4 @@
-﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { $Enums, Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { UpdateCodeGroupDto } from '../dtos/update-code-group.dto';
@@ -13,22 +13,17 @@ export class FinancialsService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async resolveStudentContext(user?: { userId: string | number; type: string }) {
-    if (user?.type === 'STUDENT') {
-      const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-      if (!dbUser) throw new NotFoundException('المستخدم غير موجود');
-
-      const student = await this.prisma.student.findUnique({ where: { id: dbUser.userableId } });
-      if (!student) throw new NotFoundException('الطالب غير موجود');
-
-      return { studentId: student.id, student };
+    if (user?.type !== 'STUDENT') {
+      throw new ForbiddenException('يجب تسجيل الدخول بحساب طالب');
     }
 
-    const fallbackStudent = await this.prisma.student.findFirst({
-      orderBy: { createdAt: 'asc' },
-    });
-    if (!fallbackStudent) throw new NotFoundException('لا يوجد طالب متاح في النظام');
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
+    if (!dbUser) throw new NotFoundException('المستخدم غير موجود');
 
-    return { studentId: fallbackStudent.id, student: fallbackStudent };
+    const student = await this.prisma.student.findUnique({ where: { id: dbUser.userableId } });
+    if (!student) throw new NotFoundException('الطالب غير موجود');
+
+    return { studentId: student.id, student };
   }
 
   // CodeGroups
