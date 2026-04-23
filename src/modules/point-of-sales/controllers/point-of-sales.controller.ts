@@ -30,13 +30,20 @@ export class PointOfSalesController {
   }
 
   @Get('university/:universityId')
+  @ApiOperation({ summary: 'Get point of sales by university (mapped to university province)' })
   findByUniversity(@Param('universityId', new ParseUUIDPipe({ version: '4' })) universityId: string) {
     return this.pointOfSalesService.findByUniversity(universityId);
   }
 
+  @Get('province/:provinceId')
+  @ApiOperation({ summary: 'Get point of sales by province' })
+  findByProvince(@Param('provinceId', new ParseUUIDPipe({ version: '4' })) provinceId: string) {
+    return this.pointOfSalesService.findByProvince(provinceId);
+  }
+
   @Get('university')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get point of sales for student university' })
+  @ApiOperation({ summary: 'Get point of sales for student province' })
   findByStudentUniversity(@Req() req: any) {
     return this.pointOfSalesService.findByStudentToken(req.user);
   }

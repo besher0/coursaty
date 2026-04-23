@@ -2,9 +2,9 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class CreatePointOfSaleDto {
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'University ID', format: 'uuid' })
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Province ID', format: 'uuid' })
   @IsUUID('4')
-  universityId: string;
+  provinceId: string;
 
   @ApiProperty({ example: 'Main Campus Store', description: 'Point of sale name' })
   @IsString()

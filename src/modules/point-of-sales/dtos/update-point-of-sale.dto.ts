@@ -2,10 +2,10 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class UpdatePointOfSaleDto {
-  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'University ID', format: 'uuid' })
+  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Province ID', format: 'uuid' })
   @IsOptional()
   @IsUUID('4')
-  universityId?: string;
+  provinceId?: string;
 
   @ApiPropertyOptional({ example: 'Engineering Store', description: 'Point of sale name' })
   @IsOptional()

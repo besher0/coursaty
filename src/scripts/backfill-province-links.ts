@@ -12,11 +12,6 @@ async function main() {
       where: { universityId: uni.id, provinceId: { not: uni.provinceId } },
       data: { provinceId: uni.provinceId },
     });
-
-    await prisma.pointOfSale.updateMany({
-      where: { universityId: uni.id, provinceId: { not: uni.provinceId } },
-      data: { provinceId: uni.provinceId },
-    });
   }
 }
 

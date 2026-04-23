@@ -32,11 +32,29 @@ export class InteractionsService {
         updatedAt: true,
       },
     });
-
+let myRating = await this.prisma.courseRating.findUnique({
+      where: {
+        courseId_studentId: {
+          courseId: String(courseId),
+          studentId,
+        },
+      },
+    });
+    const stats = await this.prisma.courseRating.aggregate({
+    where: { courseId: String(courseId) },
+    _avg: { rating: true },
+    _count: { rating: true },
+  });
     return {
       courseId: String(courseId),
-      myRating: rating?.rating ?? null,
-      rating,
+     averageRating: stats._avg.rating || 0, // متوسط التقييم
+    totalRatings: stats._count.rating,    // عدد الأشخاص الذين قيموا
+    isRatedByUser: !!myRating,            // هل قام المستخدم الحالي بالتقييم؟
+    myRating: rating ? {
+      rating: rating.rating,
+      createdAt: rating.createdAt,
+      updatedAt: rating.updatedAt
+    } : null,
     };
   }
 

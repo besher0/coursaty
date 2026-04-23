@@ -14,6 +14,7 @@ import { LecturesModule } from './modules/lectures/lectures.module';
 import { BunnyModule } from './shared/bunny/bunny.module';
 import { FirebaseModule } from './shared/firebase/firebase.module';
 import { TeachersModule } from './modules/teachers/teachers.module';
+import { StudentsModule } from './modules/students/students.module';
 import { PointOfSalesModule } from './modules/point-of-sales/point-of-sales.module';
 import { AdvertisementsModule } from './modules/advertisements/advertisements.module';
 import { AdminsModule } from './modules/admins/admins.module';
@@ -42,6 +43,7 @@ import { ProvincesModule } from './modules/provinces/provinces.module';
     CourseModule,
     AuthModule,
     UsersModule,
+    StudentsModule,
     AcademicsModule,
     InteractionsModule,
     FinancialsModule,

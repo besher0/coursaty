@@ -352,6 +352,7 @@ export class CourseService {
           name: course.teacher.name,
           image: course.teacher.image,
         },
+        durationSeconds: course.duration ? course.duration * 3600 : null,
         description: course.description,
         introVideoUrl: course.introVideoUrl,
         discussionGroupUrl: course.discussionGroupUrl,

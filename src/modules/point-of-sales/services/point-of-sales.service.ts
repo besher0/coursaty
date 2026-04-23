@@ -8,13 +8,13 @@ export class PointOfSalesService {
   constructor(private prisma: PrismaService) {}
 
   async create(createPointOfSaleDto: CreatePointOfSaleDto) {
-    const universityId = String(createPointOfSaleDto.universityId);
-    const university = await this.prisma.university.findUnique({
-      where: { id: universityId },
+    const provinceId = String(createPointOfSaleDto.provinceId);
+    const province = await this.prisma.province.findUnique({
+      where: { id: provinceId },
     });
 
-    if (!university) {
-      throw new NotFoundException('الجامعة غير موجودة');
+    if (!province) {
+      throw new NotFoundException('المحافظة غير موجودة');
     }
 
     return this.prisma.pointOfSale.create({
@@ -25,8 +25,7 @@ export class PointOfSalesService {
         description: createPointOfSaleDto.description,
         image: createPointOfSaleDto.image,
         imageLocation: createPointOfSaleDto.imageLocation,
-        university: { connect: { id: universityId } },
-        province: { connect: { id: university.provinceId } },
+        province: { connect: { id: provinceId } },
       },
     });
   }
@@ -40,8 +39,15 @@ export class PointOfSalesService {
   }
 
   async findByUniversity(universityId: string) {
+    const university = await this.prisma.university.findUnique({
+      where: { id: String(universityId) },
+      select: { provinceId: true },
+    });
+
+    if (!university) throw new NotFoundException('الجامعة غير موجودة');
+
     return this.prisma.pointOfSale.findMany({
-      where: { universityId },
+      where: { provinceId: university.provinceId },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -54,7 +60,7 @@ export class PointOfSalesService {
   }
 
   async findByStudentToken(user?: { userId: string | number; type: string }) {
-    let student: { universityId: string; provinceId: string | null } | null = null;
+    let student: { provinceId: string } | null = null;
 
     if (user?.type === 'STUDENT') {
       const dbUser = await this.prisma.user.findUnique({
@@ -64,24 +70,20 @@ export class PointOfSalesService {
 
       student = await this.prisma.student.findUnique({
         where: { id: dbUser.userableId },
-        select: { universityId: true, provinceId: true },
+        select: { provinceId: true },
       });
     }
 
     if (!student) {
       student = await this.prisma.student.findFirst({
-        select: { universityId: true, provinceId: true },
+        select: { provinceId: true },
         orderBy: { createdAt: 'asc' },
       });
     }
 
     if (!student) throw new NotFoundException('لا يوجد طالب متاح في النظام');
 
-    if (student.provinceId) {
-      return this.findByProvince(student.provinceId);
-    }
-
-    return this.findByUniversity(student.universityId);
+    return this.findByProvince(student.provinceId);
   }
 
   async findOne(id: string) {
@@ -91,19 +93,17 @@ export class PointOfSalesService {
   }
 
   async update(id: string, updatePointOfSaleDto: UpdatePointOfSaleDto) {
-    let universityId: string | undefined;
     let provinceId: string | undefined;
 
-    if (updatePointOfSaleDto.universityId !== undefined) {
-      universityId = String(updatePointOfSaleDto.universityId);
-      const university = await this.prisma.university.findUnique({
-        where: { id: universityId },
+    if (updatePointOfSaleDto.provinceId !== undefined) {
+      provinceId = String(updatePointOfSaleDto.provinceId);
+      const province = await this.prisma.province.findUnique({
+        where: { id: provinceId },
       });
 
-      if (!university) {
-        throw new NotFoundException('الجامعة غير موجودة');
+      if (!province) {
+        throw new NotFoundException('المحافظة غير موجودة');
       }
-      provinceId = university.provinceId;
     }
 
     return this.prisma.pointOfSale.update({
@@ -115,7 +115,6 @@ export class PointOfSalesService {
         description: updatePointOfSaleDto.description,
         image: updatePointOfSaleDto.image,
         imageLocation: updatePointOfSaleDto.imageLocation,
-        ...(universityId !== undefined ? { university: { connect: { id: universityId } } } : {}),
         ...(provinceId !== undefined ? { province: { connect: { id: provinceId } } } : {}),
       },
     });
