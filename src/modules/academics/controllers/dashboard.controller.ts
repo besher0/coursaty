@@ -1,7 +1,9 @@
-import { Controller, Get, Req, Param, Query } from '@nestjs/common';
+import { Controller, Get, Req, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiOkResponse } from '@nestjs/swagger';
 import { DashboardService } from '../services/dashboard.service';
+import { OptionalJwtAuthGuard } from '@/modules/auth/guards/optional-jwt-auth.guard';
 
+@UseGuards(OptionalJwtAuthGuard)
 @ApiTags('dashboard')
 @ApiBearerAuth()
 @Controller('dashboard')

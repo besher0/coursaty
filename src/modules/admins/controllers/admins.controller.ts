@@ -1,10 +1,11 @@
-import { Body, Controller, Get, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AdminsService } from '../services/admins.service';
 import { AdminDashboardService } from '../services/admin-dashboard.service';
 import { CreateAdminDto } from '../dtos/create-admin.dto';
 import { AdminDashboardDto, AdminDashboardQueryDto } from '../dtos/admin-dashboard.dto';
 import { UsersDirectoryQueryDto } from '../dtos/users-directory-query.dto';
+import { UpdateUserStatusDto } from '../dtos/update-user-status.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/modules/auth/guards/roles.guard';
 import { Roles } from '@/modules/auth/roles.decorator';
@@ -226,5 +227,18 @@ export class AdminsController {
   @ApiOkResponse({ description: 'Users directory results' })
   async getUsersDirectory(@Query() query: UsersDirectoryQueryDto) {
     return this.admins.getUsersDirectory(query);
+  }
+
+  @Patch('users/:userId/status')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Update user status (active, pending, inactive, suspended)' })
+  @ApiOkResponse({ description: 'User status updated' })
+  async updateUserStatus(
+    @Param('userId', new ParseUUIDPipe({ version: '4' })) userId: string,
+    @Body() dto: UpdateUserStatusDto,
+  ) {
+    return this.admins.updateUserStatus(userId, dto.status);
   }
 }

@@ -40,6 +40,7 @@ export class DashboardService {
     user?: { userId: string | number; type: string },
     guestFilter?: DashboardGuestFilter,
   ) {
+  if(user){
     if (user?.type === 'STUDENT') {
       const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
       if (!dbUser) throw new NotFoundException('المستخدم غير موجود');
@@ -59,7 +60,7 @@ export class DashboardService {
         departmentId: student.departmentId,
       };
     }
-
+  }
     const resolvedGuestFilter = await this.resolveGuestFilter(guestFilter);
 
     const college = await this.prisma.college.findUnique({

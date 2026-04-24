@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateAdminDto } from '../dtos/create-admin.dto';
 import { UsersDirectoryQueryDto, UsersDirectoryType } from '../dtos/users-directory-query.dto';
+import { AllowedUserStatus } from '../dtos/update-user-status.dto';
 
 @Injectable()
 export class AdminsService {
@@ -27,6 +28,23 @@ export class AdminsService {
 
   async list() {
     return this.prisma.admin.findMany({ orderBy: { createdAt: 'desc' } });
+  }
+
+  async updateUserStatus(userId: string, status: AllowedUserStatus) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { status },
+      select: {
+        id: true,
+        phone: true,
+        userableType: true,
+        status: true,
+        createdAt: true,
+      },
+    });
   }
 
   async getUsersDirectory(query: UsersDirectoryQueryDto) {

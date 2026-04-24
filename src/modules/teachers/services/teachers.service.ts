@@ -396,6 +396,7 @@ export class TeachersService {
               duration: number;
               expiresAt: Date | null;
               studentsCount: number;
+              createdAt: Date;
               season: { id: string; name: string; number: number } | null;
             }>;
           }
@@ -440,6 +441,7 @@ export class TeachersService {
         imageUrl: course.imageUrl ?? null,
         duration: course.duration,
         expiresAt: course.expiresAt ?? null,
+        createdAt: course.createdAt,
         studentsCount: course._count.subscriptions,
         season: course.season
           ? { id: course.season.id, name: course.season.seasonName, number: course.season.seasonNumber }
