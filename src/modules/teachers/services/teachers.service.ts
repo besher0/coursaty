@@ -477,10 +477,18 @@ export class TeachersService {
             id: true,
             subjectName: true,
             isProgram: true,
+            imageUrl: true,
             collegeId: true,
             collegeYearId: true,
             seasonId: true,
             departmentId: true,
+            collegeYear: {
+              select: {
+                id: true,
+                academicYear: { select: { id: true, yearName: true, yearNumber: true } },
+              },
+            },
+            season: { select: { id: true, seasonName: true, seasonNumber: true } },
           },
         },
       },
@@ -492,10 +500,25 @@ export class TeachersService {
         id: permission.subject.id,
         subjectName: permission.subject.subjectName,
         isProgram: permission.subject.isProgram,
+        imageUrl: permission.subject.imageUrl,
         collegeId: permission.subject.collegeId,
         collegeYearId: permission.subject.collegeYearId,
         seasonId: permission.subject.seasonId,
         departmentId: permission.subject.departmentId,
+        season: permission.subject.season
+          ? {
+              id: permission.subject.season.id,
+              name: permission.subject.season.seasonName,
+              number: permission.subject.season.seasonNumber,
+            }
+          : null,
+        academicYear: permission.subject.collegeYear?.academicYear
+          ? {
+              id: permission.subject.collegeYear.academicYear.id,
+              name: permission.subject.collegeYear.academicYear.yearName,
+              number: permission.subject.collegeYear.academicYear.yearNumber,
+            }
+          : null,
       })),
     };
   }

@@ -417,6 +417,7 @@ export class DashboardService {
             .map((subject) => ({
               id: subject.id,
               name: subject.subjectName,
+              imageUrl: subject.imageUrl ?? null,
             })),
         }));
 
