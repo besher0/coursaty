@@ -98,6 +98,34 @@ export class DashboardController {
     );
   }
 
+  @Get('courses/mixed')
+  @ApiOperation({ summary: 'Get subject/program courses in one request' })
+  @ApiQuery({ name: 'type', required: false, description: 'all | subject | program (default all)' })
+  @ApiQuery({ name: 'subjectId', required: false, description: 'Optional subject id if type=subject' })
+  @ApiQuery({ name: 'programId', required: false, description: 'Optional program id if type=program' })
+  @ApiQuery({ name: 'page', required: false, description: 'Optional page number, default is 1' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Optional items per page, default is 10' })
+  @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
+  getMixedCourses(
+    @Req() req: any,
+    @Query('type') type: 'all' | 'subject' | 'program' = 'all',
+    @Query('subjectId') subjectId?: string,
+    @Query('programId') programId?: string,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+    @Query('deviceId') deviceId?: string,
+  ) {
+    return this.dashboardService.getMixedCourses(
+      req.user,
+      type,
+      subjectId,
+      programId,
+      parseInt(page),
+      parseInt(limit),
+      this.buildGuestFilter({ deviceId }),
+    );
+  }
+
   @Get('college-teachers')
   @ApiOperation({ summary: 'Get all teachers in the student college with likes and courses count' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
@@ -223,4 +251,3 @@ export class DashboardController {
     );
   }
 }
-

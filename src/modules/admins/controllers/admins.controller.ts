@@ -143,6 +143,61 @@ export class AdminsController {
     return this.admins.getTeachersByDepartmentId(departmentId);
   }
 
+  @Get('universities/:universityId/teachers')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get teachers by university id' })
+  async getTeachersByUniversityId(
+    @Param('universityId', new ParseUUIDPipe({ version: '4' })) universityId: string,
+  ) {
+    return this.admins.getTeachersByUniversityId(universityId);
+  }
+
+  @Get('universities/:universityId/students')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get students by university id' })
+  async getStudentsByUniversityId(
+    @Param('universityId', new ParseUUIDPipe({ version: '4' })) universityId: string,
+  ) {
+    return this.admins.getStudentsByUniversityId(universityId);
+  }
+
+  @Get('departments/:departmentId/subjects')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get subjects by department id (REST path)' })
+  async getDepartmentSubjects(
+    @Param('departmentId', new ParseUUIDPipe({ version: '4' })) departmentId: string,
+  ) {
+    return this.admins.getSubjectsByDepartmentId(departmentId);
+  }
+
+  @Get('departments/:departmentId/teachers')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get teachers by department id (REST path)' })
+  async getDepartmentTeachers(
+    @Param('departmentId', new ParseUUIDPipe({ version: '4' })) departmentId: string,
+  ) {
+    return this.admins.getTeachersByDepartmentId(departmentId);
+  }
+
+  @Get('colleges/:collegeId/programs')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get programs by college id (REST path)' })
+  async getCollegePrograms(
+    @Param('collegeId', new ParseUUIDPipe({ version: '4' })) collegeId: string,
+  ) {
+    return this.admins.getProgramsByCollegeId(collegeId);
+  }
+
   @Get('getYearsOfCollage')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)

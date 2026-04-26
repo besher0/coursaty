@@ -22,6 +22,11 @@ export class UsersDirectoryQueryDto {
   @IsUUID()
   studentId?: string;
 
+  @ApiPropertyOptional({ description: 'Filter by university UUID' })
+  @IsOptional()
+  @IsUUID()
+  universityId?: string;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Type(() => Number)

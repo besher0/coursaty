@@ -8,7 +8,8 @@ import { randomInt } from 'crypto';
 
 @Injectable()
 export class FinancialsService {
-  private static readonly FIXED_CODE_LENGTH = 6;
+  private static readonly FIXED_CODE_LENGTH = 8;
+  private static readonly CODE_PATTERN = /^[a-z0-9]{8}$/;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -71,6 +72,9 @@ export class FinancialsService {
     if (normalizedCodeValue && normalizedCodeValue.length !== FinancialsService.FIXED_CODE_LENGTH) {
       throw new BadRequestException(`الكود يجب أن يتكون من ${FinancialsService.FIXED_CODE_LENGTH} خانات`);
     }
+    if (normalizedCodeValue && !FinancialsService.CODE_PATTERN.test(normalizedCodeValue)) {
+      throw new BadRequestException('الكود يجب أن يتكون من 8 خانات (أرقام + أحرف صغيرة فقط)');
+    }
 
     const createWithValue = async (value: string) =>
       this.prisma.code.create({
@@ -106,6 +110,9 @@ export class FinancialsService {
     const validUntilDate = this.parseValidUntil(dto.validUntil);
 
     const prefix = (dto.prefix ?? '').trim();
+    if (prefix && !/^[a-z0-9]+$/.test(prefix)) {
+      throw new BadRequestException('prefix يجب أن يحتوي على أرقام وأحرف صغيرة فقط');
+    }
     if (prefix.length >= FinancialsService.FIXED_CODE_LENGTH) {
       throw new BadRequestException(`prefix يجب أن يكون أقل من ${FinancialsService.FIXED_CODE_LENGTH} خانات`);
     }
@@ -300,7 +307,7 @@ export class FinancialsService {
   }
 
   private generateRandom(length: number) {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     let out = '';
     for (let i = 0; i < length; i += 1) {
       out += chars[randomInt(chars.length)];
@@ -405,5 +412,4 @@ export class FinancialsService {
     };
   }
 }
-
 

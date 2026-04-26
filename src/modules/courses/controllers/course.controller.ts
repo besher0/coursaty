@@ -77,6 +77,38 @@ export class CourseController {
     return this.courseService.getAdminCourseDetails(id);
   }
 
+  @Get(':id/admin-details/info')
+  @ApiOperation({ summary: 'Get admin course details section only' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async getAdminCourseInfo(@Param('id', ParseUUIDPipe) id: string) {
+    return this.courseService.getAdminCourseInfo(id);
+  }
+
+  @Get(':id/admin-details/lectures')
+  @ApiOperation({ summary: 'Get admin course lectures section only' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async getAdminCourseLectures(@Param('id', ParseUUIDPipe) id: string) {
+    return this.courseService.getAdminCourseLectures(id);
+  }
+
+  @Get(':id/admin-details/codes')
+  @ApiOperation({ summary: 'Get admin course codes section only' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async getAdminCourseCodes(@Param('id', ParseUUIDPipe) id: string) {
+    return this.courseService.getAdminCourseCodes(id);
+  }
+
+  @Get(':id/admin-details/revenue')
+  @ApiOperation({ summary: 'Get admin course revenues section only' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async getAdminCourseRevenue(@Param('id', ParseUUIDPipe) id: string) {
+    return this.courseService.getAdminCourseRevenue(id);
+  }
+
   @Get(':id/statistics')
   @ApiOperation({ summary: 'Get course statistics for admin or course owner teacher' })
   @UseGuards(JwtAuthGuard, RolesGuard)

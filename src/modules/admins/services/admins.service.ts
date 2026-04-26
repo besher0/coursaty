@@ -52,14 +52,25 @@ export class AdminsService {
     const search = query.search?.trim();
 
     if (query.type === UsersDirectoryType.TEACHER) {
-      const where = search
-        ? {
-            name: {
-              contains: search,
-              mode: 'insensitive' as const,
-            },
-          }
-        : undefined;
+      const where = {
+        ...(search
+          ? {
+              name: {
+                contains: search,
+                mode: 'insensitive' as const,
+              },
+            }
+          : {}),
+        ...(query.universityId
+          ? {
+              affiliations: {
+                some: {
+                  universityId: query.universityId,
+                },
+              },
+            }
+          : {}),
+      };
 
       const [total, teachers] = await this.prisma.$transaction([
         this.prisma.teacher.count({ where }),
@@ -129,14 +140,21 @@ export class AdminsService {
       };
     }
 
-    const where = search
-      ? {
-          name: {
-            contains: search,
-            mode: 'insensitive' as const,
-          },
-        }
-      : undefined;
+    const where = {
+      ...(search
+        ? {
+            name: {
+              contains: search,
+              mode: 'insensitive' as const,
+            },
+          }
+        : {}),
+      ...(query.universityId
+        ? {
+            universityId: query.universityId,
+          }
+        : {}),
+    };
 
     const [total, students] = await this.prisma.$transaction([
       this.prisma.student.count({ where }),
@@ -295,6 +313,25 @@ export class AdminsService {
             name: true,
           },
         },
+        collegeYear: {
+          select: {
+            id: true,
+            academicYear: {
+              select: {
+                id: true,
+                yearName: true,
+                yearNumber: true,
+              },
+            },
+          },
+        },
+        season: {
+          select: {
+            id: true,
+            seasonName: true,
+            seasonNumber: true,
+          },
+        },
       },
       orderBy: {
         subjectName: 'asc',
@@ -322,6 +359,25 @@ export class AdminsService {
           select: {
             id: true,
             name: true,
+          },
+        },
+        collegeYear: {
+          select: {
+            id: true,
+            academicYear: {
+              select: {
+                id: true,
+                yearName: true,
+                yearNumber: true,
+              },
+            },
+          },
+        },
+        season: {
+          select: {
+            id: true,
+            seasonName: true,
+            seasonNumber: true,
           },
         },
       },
@@ -353,9 +409,81 @@ export class AdminsService {
             name: true,
           },
         },
+        collegeYear: {
+          select: {
+            id: true,
+            academicYear: {
+              select: {
+                id: true,
+                yearName: true,
+                yearNumber: true,
+              },
+            },
+          },
+        },
+        season: {
+          select: {
+            id: true,
+            seasonName: true,
+            seasonNumber: true,
+          },
+        },
       },
       orderBy: {
         subjectName: 'asc',
+      },
+    });
+  }
+
+  async getTeachersByUniversityId(universityId: string) {
+    return this.prisma.teacher.findMany({
+      where: {
+        affiliations: {
+          some: {
+            universityId,
+          },
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        image: true,
+        likesCount: true,
+        _count: {
+          select: {
+            courses: true,
+          },
+        },
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+  }
+
+  async getStudentsByUniversityId(universityId: string) {
+    return this.prisma.student.findMany({
+      where: { universityId },
+      select: {
+        id: true,
+        name: true,
+        universityNumber: true,
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        college: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        name: 'asc',
       },
     });
   }

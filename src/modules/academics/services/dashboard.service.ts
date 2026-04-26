@@ -573,6 +573,38 @@ export class DashboardService {
     };
   }
 
+  async getMixedCourses(
+    user: { userId: string | number; type: string },
+    type: 'all' | 'subject' | 'program' = 'all',
+    subjectId?: string,
+    programId?: string,
+    page: number = 1,
+    limit: number = 10,
+    guestFilter?: DashboardGuestFilter,
+  ) {
+    if (type === 'subject') {
+      if (!subjectId) throw new BadRequestException('subjectId مطلوب عند type=subject');
+      return this.getSubjectCourses(user, subjectId, page, limit, guestFilter);
+    }
+
+    if (type === 'program') {
+      return this.getProgramCourses(user, programId, page, limit, guestFilter);
+    }
+
+    const [subjectsCourses, programsCourses] = await Promise.all([
+      subjectId
+        ? this.getSubjectCourses(user, subjectId, page, limit, guestFilter)
+        : null,
+      this.getProgramCourses(user, programId, page, limit, guestFilter),
+    ]);
+
+    return {
+      type: 'all',
+      subjectsCourses,
+      programsCourses,
+    };
+  }
+
   async getCollegeTeachers(
     user: { userId: string | number; type: string },
     guestFilter?: DashboardGuestFilter,
@@ -966,4 +998,3 @@ export class DashboardService {
     return this.getCoursesByYear(user, page, limit, guestFilter);
   }
 }
-

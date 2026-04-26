@@ -351,12 +351,15 @@ export class CourseService {
           id: course.teacher.id,
           name: course.teacher.name,
           image: course.teacher.image,
+          instagramUrl: null,
+          telegramUrl: null,
         },
         durationSeconds: course.duration ? course.duration * 3600 : null,
         description: course.description,
         introVideoUrl: course.introVideoUrl,
         discussionGroupUrl: course.discussionGroupUrl,
         telegramUrl: course.discussionGroupUrl,
+        instagramUrl: null,
         studentsCount: course._count.subscriptions,
         year: course.collegeYear?.academicYear
           ? {
@@ -461,6 +464,8 @@ export class CourseService {
           id: course.teacher.id,
           name: course.teacher.name,
           image: course.teacher.image,
+          instagramUrl: null,
+          telegramUrl: null,
         },
         studentsCount: course._count.subscriptions,
         year: course.collegeYear?.academicYear
@@ -490,6 +495,8 @@ export class CourseService {
         description: course.description,
         introVideoUrl: course.introVideoUrl,
         discussionGroupUrl: course.discussionGroupUrl,
+        telegramUrl: course.discussionGroupUrl,
+        instagramUrl: null,
       },
       lectures: course.lectures.map((lec) => ({
         id: lec.id,
@@ -526,6 +533,57 @@ export class CourseService {
             })),
           };
         }),
+      },
+    };
+  }
+
+  async getAdminCourseInfo(courseId: string) {
+    const payload = await this.getAdminCourseDetails(courseId);
+    return { course: payload.course, details: payload.details };
+  }
+
+  async getAdminCourseLectures(courseId: string) {
+    const payload = await this.getAdminCourseDetails(courseId);
+    return { course: payload.course, lectures: payload.lectures };
+  }
+
+  async getAdminCourseCodes(courseId: string) {
+    const payload = await this.getAdminCourseDetails(courseId);
+    return { course: payload.course, codes: payload.codes };
+  }
+
+  async getAdminCourseRevenue(courseId: string) {
+    const course = await this.prisma.course.findUnique({
+      where: { id: String(courseId) },
+      select: {
+        id: true,
+        name: true,
+        teacherPercentage: true,
+      },
+    });
+    if (!course) throw new NotFoundException('الكورس غير موجود');
+
+    const subscriptions = await this.prisma.studentSubscription.findMany({
+      where: { courseId: course.id },
+      select: { finalPrice: true },
+    });
+
+    const grossRevenue = subscriptions.reduce((acc, sub) => acc + Number(sub.finalPrice ?? 0), 0);
+    const teacherPercentage = Number(course.teacherPercentage ?? 0);
+    const teacherRevenue = (grossRevenue * teacherPercentage) / 100;
+    const platformRevenue = grossRevenue - teacherRevenue;
+
+    return {
+      course: {
+        id: course.id,
+        name: course.name,
+      },
+      subscribersCount: subscriptions.length,
+      revenue: {
+        grossRevenue: Number(grossRevenue.toFixed(2)),
+        teacherPercentage: Number(teacherPercentage.toFixed(2)),
+        teacherRevenue: Number(teacherRevenue.toFixed(2)),
+        platformRevenue: Number(platformRevenue.toFixed(2)),
       },
     };
   }
@@ -754,5 +812,4 @@ export class CourseService {
     if (!affiliation) throw new BadRequestException('المدرس غير منتسب للنطاق المحدد');
   }
 }
-
 

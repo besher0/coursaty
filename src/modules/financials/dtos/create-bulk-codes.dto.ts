@@ -17,10 +17,10 @@ export class CreateBulkCodesDto {
   @IsString()
   prefix?: string;
 
-  @ApiPropertyOptional({ description: 'Deprecated: code length is fixed to 6', default: 6 })
+  @ApiPropertyOptional({ description: 'Deprecated: code length is fixed to 8', default: 8 })
   @IsOptional()
   @IsInt()
-  @Equals(6, { message: 'length يجب أن يساوي 6' })
+  @Equals(8, { message: 'length يجب أن يساوي 8' })
   length?: number;
 
   @ApiPropertyOptional({ description: 'Max total uses per code; null means unlimited' })

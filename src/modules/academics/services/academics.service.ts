@@ -46,7 +46,53 @@ export class AcademicsService {
     return this.prisma.college.create({ data: { universityId, name } });
   }
   listColleges(universityId?: string) {
-    return this.prisma.college.findMany({ where: universityId ? { universityId } : undefined });
+    return this.prisma.college.findMany({
+      where: universityId ? { universityId } : undefined,
+      include: {
+        _count: {
+          select: {
+            departments: true,
+          },
+        },
+      },
+    }).then(async (colleges) => {
+      const collegeIds = colleges.map((college) => college.id);
+      const [subjectCounts, programCounts, teacherAffiliations] = await Promise.all([
+        this.prisma.subject.groupBy({
+          by: ['collegeId'],
+          where: { collegeId: { in: collegeIds }, isProgram: false },
+          _count: { _all: true },
+        }),
+        this.prisma.subject.groupBy({
+          by: ['collegeId'],
+          where: { collegeId: { in: collegeIds }, isProgram: true },
+          _count: { _all: true },
+        }),
+        this.prisma.teacherAffiliation.findMany({
+          where: { collegeId: { in: collegeIds } },
+          select: { collegeId: true, teacherId: true },
+        }),
+      ]);
+
+      const subjectsByCollege = new Map(subjectCounts.map((item) => [item.collegeId, item._count._all]));
+      const programsByCollege = new Map(programCounts.map((item) => [item.collegeId, item._count._all]));
+      const teachersByCollege = new Map<string, Set<string>>();
+      for (const affiliation of teacherAffiliations) {
+        const set = teachersByCollege.get(affiliation.collegeId) ?? new Set<string>();
+        set.add(affiliation.teacherId);
+        teachersByCollege.set(affiliation.collegeId, set);
+      }
+
+      return colleges.map((college) => ({
+        ...college,
+        counts: {
+          subjects: subjectsByCollege.get(college.id) ?? 0,
+          programs: programsByCollege.get(college.id) ?? 0,
+          departments: college._count.departments,
+          teachers: teachersByCollege.get(college.id)?.size ?? 0,
+        },
+      }));
+    });
   }
 
   updateCollege(id: string, dto: UpdateCollegeDto) {
@@ -64,7 +110,52 @@ export class AcademicsService {
     return this.prisma.department.create({ data: { collegeId, name } });
   }
   listDepartments(collegeId?: string) {
-    return this.prisma.department.findMany({ where: collegeId ? { collegeId } : undefined });
+    return this.prisma.department.findMany({ where: collegeId ? { collegeId } : undefined }).then(async (departments) => {
+      const departmentIds = departments.map((department) => department.id);
+      const [subjectCounts, programCounts, teacherAffiliations] = await Promise.all([
+        this.prisma.subject.groupBy({
+          by: ['departmentId'],
+          where: { departmentId: { in: departmentIds }, isProgram: false },
+          _count: { _all: true },
+        }),
+        this.prisma.subject.groupBy({
+          by: ['departmentId'],
+          where: { departmentId: { in: departmentIds }, isProgram: true },
+          _count: { _all: true },
+        }),
+        this.prisma.teacherAffiliation.findMany({
+          where: { departmentId: { in: departmentIds } },
+          select: { departmentId: true, teacherId: true },
+        }),
+      ]);
+
+      const subjectsByDepartment = new Map(
+        subjectCounts
+          .filter((item) => item.departmentId)
+          .map((item) => [item.departmentId as string, item._count._all]),
+      );
+      const programsByDepartment = new Map(
+        programCounts
+          .filter((item) => item.departmentId)
+          .map((item) => [item.departmentId as string, item._count._all]),
+      );
+      const teachersByDepartment = new Map<string, Set<string>>();
+      for (const affiliation of teacherAffiliations) {
+        if (!affiliation.departmentId) continue;
+        const set = teachersByDepartment.get(affiliation.departmentId) ?? new Set<string>();
+        set.add(affiliation.teacherId);
+        teachersByDepartment.set(affiliation.departmentId, set);
+      }
+
+      return departments.map((department) => ({
+        ...department,
+        counts: {
+          subjects: subjectsByDepartment.get(department.id) ?? 0,
+          programs: programsByDepartment.get(department.id) ?? 0,
+          teachers: teachersByDepartment.get(department.id)?.size ?? 0,
+        },
+      }));
+    });
   }
 
   updateDepartment(id: string, dto: UpdateDepartmentDto) {
@@ -199,4 +290,3 @@ export class AcademicsService {
     return this.prisma.season.delete({ where: { id } });
   }
 }
-

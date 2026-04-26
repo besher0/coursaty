@@ -21,7 +21,7 @@ describe('CourseService academic identity immutability', () => {
     const service = new CourseService(prisma, bunny);
 
     await expect(
-      service.updateCourse(1, { collegeId: 5 } as any, { userId: 1, type: 'ADMIN' }),
+      service.updateCourse("1", { collegeId: 5 } as any, { userId: 1, type: 'ADMIN' }),
     ).rejects.toThrow(DomainException);
   });
 });
