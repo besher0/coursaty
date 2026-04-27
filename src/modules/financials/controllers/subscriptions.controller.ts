@@ -35,13 +35,17 @@ export class SubscriptionsController {
   }
 
   @Get('me/active-courses')
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get active courses for current student' })
+  @UseGuards(JwtAuthGuard)
   getActiveCourses(@Req() req: any) {
     return this.financials.getActiveCoursesByUser(req.user);
   }
 
   @Get('me/inactive-courses')
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get inactive courses for current student' })
+  @UseGuards(JwtAuthGuard)
   getInactiveCourses(@Req() req: any) {
     return this.financials.getInactiveCoursesByUser(req.user);
   }
