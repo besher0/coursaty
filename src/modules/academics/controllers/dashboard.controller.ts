@@ -33,6 +33,32 @@ export class DashboardController {
     );
   }
 
+  @Get('search')
+  @ApiOperation({ summary: 'Search subjects, programs, and courses for the student college' })
+  @ApiQuery({ name: 'q', required: false, description: 'Search text' })
+  @ApiQuery({ name: 'page', required: false, description: 'Optional page number, default is 1' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Optional items per page, default is 10' })
+  @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
+  @ApiOkResponse({ description: 'Search results' })
+  searchCatalog(
+    @Req() req: any,
+    @Query('q') q?: string,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+    @Query('deviceId') deviceId?: string,
+  ) {
+    const parsedPage = parseInt(page);
+    const parsedLimit = parseInt(limit);
+
+    return this.dashboardService.searchCatalog(
+      req.user,
+      q,
+      Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1,
+      Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10,
+      this.buildGuestFilter({ deviceId }),
+    );
+  }
+
   @Get('courses-by-subjects')
   @ApiOperation({ summary: 'Get courses organized by college, year, and season' })
   @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id' })

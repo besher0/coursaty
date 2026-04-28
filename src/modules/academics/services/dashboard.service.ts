@@ -367,6 +367,176 @@ export class DashboardService {
     };
   }
 
+  async searchCatalog(
+    user: { userId: string | number; type: string },
+    query?: string,
+    page: number = 1,
+    limit: number = 10,
+    guestFilter?: DashboardGuestFilter,
+  ) {
+    const searchText = query?.trim();
+    const normalizedPage = Number.isFinite(page) && page > 0 ? page : 1;
+    const normalizedLimit = Number.isFinite(limit) && limit > 0 ? Math.min(100, limit) : 10;
+
+    if (!searchText) {
+      return {
+        query: query ?? null,
+        subjects: [],
+        programs: [],
+        courses: {
+          data: [],
+          pagination: {
+            page: normalizedPage,
+            limit: normalizedLimit,
+            total: 0,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPreviousPage: false,
+          },
+        },
+      };
+    }
+
+    const { collegeId, departmentId } = await this.getStudentCollege(user, guestFilter);
+
+    const subjectWhere = {
+      collegeId,
+      ...(departmentId
+        ? {
+            OR: [{ departmentId: null }, { departmentId }],
+          }
+        : {}),
+      subjectName: {
+        contains: searchText,
+        mode: 'insensitive' as const,
+      },
+    };
+
+    const [subjects, programs] = await Promise.all([
+      this.prisma.subject.findMany({
+        where: {
+          ...subjectWhere,
+          isProgram: false,
+        },
+        include: {
+          college: true,
+          department: true,
+          collegeYear: { include: { academicYear: true } },
+          season: true,
+        },
+        orderBy: [
+          { collegeYear: { academicYear: { yearNumber: 'asc' } } },
+          { season: { seasonNumber: 'asc' } },
+          { subjectName: 'asc' },
+        ],
+      }),
+      this.prisma.subject.findMany({
+        where: {
+          ...subjectWhere,
+          isProgram: true,
+        },
+        include: {
+          college: true,
+          department: true,
+          collegeYear: { include: { academicYear: true } },
+          season: true,
+        },
+        orderBy: [
+          { collegeYear: { academicYear: { yearNumber: 'asc' } } },
+          { season: { seasonNumber: 'asc' } },
+          { subjectName: 'asc' },
+        ],
+      }),
+    ]);
+
+    const subjectIds = [...subjects, ...programs].map((subject) => subject.id);
+    const courseImagesBySubjectId = new Map<string, string>();
+
+    if (subjectIds.length > 0) {
+      const coursesWithImages = await this.prisma.course.findMany({
+        where: {
+          subjectId: { in: subjectIds },
+          imageUrl: { not: null },
+        },
+        select: {
+          subjectId: true,
+          imageUrl: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      for (const course of coursesWithImages) {
+        if (course.subjectId && course.imageUrl && !courseImagesBySubjectId.has(course.subjectId)) {
+          courseImagesBySubjectId.set(course.subjectId, course.imageUrl);
+        }
+      }
+    }
+
+    const skip = (normalizedPage - 1) * normalizedLimit;
+    const coursesWhere = {
+      collegeId,
+      name: {
+        contains: searchText,
+        mode: 'insensitive' as const,
+      },
+    } as any;
+
+    const [total, courses] = await Promise.all([
+      this.prisma.course.count({ where: coursesWhere }),
+      this.prisma.course.findMany({
+        where: coursesWhere,
+        include: {
+          subject: { select: { id: true, subjectName: true, isProgram: true } },
+          collegeYear: { include: { academicYear: true } },
+          season: true,
+          teacher: true,
+          _count: { select: { subscriptions: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: normalizedLimit,
+      }),
+    ]);
+
+    const totalPages = total === 0 ? 0 : Math.ceil(total / normalizedLimit);
+
+    return {
+      query: searchText,
+      subjects: subjects.map((subject) =>
+        this.buildSubjectCard(
+          subject,
+          subject.imageUrl ?? courseImagesBySubjectId.get(subject.id) ?? null,
+        ),
+      ),
+      programs: programs.map((program) =>
+        this.buildSubjectCard(
+          program,
+          program.imageUrl ?? courseImagesBySubjectId.get(program.id) ?? null,
+        ),
+      ),
+      courses: {
+        data: courses.map((course) => ({
+          ...this.buildCourseCardWithTeacher(course),
+          subject: course.subject
+            ? {
+                id: course.subject.id,
+                name: course.subject.subjectName,
+                isProgram: course.subject.isProgram,
+              }
+            : null,
+        })),
+        pagination: {
+          page: normalizedPage,
+          limit: normalizedLimit,
+          total,
+          totalPages,
+          hasNextPage: normalizedPage < totalPages,
+          hasPreviousPage: normalizedPage > 1,
+        },
+      },
+    };
+  }
+
   async getCoursesByCollege(
     user: { userId: string | number; type: string },
     collegeYearId?: string,
