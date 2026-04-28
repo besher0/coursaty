@@ -673,11 +673,17 @@ export class CourseService {
     };
   }
 
-  async uploadLectureVideo(lectureId: string, file: any, user?: { userId: string | number; type: string }) {
+  async uploadLectureVideo(
+    lectureId: string,
+    file: any,
+    user?: { userId: string | number; type: string },
+    options?: { videoName?: string; description?: string; isFree?: boolean },
+  ) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: lectureId } });
     if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
 
+    const title = options?.videoName || file.originalname || 'video';
     const ext = path.extname(file.originalname || '') || '.mp4';
     const fileName = `${randomUUID()}${ext}`;
     const storagePath = `lectures/${lectureId}/videos/${fileName}`;
@@ -685,7 +691,7 @@ export class CourseService {
 
     let streamEmbedUrl: string | null = null;
     try {
-      const createdStream = await this.bunny.createStreamVideo(file.originalname || 'lecture-video');
+      const createdStream = await this.bunny.createStreamVideo(title);
       await this.bunny.uploadStreamVideo(createdStream.guid, file);
       streamEmbedUrl = this.bunny.getStreamEmbedUrl(createdStream.guid);
     } catch {
@@ -695,9 +701,11 @@ export class CourseService {
     const created = await this.prisma.video.create({
       data: {
         lectureId,
-        videoName: file.originalname,
+        videoName: title,
+        description: options?.description,
         videoUrl,
         durationSeconds: null,
+        isFree: options?.isFree ?? false,
       },
     });
 

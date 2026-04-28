@@ -92,6 +92,8 @@ model Teacher {
   name               String
   description        String?
   image              String?
+  telegramUrl        String?
+  instagramUrl       String?
   likesCount         Int      @default(0)
   createdAt          DateTime @default(now())
 
@@ -419,6 +421,7 @@ model Video {
   id              String   @id @default(uuid())
   lectureId       String
   videoName       String
+  description     String?
   videoUrl        String
   durationSeconds Int?
   viewsCount      Int      @default(0)

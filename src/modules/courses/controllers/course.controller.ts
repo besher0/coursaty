@@ -10,6 +10,7 @@ import { UpdateCourseCategoryDto } from '../dtos/update-course-category.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Roles } from '../../auth/roles.decorator';
 import { RolesGuard } from '../../auth/guards/roles.guard';
+import { UploadVideoDto } from '../../lectures/dtos/upload-video.dto';
 
 @ApiTags('courses')
 @ApiBearerAuth()
@@ -163,6 +164,9 @@ export class CourseController {
       type: 'object',
       properties: {
         file: { type: 'string', format: 'binary' },
+        videoName: { type: 'string' },
+        description: { type: 'string' },
+        isFree: { type: 'boolean' },
       },
     },
   })
@@ -172,8 +176,9 @@ export class CourseController {
   async uploadLectureVideo(
     @Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string,
     @UploadedFile() file: any,
+    @Body() body: UploadVideoDto,
     @Req() req: any,
   ) {
-    return this.courseService.uploadLectureVideo(lectureId, file, req.user);
+    return this.courseService.uploadLectureVideo(lectureId, file, req.user, body);
   }
 }

@@ -11,11 +11,6 @@ export class InteractionsService {
     const course = await this.prisma.course.findUnique({ where: { id: String(courseId) } });
     if (!course) throw new NotFoundException('الكورس غير موجود');
 
-    const subscription = await this.prisma.studentSubscription.findUnique({
-      where: { studentId_courseId: { studentId, courseId: String(courseId) } },
-    });
-    if (!subscription) throw new ForbiddenException('التقييم متاح فقط للطلاب المشتركين في الكورس');
-
     const rating = await this.prisma.courseRating.findUnique({
       where: {
         courseId_studentId: {
@@ -32,29 +27,25 @@ export class InteractionsService {
         updatedAt: true,
       },
     });
-let myRating = await this.prisma.courseRating.findUnique({
-      where: {
-        courseId_studentId: {
-          courseId: String(courseId),
-          studentId,
-        },
-      },
-    });
+
     const stats = await this.prisma.courseRating.aggregate({
-    where: { courseId: String(courseId) },
-    _avg: { rating: true },
-    _count: { rating: true },
-  });
+      where: { courseId: String(courseId) },
+      _avg: { rating: true },
+      _count: { rating: true },
+    });
+
     return {
       courseId: String(courseId),
-     averageRating: stats._avg.rating || 0, // متوسط التقييم
-    totalRatings: stats._count.rating,    // عدد الأشخاص الذين قيموا
-    isRatedByUser: !!myRating,            // هل قام المستخدم الحالي بالتقييم؟
-    myRating: rating ? {
-      rating: rating.rating,
-      createdAt: rating.createdAt,
-      updatedAt: rating.updatedAt
-    } : null,
+      averageRating: stats._avg.rating || 0,
+      totalRatings: stats._count.rating,
+      isRatedByUser: !!rating,
+      myRating: rating
+        ? {
+            rating: rating.rating,
+            createdAt: rating.createdAt,
+            updatedAt: rating.updatedAt,
+          }
+        : null,
     };
   }
 

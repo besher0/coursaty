@@ -16,6 +16,16 @@ export class CreateTeacherDto {
   @IsString()
   image?: string;
 
+  @ApiPropertyOptional({ required: false })
+  @IsOptional()
+  @IsString()
+  telegramUrl?: string;
+
+  @ApiPropertyOptional({ required: false })
+  @IsOptional()
+  @IsString()
+  instagramUrl?: string;
+
   @ApiPropertyOptional({ format: 'uuid', description: 'University ID to create initial affiliation' })
   @IsOptional()
   @IsUUID('4')
@@ -30,5 +40,4 @@ export class CreateTeacherDto {
   @IsOptional()
   @IsUUID('4')
   departmentId?: string;
-
 }

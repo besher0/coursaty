@@ -233,7 +233,26 @@ export class LecturesService {
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: String(lectureId) },
       include: {
-        course: { select: { id: true } },
+        course: {
+          select: {
+            id: true,
+            teacher: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                image: true,
+                telegramUrl: true,
+                instagramUrl: true,
+                _count: {
+                  select: {
+                    teacherLikes: true,
+                  },
+                },
+              },
+            },
+          },
+        },
         files: true,
         videos: {
           include: {
@@ -248,6 +267,18 @@ export class LecturesService {
 
     if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
 
+    const teacher = lecture.course.teacher
+      ? {
+          id: lecture.course.teacher.id,
+          name: lecture.course.teacher.name,
+          description: lecture.course.teacher.description,
+          image: lecture.course.teacher.image,
+          telegramUrl: lecture.course.teacher.telegramUrl ?? null,
+          instagramUrl: lecture.course.teacher.instagramUrl ?? null,
+          likesCount: lecture.course.teacher._count.teacherLikes,
+        }
+      : null;
+
     const { hasAccess, isOwnerOrAdmin, isStudent } = await this.getCourseAccess(user, lecture.course.id);
 
     if (!isOwnerOrAdmin && isStudent && !hasAccess) {
@@ -258,6 +289,7 @@ export class LecturesService {
           description: lecture.description,
           imageUrl: lecture.imageUrl,
         },
+        teacher,
         files: lecture.files.map((file) => ({
           ...file,
           fileUrl: file.isFree ? file.fileUrl : null,
@@ -279,6 +311,7 @@ export class LecturesService {
         description: lecture.description,
         imageUrl: lecture.imageUrl,
       },
+      teacher,
       files: lecture.files.map((file) => ({
         ...file,
         locked: false,
@@ -292,7 +325,14 @@ export class LecturesService {
   }
 
   async createVideo(
-    dto: { lectureId: string; videoName: string; videoUrl: string; durationSeconds?: number; isFree?: boolean },
+    dto: {
+      lectureId: string;
+      videoName: string;
+      description?: string;
+      videoUrl: string;
+      durationSeconds?: number;
+      isFree?: boolean;
+    },
     user?: { userId: string | number; type: string },
   ) {
     await this.assertLectureOwnership(user, dto.lectureId);
@@ -300,6 +340,7 @@ export class LecturesService {
       data: {
         lectureId: String(dto.lectureId),
         videoName: dto.videoName,
+        description: dto.description,
         videoUrl: dto.videoUrl,
         isFree: dto.isFree ?? false,
       },
@@ -335,6 +376,7 @@ export class LecturesService {
       data: {
         lectureId: String(lectureId),
         videoName: title,
+        description: dto.description,
         videoUrl,
         isFree: dto.isFree ?? false,
       },
@@ -357,6 +399,7 @@ export class LecturesService {
 
     const data: any = {};
     if (dto.videoName !== undefined) data.videoName = dto.videoName;
+    if (dto.description !== undefined) data.description = dto.description;
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
 
     return this.prisma.video.update({ where: { id: String(id) }, data });

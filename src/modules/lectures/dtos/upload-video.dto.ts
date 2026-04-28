@@ -7,6 +7,11 @@ export class UploadVideoDto {
   @IsString()
   videoName?: string;
 
+  @ApiPropertyOptional({ description: 'Description for the video' })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
   @ApiPropertyOptional({ default: false })
   @IsOptional()
   @IsBoolean()

@@ -44,6 +44,8 @@ export class TeachersService {
         name: dto.name,
         description: dto.description,
         image: dto.image,
+        telegramUrl: dto.telegramUrl,
+        instagramUrl: dto.instagramUrl,
       },
     });
 

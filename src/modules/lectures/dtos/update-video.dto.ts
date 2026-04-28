@@ -9,6 +9,11 @@ export class UpdateVideoDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsBoolean()
   isFree?: boolean;
 

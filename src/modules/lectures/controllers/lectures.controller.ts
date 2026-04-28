@@ -123,6 +123,8 @@ export class LecturesController {
       properties: {
         file: { type: 'string', format: 'binary' },
         videoName: { type: 'string' },
+        description: { type: 'string' },
+        isFree: { type: 'boolean' },
       },
     },
   })

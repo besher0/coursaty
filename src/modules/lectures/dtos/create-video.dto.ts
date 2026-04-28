@@ -11,6 +11,11 @@ export class CreateVideoDto {
   @IsNotEmpty()
   videoName: string;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
