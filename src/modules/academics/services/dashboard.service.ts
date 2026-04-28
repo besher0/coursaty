@@ -383,6 +383,7 @@ export class DashboardService {
         query: query ?? null,
         subjects: [],
         programs: [],
+        teachers: [],
         courses: {
           data: [],
           pagination: {
@@ -449,6 +450,34 @@ export class DashboardService {
       }),
     ]);
 
+    const teachers = await this.prisma.teacher.findMany({
+      where: {
+        ...(searchText
+          ? {
+              name: {
+                contains: searchText,
+                mode: 'insensitive' as const,
+              },
+            }
+          : {}),
+        courses: {
+          some: {
+            OR: [{ college: { id: collegeId } }, { subject: { collegeId } }],
+          },
+        },
+      },
+      include: {
+        _count: {
+          select: {
+            courses: true,
+            teacherLikes: true,
+          },
+        },
+      },
+      orderBy: { name: 'asc' },
+      take: Math.min(50, normalizedLimit),
+    });
+
     const subjectIds = [...subjects, ...programs].map((subject) => subject.id);
     const courseImagesBySubjectId = new Map<string, string>();
 
@@ -514,6 +543,16 @@ export class DashboardService {
           program.imageUrl ?? courseImagesBySubjectId.get(program.id) ?? null,
         ),
       ),
+      teachers: teachers.map((teacher) => ({
+        id: teacher.id,
+        name: teacher.name,
+        description: teacher.description,
+        image: teacher.image,
+        telegramUrl: teacher.telegramUrl ?? null,
+        instagramUrl: teacher.instagramUrl ?? null,
+        coursesCount: teacher._count.courses,
+        likesCount: teacher._count.teacherLikes,
+      })),
       courses: {
         data: courses.map((course) => ({
           ...this.buildCourseCardWithTeacher(course),

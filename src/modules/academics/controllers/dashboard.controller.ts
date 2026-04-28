@@ -34,7 +34,7 @@ export class DashboardController {
   }
 
   @Get('search')
-  @ApiOperation({ summary: 'Search subjects, programs, and courses for the student college' })
+  @ApiOperation({ summary: 'Search subjects, programs, courses, and teachers for the student college' })
   @ApiQuery({ name: 'q', required: false, description: 'Search text' })
   @ApiQuery({ name: 'page', required: false, description: 'Optional page number, default is 1' })
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items per page, default is 10' })
