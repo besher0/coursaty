@@ -8,6 +8,7 @@ import { Roles } from '../../auth/roles.decorator';
 import { TeacherSummaryDto } from '../dtos/teacher-summary.dto';
 import { TeacherSubjectPermissionsDto } from '../dtos/teacher-subject-permissions.dto';
 import { TeacherAffiliationDto } from '../dtos/teacher-affiliation.dto';
+import { RecordTeacherWithdrawalDto } from '../dtos/record-teacher-withdrawal.dto';
 
 @ApiTags('teachers')
 @Controller('teachers')
@@ -117,6 +118,73 @@ export class TeachersController {
   @Roles('TEACHER')
   listMyAllowedSubjects(@Req() req: any) {
     return this.teachers.listMyAllowedSubjects(req.user);
+  }
+
+  @Get('me/revenue')
+  @ApiOperation({ summary: 'Get teacher revenues for all courses (teacher only)' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER')
+  getMyRevenue(@Req() req: any) {
+    return this.teachers.getMyCoursesRevenue(req.user);
+  }
+
+  @Get('me/withdrawals')
+  @ApiOperation({ summary: 'Get teacher withdrawals (teacher only)' })
+  @ApiBearerAuth()
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER')
+  getMyWithdrawals(
+    @Req() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.teachers.getMyWithdrawals(req.user, {
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
+  @Get(':id/revenue')
+  @ApiOperation({ summary: 'Get teacher revenues for all courses (admin only)' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  getTeacherRevenue(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.teachers.getTeacherCoursesRevenue(id);
+  }
+
+  @Get(':id/withdrawals')
+  @ApiOperation({ summary: 'Get teacher withdrawals (admin only)' })
+  @ApiBearerAuth()
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  getTeacherWithdrawals(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.teachers.getTeacherWithdrawals(id, {
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
+  @Post(':id/withdrawals')
+  @ApiOperation({ summary: 'Record teacher withdrawal (admin only)' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  recordTeacherWithdrawal(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() body: RecordTeacherWithdrawalDto,
+    @Req() req: any,
+  ) {
+    return this.teachers.recordTeacherWithdrawal(id, body.amount, req.user, body.withdrawnAt);
   }
 
   @Get(':id/allowed-subjects')

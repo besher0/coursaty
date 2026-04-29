@@ -276,7 +276,9 @@ export class AcademicsService {
     return this.prisma.season.create({ data: { seasonName, seasonNumber } });
   }
   listSeasons() {
-    return this.prisma.season.findMany();
+    return this.prisma.season.findMany({
+      orderBy: { seasonNumber: 'asc' },
+    });
   }
 
   updateSeason(id: string, dto: UpdateSeasonDto) {
@@ -288,5 +290,25 @@ export class AcademicsService {
 
   deleteSeason(id: string) {
     return this.prisma.season.delete({ where: { id } });
+  }
+
+  async setHomeActiveSeason(id: string) {
+    const season = await this.prisma.season.findUnique({ where: { id } });
+    if (!season) throw new NotFoundException('الفصل غير موجود');
+
+    await this.prisma.$transaction([
+      this.prisma.season.updateMany({ data: { isHomeActive: false } }),
+      this.prisma.season.update({
+        where: { id },
+        data: { isHomeActive: true },
+      }),
+    ]);
+
+    return this.prisma.season.findUnique({ where: { id } });
+  }
+
+  async clearHomeActiveSeason() {
+    await this.prisma.season.updateMany({ data: { isHomeActive: false } });
+    return { success: true };
   }
 }

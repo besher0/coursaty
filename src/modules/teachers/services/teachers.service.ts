@@ -92,6 +92,41 @@ export class TeachersService {
     return teacher;
   }
 
+  private async getAdminContext(user: { userId: string | number; type: string }) {
+    if (!user || user.type !== 'ADMIN') throw new ForbiddenException('صلاحية مدير مطلوبة');
+
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
+    if (!dbUser || dbUser.userableType !== 'ADMIN') throw new NotFoundException('المدير غير موجود');
+
+    return dbUser;
+  }
+
+  private roundCurrency(value: number) {
+    return Number(value.toFixed(2));
+  }
+
+  private async getTeacherEarningsTotal(teacherId: string) {
+    const subscriptions = await this.prisma.studentSubscription.findMany({
+      where: {
+        course: { teacherId },
+      },
+      select: {
+        finalPrice: true,
+        course: {
+          select: {
+            teacherPercentage: true,
+          },
+        },
+      },
+    });
+
+    return subscriptions.reduce((sum, subscription) => {
+      const finalPrice = this.toNumber(subscription.finalPrice);
+      const teacherPercentage = this.toNumber(subscription.course.teacherPercentage);
+      return sum + (finalPrice * teacherPercentage) / 100;
+    }, 0);
+  }
+
   private normalizeSubjectIds(subjectIds: string[]) {
     return Array.from(new Set(subjectIds));
   }
@@ -556,6 +591,234 @@ export class TeachersService {
     });
 
     return { removedCount: result.count };
+  }
+
+  async getMyCoursesRevenue(user: { userId: string | number; type: string }) {
+    const { teacher } = await this.getTeacherContext(user);
+    return this.getTeacherCoursesRevenue(teacher.id);
+  }
+
+  async getTeacherCoursesRevenue(teacherId: string) {
+    const teacher = await this.getTeacherById(teacherId);
+
+    const courses = await this.prisma.course.findMany({
+      where: { teacherId },
+      select: {
+        id: true,
+        name: true,
+        createdAt: true,
+        expiresAt: true,
+        price: true,
+        teacherPercentage: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const courseIds = courses.map((course) => course.id);
+    const [revenueByCourse, ratingsByCourse] = courseIds.length
+      ? await Promise.all([
+          this.prisma.studentSubscription.groupBy({
+            by: ['courseId'],
+            where: { courseId: { in: courseIds } },
+            _sum: { finalPrice: true },
+            _count: { _all: true },
+          }),
+          this.prisma.courseRating.groupBy({
+            by: ['courseId'],
+            where: { courseId: { in: courseIds } },
+            _avg: { rating: true },
+            _count: { _all: true },
+          }),
+        ])
+      : [[], []];
+
+    const revenueMap = new Map<string, { grossRevenue: number; subscribersCount: number }>(
+      revenueByCourse.map((item) => [
+        item.courseId,
+        { grossRevenue: this.toNumber(item._sum.finalPrice), subscribersCount: item._count._all },
+      ]),
+    );
+    const ratingsMap = new Map<string, { average: number; ratersCount: number }>(
+      ratingsByCourse.map((item) => [
+        item.courseId,
+        { average: this.toNumber(item._avg.rating), ratersCount: item._count._all },
+      ]),
+    );
+
+    const coursesRevenue = courses.map((course) => {
+      const revenueItem = revenueMap.get(course.id);
+      const ratingsItem = ratingsMap.get(course.id);
+
+      const grossRevenue = revenueItem?.grossRevenue ?? 0;
+      const subscribersCount = revenueItem?.subscribersCount ?? 0;
+      const teacherPercentage = this.toNumber(course.teacherPercentage);
+      const adminPercentage = Math.max(0, 100 - teacherPercentage);
+      const teacherRevenue = (grossRevenue * teacherPercentage) / 100;
+      const adminRevenue = grossRevenue - teacherRevenue;
+
+      return {
+        course: {
+          id: course.id,
+          name: course.name,
+          publishedAt: course.createdAt,
+          expiresAt: course.expiresAt,
+          price: this.roundCurrency(this.toNumber(course.price)),
+        },
+        subscribersCount,
+        rating: {
+          average: this.roundCurrency(ratingsItem?.average ?? 0),
+          ratersCount: ratingsItem?.ratersCount ?? 0,
+        },
+        revenue: {
+          beforePercentage: this.roundCurrency(grossRevenue),
+          teacherRevenue: this.roundCurrency(teacherRevenue),
+          adminRevenue: this.roundCurrency(adminRevenue),
+          teacherPercentage: this.roundCurrency(teacherPercentage),
+          adminPercentage: this.roundCurrency(adminPercentage),
+        },
+      };
+    });
+
+    const totals = coursesRevenue.reduce(
+      (acc, item) => {
+        acc.grossRevenue += item.revenue.beforePercentage;
+        acc.teacherRevenue += item.revenue.teacherRevenue;
+        acc.adminRevenue += item.revenue.adminRevenue;
+        acc.subscribersCount += item.subscribersCount;
+        return acc;
+      },
+      {
+        grossRevenue: 0,
+        teacherRevenue: 0,
+        adminRevenue: 0,
+        subscribersCount: 0,
+      },
+    );
+
+    return {
+      teacher: {
+        id: teacher.id,
+        name: teacher.name,
+      },
+      totals: {
+        grossRevenue: this.roundCurrency(totals.grossRevenue),
+        teacherRevenue: this.roundCurrency(totals.teacherRevenue),
+        adminRevenue: this.roundCurrency(totals.adminRevenue),
+        subscribersCount: totals.subscribersCount,
+      },
+      courses: coursesRevenue,
+    };
+  }
+
+  async getMyWithdrawals(
+    user: { userId: string | number; type: string },
+    params?: { page?: number; limit?: number },
+  ) {
+    const { teacher } = await this.getTeacherContext(user);
+    return this.getTeacherWithdrawals(teacher.id, params);
+  }
+
+  async getTeacherWithdrawals(teacherId: string, params?: { page?: number; limit?: number }) {
+    await this.getTeacherById(teacherId);
+
+    const pagination = this.normalizePagination(params?.page, params?.limit);
+
+    const [total, withdrawals, withdrawnAgg, teacherEarnings] = await Promise.all([
+      this.prisma.teacherWithdrawal.count({
+        where: { teacherId },
+      }),
+      this.prisma.teacherWithdrawal.findMany({
+        where: { teacherId },
+        orderBy: { createdAt: 'desc' },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+      this.prisma.teacherWithdrawal.aggregate({
+        where: {
+          teacherId,
+          status: 'APPROVED',
+        },
+        _sum: { amount: true },
+      }),
+      this.getTeacherEarningsTotal(teacherId),
+    ]);
+
+    const withdrawnAmount = this.toNumber(withdrawnAgg._sum.amount);
+    const remainingAmount = Math.max(0, teacherEarnings - withdrawnAmount);
+
+    return {
+      teacherEarnings: this.roundCurrency(teacherEarnings),
+      withdrawnAmount: this.roundCurrency(withdrawnAmount),
+      remainingAmount: this.roundCurrency(remainingAmount),
+      withdrawals: withdrawals.map((withdrawal) => ({
+        id: withdrawal.id,
+        amount: this.roundCurrency(this.toNumber(withdrawal.amount)),
+        status: withdrawal.status,
+        createdAt: withdrawal.createdAt,
+      })),
+      pagination: {
+        page: pagination.page,
+        limit: pagination.limit,
+        total,
+      },
+    };
+  }
+
+  async recordTeacherWithdrawal(
+    teacherId: string,
+    amount: number,
+    user: { userId: string | number; type: string },
+    withdrawnAt?: string,
+  ) {
+    await this.getAdminContext(user);
+    await this.getTeacherById(teacherId);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('قيمة السحب يجب أن تكون أكبر من صفر');
+    }
+
+    const [teacherEarnings, withdrawnAgg] = await Promise.all([
+      this.getTeacherEarningsTotal(teacherId),
+      this.prisma.teacherWithdrawal.aggregate({
+        where: {
+          teacherId,
+          status: 'APPROVED',
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const withdrawnAmount = this.toNumber(withdrawnAgg._sum.amount);
+    const remainingAmount = Math.max(0, teacherEarnings - withdrawnAmount);
+    if (amount > remainingAmount) {
+      throw new BadRequestException('قيمة السحب أكبر من الرصيد المتاح');
+    }
+
+    let createdAt: Date | undefined;
+    if (withdrawnAt) {
+      createdAt = new Date(withdrawnAt);
+      if (Number.isNaN(createdAt.getTime())) {
+        throw new BadRequestException('تاريخ السحب غير صالح');
+      }
+    }
+
+    const withdrawal = await this.prisma.teacherWithdrawal.create({
+      data: {
+        teacherId,
+        amount: amount as any,
+        status: 'APPROVED',
+        ...(createdAt ? { createdAt } : {}),
+      },
+    });
+
+    return {
+      id: withdrawal.id,
+      teacherId: withdrawal.teacherId,
+      amount: this.roundCurrency(this.toNumber(withdrawal.amount)),
+      status: withdrawal.status,
+      createdAt: withdrawal.createdAt,
+      updatedAt: withdrawal.updatedAt,
+    };
   }
 }
 

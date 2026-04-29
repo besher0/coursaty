@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { NotificationsService } from '../services/notifications.service';
 import { CreateNotificationDto } from '../dtos/create-notification.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
+import { ListNotificationsQueryDto } from '../dtos/list-notifications-query.dto';
 
 @ApiTags('notifications')
 @ApiBearerAuth()
@@ -21,19 +22,19 @@ export class NotificationsController {
   }
 
   @Get('my')
-  @ApiOperation({ summary: 'List my notifications (teacher/admin)' })
+  @ApiOperation({ summary: 'Teacher: own notifications, Admin: all notifications' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  listMy(@Req() req: any) {
-    return this.notifications.listMyNotifications(req.user);
+  listMy(@Req() req: any, @Query() query: ListNotificationsQueryDto) {
+    return this.notifications.listMyNotifications(req.user, query.universityId);
   }
 
   @Get('pending')
   @ApiOperation({ summary: 'List pending notifications (admin only)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  listPending() {
-    return this.notifications.listPendingNotifications();
+  listPending(@Query() query: ListNotificationsQueryDto) {
+    return this.notifications.listPendingNotifications(query.universityId);
   }
 
   @Patch(':id/approve')

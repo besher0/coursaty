@@ -39,6 +39,22 @@ export class SeasonsController {
     return this.academics.updateSeason(id, body);
   }
 
+  @Patch(':id/home-active')
+  @ApiOperation({ summary: 'Set season as active for homepage filtering' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  setHomeActiveSeason(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.academics.setHomeActiveSeason(id);
+  }
+
+  @Patch('home-active/clear')
+  @ApiOperation({ summary: 'Clear homepage active season filter' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  clearHomeActiveSeason() {
+    return this.academics.clearHomeActiveSeason();
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Delete season' })
   @UseGuards(JwtAuthGuard, RolesGuard)

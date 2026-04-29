@@ -138,6 +138,7 @@ model University {
   students  Student[]
   teacherAffiliations TeacherAffiliation[]
   guestPreferences GuestPreference[]
+  notifications Notification[]
 
   @@index([provinceId])
 }
@@ -210,7 +211,8 @@ model Notification {
   description  String
   status       NotificationStatus @default(PENDING)
   createdById  String
-  collegeId    String
+  universityId String?
+  collegeId    String?
   departmentId String?
   approvedById String?
   approvedAt   DateTime?
@@ -218,11 +220,13 @@ model Notification {
   updatedAt    DateTime           @updatedAt
 
   createdBy  User       @relation("CreatedNotifications", fields: [createdById], references: [id])
-  college    College    @relation(fields: [collegeId], references: [id])
+  university University? @relation(fields: [universityId], references: [id])
+  college    College?    @relation(fields: [collegeId], references: [id])
   department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   approvedBy Admin?     @relation(fields: [approvedById], references: [id])
 
   @@index([createdById])
+  @@index([universityId])
   @@index([collegeId])
   @@index([departmentId])
   @@index([status])
@@ -251,16 +255,19 @@ model GuestPreference {
   universityId String
   collegeId    String
   departmentId String?
+  collegeYearId String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   university University @relation(fields: [universityId], references: [id])
   college    College    @relation(fields: [collegeId], references: [id])
   department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  collegeYear CollegeYear? @relation(fields: [collegeYearId], references: [id], onDelete: SetNull)
 
   @@index([universityId])
   @@index([collegeId])
   @@index([departmentId])
+  @@index([collegeYearId])
 }
 
 model AcademicYear {
@@ -284,6 +291,7 @@ model CollegeYear {
   students     Student[]
   courses      Course[]
   subjects     Subject[]
+  guestPreferences GuestPreference[]
   @@index([collegeId])
   @@index([departmentId])
   @@index([academicYearId])
@@ -293,6 +301,7 @@ model Season {
   id           String   @id @default(uuid())
   seasonName   String
   seasonNumber Int
+  isHomeActive Boolean  @default(false)
   courses      Course[]
   subjects     Subject[]
 }

@@ -351,15 +351,15 @@ export class CourseService {
           id: course.teacher.id,
           name: course.teacher.name,
           image: course.teacher.image,
-          instagramUrl: null,
-          telegramUrl: null,
+          instagramUrl: course.teacher.instagramUrl ?? null,
+          telegramUrl: course.teacher.telegramUrl ?? null,
         },
         durationSeconds: course.duration ? course.duration * 3600 : null,
         description: course.description,
         introVideoUrl: course.introVideoUrl,
         discussionGroupUrl: course.discussionGroupUrl,
         telegramUrl: course.discussionGroupUrl,
-        instagramUrl: null,
+        instagramUrl: course.teacher.instagramUrl ?? null,
         studentsCount: course._count.subscriptions,
         year: course.collegeYear?.academicYear
           ? {
@@ -399,6 +399,8 @@ export class CourseService {
             id: true,
             name: true,
             image: true,
+            instagramUrl: true,
+            telegramUrl: true,
           },
         },
         subject: {
@@ -464,8 +466,8 @@ export class CourseService {
           id: course.teacher.id,
           name: course.teacher.name,
           image: course.teacher.image,
-          instagramUrl: null,
-          telegramUrl: null,
+          instagramUrl: course.teacher.instagramUrl ?? null,
+          telegramUrl: course.teacher.telegramUrl ?? null,
         },
         studentsCount: course._count.subscriptions,
         year: course.collegeYear?.academicYear
@@ -496,7 +498,7 @@ export class CourseService {
         introVideoUrl: course.introVideoUrl,
         discussionGroupUrl: course.discussionGroupUrl,
         telegramUrl: course.discussionGroupUrl,
-        instagramUrl: null,
+        instagramUrl: course.teacher.instagramUrl ?? null,
       },
       lectures: course.lectures.map((lec) => ({
         id: lec.id,
@@ -558,32 +560,58 @@ export class CourseService {
       select: {
         id: true,
         name: true,
+        createdAt: true,
+        expiresAt: true,
+        price: true,
         teacherPercentage: true,
       },
     });
     if (!course) throw new NotFoundException('الكورس غير موجود');
 
-    const subscriptions = await this.prisma.studentSubscription.findMany({
-      where: { courseId: course.id },
-      select: { finalPrice: true },
-    });
+    const [subscriptionsAgg, subscriptionsCount, ratingsAgg] = await this.prisma.$transaction([
+      this.prisma.studentSubscription.aggregate({
+        where: { courseId: course.id },
+        _sum: { finalPrice: true },
+      }),
+      this.prisma.studentSubscription.count({
+        where: { courseId: course.id },
+      }),
+      this.prisma.courseRating.aggregate({
+        where: { courseId: course.id },
+        _avg: { rating: true },
+        _count: { _all: true },
+      }),
+    ]);
 
-    const grossRevenue = subscriptions.reduce((acc, sub) => acc + Number(sub.finalPrice ?? 0), 0);
+    const grossRevenue = Number(subscriptionsAgg._sum.finalPrice ?? 0);
     const teacherPercentage = Number(course.teacherPercentage ?? 0);
+    const adminPercentage = Math.max(0, 100 - teacherPercentage);
     const teacherRevenue = (grossRevenue * teacherPercentage) / 100;
-    const platformRevenue = grossRevenue - teacherRevenue;
+    const adminRevenue = grossRevenue - teacherRevenue;
+    const coursePrice = Number(course.price ?? 0);
 
     return {
       course: {
         id: course.id,
         name: course.name,
+        publishedAt: course.createdAt,
+        expiresAt: course.expiresAt,
+        price: Number(coursePrice.toFixed(2)),
       },
-      subscribersCount: subscriptions.length,
+      subscribersCount: subscriptionsCount,
+      rating: {
+        average: Number((Number(ratingsAgg._avg.rating ?? 0)).toFixed(2)),
+        ratersCount: ratingsAgg._count._all,
+      },
       revenue: {
         grossRevenue: Number(grossRevenue.toFixed(2)),
+        beforePercentage: Number(grossRevenue.toFixed(2)),
         teacherPercentage: Number(teacherPercentage.toFixed(2)),
+        adminPercentage: Number(adminPercentage.toFixed(2)),
         teacherRevenue: Number(teacherRevenue.toFixed(2)),
-        platformRevenue: Number(platformRevenue.toFixed(2)),
+        adminRevenue: Number(adminRevenue.toFixed(2)),
+        platformRevenue: Number(adminRevenue.toFixed(2)),
+        afterTeacherShareForAdmin: Number(adminRevenue.toFixed(2)),
       },
     };
   }
@@ -707,9 +735,18 @@ export class CourseService {
       streamEmbedUrl = this.bunny.getStreamEmbedUrl(createdStream.guid);
       streamPlayUrl = this.bunny.getStreamPlayUrl(createdStream.guid);
 
-      const [playData, resolutions] = await Promise.all([
-        this.bunny.getVideoPlayData(createdStream.guid).catch(() => null),
-        this.bunny.getVideoResolutions(createdStream.guid).catch(() => null),
+      type StreamPlayData = {
+        playlistUrl: string | null;
+        fallbackUrl: string | null;
+      };
+      type StreamResolutions = {
+        availableResolutions: string[];
+        mp4Resolutions: Array<{ resolution: string; path: string }>;
+      };
+
+      const [playData, resolutions]: [StreamPlayData | null, StreamResolutions | null] = await Promise.all([
+        this.bunny.getVideoPlayData(createdStream.guid).catch((): StreamPlayData | null => null),
+        this.bunny.getVideoResolutions(createdStream.guid).catch((): StreamResolutions | null => null),
       ]);
       streamPlaylistUrl = playData?.playlistUrl ?? null;
       streamFallbackUrl = playData?.fallbackUrl ?? null;
@@ -718,7 +755,9 @@ export class CourseService {
 
       if (options?.preferredResolution && resolutions?.mp4Resolutions?.length) {
         const resolution = options.preferredResolution.toLowerCase();
-        const match = resolutions.mp4Resolutions.find((item) => item.resolution.toLowerCase() === resolution);
+        const match = resolutions.mp4Resolutions.find(
+          (item: { resolution: string; path: string }) => item.resolution.toLowerCase() === resolution,
+        );
         preferredResolutionUrl = match?.path ?? null;
       }
     } catch {

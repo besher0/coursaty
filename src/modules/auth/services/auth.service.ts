@@ -112,6 +112,19 @@ export class AuthService {
       }
     }
 
+    let collegeYearId: string | undefined;
+    if (guestPreference.collegeYearId) {
+      const collegeYear = await this.prisma.collegeYear.findUnique({
+        where: { id: String(guestPreference.collegeYearId) },
+      });
+
+      if (collegeYear && collegeYear.collegeId.toString() === college.id.toString()) {
+        if (!collegeYear.departmentId || !departmentId || collegeYear.departmentId === departmentId) {
+          collegeYearId = collegeYear.id;
+        }
+      }
+    }
+
     await this.prisma.student.update({
       where: { id: studentId },
       data: {
@@ -119,6 +132,7 @@ export class AuthService {
         provinceId: university.provinceId,
         collegeId: college.id,
         departmentId,
+        ...(collegeYearId ? { collegeYearId } : {}),
       },
     });
 

@@ -3,6 +3,14 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { CreateNotificationDto } from '../dtos/create-notification.dto';
 import { FirebaseService } from '@/shared/firebase/firebase.service';
 
+type TokenUser = { userId: string | number; type: string };
+
+type NotificationTarget = {
+  universityId: string | null;
+  collegeId: string | null;
+  departmentId: string | null;
+};
+
 @Injectable()
 export class NotificationsService {
   constructor(
@@ -10,14 +18,14 @@ export class NotificationsService {
     private readonly firebase: FirebaseService,
   ) {}
 
-  private async getUserFromToken(user?: { userId: string | number; type: string }) {
+  private async getUserFromToken(user?: TokenUser) {
     if (!user) throw new BadRequestException('المستخدم غير موجود');
     const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser) throw new BadRequestException('المستخدم غير موجود');
     return dbUser;
   }
 
-  private async getAdminIdFromUser(user?: { userId: string | number; type: string }) {
+  private async getAdminIdFromUser(user?: TokenUser) {
     if (!user) throw new BadRequestException('المستخدم غير موجود');
     const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
     if (!dbUser || dbUser.userableType !== 'ADMIN') {
@@ -26,7 +34,7 @@ export class NotificationsService {
     return dbUser.userableId;
   }
 
-  private async getStudentFromUser(user?: { userId: string | number; type: string }) {
+  private async getStudentFromUser(user?: TokenUser) {
     if (user?.type === 'STUDENT') {
       const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
       if (!dbUser || dbUser.userableType !== 'STUDENT') {
@@ -45,30 +53,132 @@ export class NotificationsService {
     return fallbackStudent;
   }
 
-  private async ensureCollegeAndDepartment(collegeId: string, departmentId?: string) {
-    const college = await this.prisma.college.findUnique({ where: { id: collegeId } });
-    if (!college) throw new NotFoundException('الكلية غير موجودة');
+  private buildUniversityScopeFilter(universityId?: string) {
+    if (!universityId) return undefined;
 
-    if (departmentId !== undefined) {
-      const department = await this.prisma.department.findUnique({ where: { id: departmentId } });
-      if (!department) throw new NotFoundException('القسم غير موجود');
-      if (department.collegeId !== collegeId) {
-        throw new BadRequestException('القسم لا يتبع للكلية');
-      }
-    }
+    return {
+      OR: [{ universityId: String(universityId) }, { college: { universityId: String(universityId) } }],
+    };
   }
 
-  async createNotification(dto: CreateNotificationDto, user?: { userId: string | number; type: string }) {
+  private async resolveNotificationTarget(dto: CreateNotificationDto): Promise<NotificationTarget> {
+    const universityId = dto.universityId ? String(dto.universityId) : null;
+    const collegeId = dto.collegeId ? String(dto.collegeId) : null;
+    const departmentId = dto.departmentId ? String(dto.departmentId) : null;
+
+    if (!universityId && !collegeId) {
+      throw new BadRequestException('يجب تحديد universityId أو collegeId على الأقل');
+    }
+
+    if (departmentId && !collegeId) {
+      throw new BadRequestException('لا يمكن تحديد القسم بدون الكلية');
+    }
+
+    if (universityId) {
+      const university = await this.prisma.university.findUnique({ where: { id: universityId } });
+      if (!university) throw new NotFoundException('الجامعة غير موجودة');
+    }
+
+    if (collegeId) {
+      const college = await this.prisma.college.findUnique({ where: { id: collegeId } });
+      if (!college) throw new NotFoundException('الكلية غير موجودة');
+
+      if (universityId && college.universityId !== universityId) {
+        throw new BadRequestException('الكلية لا تتبع للجامعة المحددة');
+      }
+
+      if (departmentId) {
+        const department = await this.prisma.department.findUnique({ where: { id: departmentId } });
+        if (!department) throw new NotFoundException('القسم غير موجود');
+        if (department.collegeId !== collegeId) {
+          throw new BadRequestException('القسم لا يتبع للكلية');
+        }
+      }
+
+      return {
+        universityId: null,
+        collegeId,
+        departmentId,
+      };
+    }
+
+    return {
+      universityId,
+      collegeId: null,
+      departmentId: null,
+    };
+  }
+
+  private async attachSenderInfo(notifications: any[]) {
+    if (notifications.length === 0) return notifications;
+
+    const teacherIds = Array.from(
+      new Set(
+        notifications
+          .filter((notification) => notification.createdBy?.userableType === 'TEACHER')
+          .map((notification) => notification.createdBy.userableId),
+      ),
+    );
+
+    const adminIds = Array.from(
+      new Set(
+        notifications
+          .filter((notification) => notification.createdBy?.userableType === 'ADMIN')
+          .map((notification) => notification.createdBy.userableId),
+      ),
+    );
+
+    const [teachers, admins] = await Promise.all([
+      teacherIds.length
+        ? this.prisma.teacher.findMany({
+            where: { id: { in: teacherIds } },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+      adminIds.length
+        ? this.prisma.admin.findMany({
+            where: { id: { in: adminIds } },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const teacherNameById = new Map(teachers.map((teacher) => [teacher.id, teacher.name]));
+    const adminNameById = new Map(admins.map((admin) => [admin.id, admin.name]));
+
+    return notifications.map((notification) => {
+      const senderRole = notification.createdBy?.userableType ?? null;
+      const senderEntityId = notification.createdBy?.userableId ?? null;
+
+      let senderName: string | null = null;
+      if (senderRole === 'TEACHER' && senderEntityId) {
+        senderName = teacherNameById.get(senderEntityId) ?? null;
+      }
+      if (senderRole === 'ADMIN' && senderEntityId) {
+        senderName = adminNameById.get(senderEntityId) ?? null;
+      }
+
+      return {
+        ...notification,
+        sender: {
+          userId: notification.createdBy?.id ?? null,
+          role: senderRole,
+          entityId: senderEntityId,
+          name: senderName,
+        },
+      };
+    });
+  }
+
+  async createNotification(dto: CreateNotificationDto, user?: TokenUser) {
     const dbUser = await this.getUserFromToken(user);
-    
-    // Only TEACHER and ADMIN can create notifications
+
     if (dbUser.userableType !== 'TEACHER' && dbUser.userableType !== 'ADMIN') {
       throw new BadRequestException('فقط المدرسون والمدراء يمكنهم إنشاء إشعارات');
     }
 
-    await this.ensureCollegeAndDepartment(dto.collegeId, dto.departmentId);
+    const target = await this.resolveNotificationTarget(dto);
 
-    // ADMIN notifications are auto-approved, TEACHER notifications need approval
     const status = dbUser.userableType === 'ADMIN' ? 'APPROVED' : 'PENDING';
 
     const notification = await this.prisma.notification.create({
@@ -76,54 +186,96 @@ export class NotificationsService {
         title: dto.title,
         description: dto.description,
         createdById: dbUser.id,
-        collegeId: dto.collegeId,
-        departmentId: dto.departmentId || null,
+        universityId: target.universityId,
+        collegeId: target.collegeId,
+        departmentId: target.departmentId,
         status,
         ...(status === 'APPROVED' ? { approvedById: dbUser.userableId, approvedAt: new Date() } : {}),
       },
-      include: { createdBy: true, college: true, department: true },
+      include: { createdBy: true, university: true, college: true, department: true, approvedBy: true },
     });
 
-    // If admin created it, send immediately
     if (status === 'APPROVED') {
       await this.sendToStudents(notification);
     }
 
-    return notification;
+    const [enriched] = await this.attachSenderInfo([notification]);
+    return enriched;
   }
 
-  async listMyNotifications(user?: { userId: string | number; type: string }) {
+  async listMyNotifications(user?: TokenUser, universityId?: string) {
     const dbUser = await this.getUserFromToken(user);
-    return this.prisma.notification.findMany({
-      where: { createdById: dbUser.id },
+
+    if (dbUser.userableType !== 'TEACHER' && dbUser.userableType !== 'ADMIN') {
+      throw new BadRequestException('فقط المدرسون والمدراء يمكنهم استعراض الإشعارات');
+    }
+
+    const filters: any[] = [];
+
+    if (dbUser.userableType === 'TEACHER') {
+      filters.push({ createdById: dbUser.id });
+    }
+
+    const universityScopeFilter = this.buildUniversityScopeFilter(universityId);
+    if (universityScopeFilter) {
+      filters.push(universityScopeFilter);
+    }
+
+    const where = filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : { AND: filters };
+
+    const notifications = await this.prisma.notification.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
-      include: { createdBy: true, college: true, department: true, approvedBy: true },
+      include: { createdBy: true, university: true, college: true, department: true, approvedBy: true },
     });
+
+    return this.attachSenderInfo(notifications);
   }
 
-  async listStudentNotifications(user?: { userId: string | number; type: string }) {
+  async listStudentNotifications(user?: TokenUser) {
     const student = await this.getStudentFromUser(user);
 
-    return this.prisma.notification.findMany({
+    const visibilityFilters: any[] = [
+      { universityId: student.universityId },
+      { collegeId: student.collegeId, departmentId: null },
+    ];
+
+    if (student.departmentId) {
+      visibilityFilters.push({ collegeId: student.collegeId, departmentId: student.departmentId });
+    }
+
+    const notifications = await this.prisma.notification.findMany({
       where: {
         status: 'APPROVED',
-        collegeId: student.collegeId,
-        OR: [{ departmentId: null }, { departmentId: student.departmentId }],
+        OR: visibilityFilters,
       },
       orderBy: { createdAt: 'desc' },
-      include: { createdBy: true, college: true, department: true },
+      include: { createdBy: true, university: true, college: true, department: true, approvedBy: true },
     });
+
+    return this.attachSenderInfo(notifications);
   }
 
-  async listPendingNotifications() {
-    return this.prisma.notification.findMany({
-      where: { status: 'PENDING' },
+  async listPendingNotifications(universityId?: string) {
+    const filters: any[] = [{ status: 'PENDING' }];
+
+    const universityScopeFilter = this.buildUniversityScopeFilter(universityId);
+    if (universityScopeFilter) {
+      filters.push(universityScopeFilter);
+    }
+
+    const where = filters.length === 1 ? filters[0] : { AND: filters };
+
+    const notifications = await this.prisma.notification.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
-      include: { createdBy: true, college: true, department: true },
+      include: { createdBy: true, university: true, college: true, department: true, approvedBy: true },
     });
+
+    return this.attachSenderInfo(notifications);
   }
 
-  async approveNotification(id: string, user?: { userId: string | number; type: string }) {
+  async approveNotification(id: string, user?: TokenUser) {
     const adminId = await this.getAdminIdFromUser(user);
     const notification = await this.prisma.notification.findUnique({
       where: { id },
@@ -138,15 +290,16 @@ export class NotificationsService {
         approvedById: adminId,
         approvedAt: new Date(),
       },
-      include: { createdBy: true, college: true, department: true },
+      include: { createdBy: true, university: true, college: true, department: true, approvedBy: true },
     });
 
     await this.sendToStudents(updated);
 
-    return updated;
+    const [enriched] = await this.attachSenderInfo([updated]);
+    return enriched;
   }
 
-  async rejectNotification(id: string, user?: { userId: string | number; type: string }) {
+  async rejectNotification(id: string, user?: TokenUser) {
     const adminId = await this.getAdminIdFromUser(user);
     const notification = await this.prisma.notification.findUnique({
       where: { id },
@@ -154,23 +307,42 @@ export class NotificationsService {
     if (!notification) throw new NotFoundException('الإشعار غير موجود');
     if (notification.status !== 'PENDING') throw new BadRequestException('تمت معالجة الإشعار مسبقا');
 
-    return this.prisma.notification.update({
+    const updated = await this.prisma.notification.update({
       where: { id },
       data: {
         status: 'REJECTED',
         approvedById: adminId,
         approvedAt: new Date(),
       },
-      include: { createdBy: true, college: true, department: true },
+      include: { createdBy: true, university: true, college: true, department: true, approvedBy: true },
     });
+
+    const [enriched] = await this.attachSenderInfo([updated]);
+    return enriched;
   }
 
-  private async sendToStudents(notification: { collegeId: string; departmentId: string | null; title: string; description: string }) {
+  private async sendToStudents(notification: {
+    universityId?: string | null;
+    collegeId?: string | null;
+    departmentId?: string | null;
+    title: string;
+    description: string;
+  }) {
+    const where: any = {};
+
+    if (notification.departmentId && notification.collegeId) {
+      where.collegeId = notification.collegeId;
+      where.departmentId = notification.departmentId;
+    } else if (notification.collegeId) {
+      where.collegeId = notification.collegeId;
+    } else if (notification.universityId) {
+      where.universityId = notification.universityId;
+    } else {
+      return;
+    }
+
     const students = await this.prisma.student.findMany({
-      where: {
-        collegeId: notification.collegeId,
-        ...(notification.departmentId ? { departmentId: notification.departmentId } : {}),
-      },
+      where,
       select: { id: true },
     });
 
@@ -191,5 +363,4 @@ export class NotificationsService {
     );
   }
 }
-
 

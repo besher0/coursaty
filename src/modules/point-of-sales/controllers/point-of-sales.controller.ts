@@ -7,12 +7,14 @@ import {
   Param,
   Delete,
   ParseUUIDPipe,
+  Query,
   Req,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { PointOfSalesService } from '../services/point-of-sales.service';
 import { CreatePointOfSaleDto } from '../dtos/create-point-of-sale.dto';
 import { UpdatePointOfSaleDto } from '../dtos/update-point-of-sale.dto';
+import { ListPointOfSalesQueryDto } from '../dtos/list-point-of-sales-query.dto';
 
 @ApiTags('point-of-sales')
 @Controller('point-of-sales')
@@ -25,8 +27,10 @@ export class PointOfSalesController {
   }
 
   @Get()
-  findAll() {
-    return this.pointOfSalesService.findAll();
+  @ApiQuery({ name: 'universityId', required: false, description: 'Filter by university id' })
+  @ApiQuery({ name: 'provinceId', required: false, description: 'Filter by province id' })
+  findAll(@Query() query: ListPointOfSalesQueryDto) {
+    return this.pointOfSalesService.findAll(query);
   }
 
   @Get('university/:universityId')

@@ -22,4 +22,10 @@ export class UpsertGuestPreferenceDto {
   @IsOptional()
   @IsUUID('4')
   departmentId?: string;
+
+  @ApiPropertyOptional({ format: 'uuid', description: 'Selected college year id' })
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsOptional()
+  @IsUUID('4')
+  collegeYearId?: string;
 }

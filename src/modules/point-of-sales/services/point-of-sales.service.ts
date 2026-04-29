@@ -7,6 +7,16 @@ import { UpdatePointOfSaleDto } from '../dtos/update-point-of-sale.dto';
 export class PointOfSalesService {
   constructor(private prisma: PrismaService) {}
 
+  private async resolveProvinceIdFromUniversity(universityId: string) {
+    const university = await this.prisma.university.findUnique({
+      where: { id: String(universityId) },
+      select: { provinceId: true },
+    });
+
+    if (!university) throw new NotFoundException('الجامعة غير موجودة');
+    return university.provinceId;
+  }
+
   async create(createPointOfSaleDto: CreatePointOfSaleDto) {
     const provinceId = String(createPointOfSaleDto.provinceId);
     const province = await this.prisma.province.findUnique({
@@ -30,8 +40,15 @@ export class PointOfSalesService {
     });
   }
 
-  async findAll() {
+  async findAll(filters?: { universityId?: string; provinceId?: string }) {
+    let provinceId = filters?.provinceId ? String(filters.provinceId) : undefined;
+
+    if (filters?.universityId) {
+      provinceId = await this.resolveProvinceIdFromUniversity(String(filters.universityId));
+    }
+
     return this.prisma.pointOfSale.findMany({
+      where: provinceId ? { provinceId } : undefined,
       orderBy: {
         createdAt: 'desc',
       },
@@ -39,15 +56,10 @@ export class PointOfSalesService {
   }
 
   async findByUniversity(universityId: string) {
-    const university = await this.prisma.university.findUnique({
-      where: { id: String(universityId) },
-      select: { provinceId: true },
-    });
-
-    if (!university) throw new NotFoundException('الجامعة غير موجودة');
+    const provinceId = await this.resolveProvinceIdFromUniversity(universityId);
 
     return this.prisma.pointOfSale.findMany({
-      where: { provinceId: university.provinceId },
+      where: { provinceId },
       orderBy: { createdAt: 'desc' },
     });
   }

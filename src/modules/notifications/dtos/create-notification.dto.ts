@@ -12,9 +12,15 @@ export class CreateNotificationDto {
   @IsNotEmpty()
   description: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ description: 'Target university id (for university-wide notification)' })
+  @IsOptional()
   @IsUUID('4')
-  collegeId: string;
+  universityId?: string;
+
+  @ApiPropertyOptional({ description: 'Target college id (for college or department notification)' })
+  @IsOptional()
+  @IsUUID('4')
+  collegeId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

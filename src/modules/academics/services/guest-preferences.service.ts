@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { UpsertGuestPreferenceDto } from '../dtos/upsert-guest-preference.dto';
 
@@ -38,18 +38,38 @@ export class GuestPreferencesService {
       }
     }
 
+    let collegeYearId: string | null = null;
+    if (dto.collegeYearId) {
+      const collegeYear = await this.prisma.collegeYear.findUnique({
+        where: { id: String(dto.collegeYearId) },
+      });
+
+      if (!collegeYear) throw new NotFoundException('السنة غير موجودة');
+      if (collegeYear.collegeId.toString() !== college.id.toString()) {
+        throw new BadRequestException('السنة لا تتبع للكلية المحددة');
+      }
+
+      if (dto.departmentId && collegeYear.departmentId && collegeYear.departmentId !== String(dto.departmentId)) {
+        throw new BadRequestException('السنة لا تتبع للقسم المحدد');
+      }
+
+      collegeYearId = collegeYear.id;
+    }
+
     return this.guestPreferenceRepo.upsert({
       where: { deviceId: normalizedDeviceId },
       update: {
         universityId,
         collegeId: college.id,
         departmentId: dto.departmentId ? String(dto.departmentId) : null,
+        collegeYearId,
       },
       create: {
         deviceId: normalizedDeviceId,
         universityId,
         collegeId: college.id,
         departmentId: dto.departmentId ? String(dto.departmentId) : null,
+        collegeYearId,
       },
     });
   }
@@ -82,3 +102,4 @@ export class GuestPreferencesService {
     return { success: result.count > 0 };
   }
 }
+
