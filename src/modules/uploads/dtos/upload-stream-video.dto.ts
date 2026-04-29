@@ -1,22 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 import { BUNNY_STREAM_RESOLUTIONS, BunnyStreamResolution } from '@/shared/bunny/bunny-resolution.constants';
 
-export class UploadVideoDto {
-  @ApiPropertyOptional({ description: 'Display name for the video' })
+export class UploadStreamVideoDto {
+  @ApiPropertyOptional({ description: 'Video title' })
   @IsOptional()
   @IsString()
-  videoName?: string;
-
-  @ApiPropertyOptional({ description: 'Description for the video' })
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
-  isFree?: boolean;
+  title?: string;
 
   @ApiPropertyOptional({
     enum: BUNNY_STREAM_RESOLUTIONS,
@@ -25,5 +15,4 @@ export class UploadVideoDto {
   @IsOptional()
   @IsIn(BUNNY_STREAM_RESOLUTIONS)
   preferredResolution?: BunnyStreamResolution;
-
 }

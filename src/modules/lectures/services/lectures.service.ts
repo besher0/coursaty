@@ -361,31 +361,69 @@ export class LecturesService {
     const ext = path.extname(file.originalname || '') || '.mp4';
     const fileName = `${randomUUID()}${ext}`;
     const storagePath = `lectures/${lectureId}/videos/${fileName}`;
-    const videoUrl = await this.bunny.uploadImage(storagePath, file);
+    const storageVideoUrl = await this.bunny.uploadImage(storagePath, file);
 
     let streamEmbedUrl: string | null = null;
+    let streamPlayUrl: string | null = null;
+    let streamPlaylistUrl: string | null = null;
+    let streamFallbackUrl: string | null = null;
+    let availableResolutions: string[] | null = null;
+    let mp4Resolutions: Array<{ resolution: string; path: string }> | null = null;
+    let preferredResolutionUrl: string | null = null;
     try {
       const { guid } = await this.bunny.createStreamVideo(title);
       await this.bunny.uploadStreamVideo(guid, file);
       streamEmbedUrl = this.bunny.getStreamEmbedUrl(guid);
+      streamPlayUrl = this.bunny.getStreamPlayUrl(guid);
+
+      const [playData, resolutions] = await Promise.all([
+        this.bunny.getVideoPlayData(guid).catch(() => null),
+        this.bunny.getVideoResolutions(guid).catch(() => null),
+      ]);
+      streamPlaylistUrl = playData?.playlistUrl ?? null;
+      streamFallbackUrl = playData?.fallbackUrl ?? null;
+      availableResolutions = resolutions?.availableResolutions ?? null;
+      mp4Resolutions = resolutions?.mp4Resolutions ?? null;
+
+      if (dto.preferredResolution && resolutions?.mp4Resolutions?.length) {
+        const resolution = dto.preferredResolution.toLowerCase();
+        const match = resolutions.mp4Resolutions.find((item) => item.resolution.toLowerCase() === resolution);
+        preferredResolutionUrl = match?.path ?? null;
+      }
     } catch {
       streamEmbedUrl = null;
+      streamPlayUrl = null;
+      streamPlaylistUrl = null;
+      streamFallbackUrl = null;
+      availableResolutions = null;
+      mp4Resolutions = null;
+      preferredResolutionUrl = null;
     }
+
+    const persistedVideoUrl = streamPlayUrl ?? storageVideoUrl;
 
     const created = await this.prisma.video.create({
       data: {
         lectureId: String(lectureId),
         videoName: title,
         description: dto.description,
-        videoUrl,
+        videoUrl: persistedVideoUrl,
         isFree: dto.isFree ?? false,
       },
     });
 
     return {
       ...created,
-      downloadUrl: videoUrl,
+      downloadUrl: storageVideoUrl,
+      storageVideoUrl,
       streamEmbedUrl,
+      streamPlayUrl,
+      streamPlaylistUrl,
+      streamFallbackUrl,
+      availableResolutions,
+      mp4Resolutions,
+      preferredResolution: dto.preferredResolution ?? null,
+      preferredResolutionUrl,
     };
   }
 

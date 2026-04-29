@@ -16,6 +16,7 @@ import { CreateQuestionDto } from '../dtos/create-question.dto';
 import { UpdateQuestionDto } from '../dtos/update-question.dto';
 import { CreateVideoSegmentDto } from '../dtos/create-video-segment.dto';
 import { UpdateVideoSegmentDto } from '../dtos/update-video-segment.dto';
+import { BUNNY_STREAM_RESOLUTIONS } from '@/shared/bunny/bunny-resolution.constants';
 
 @ApiTags('lectures')
 @ApiBearerAuth()
@@ -125,6 +126,7 @@ export class LecturesController {
         videoName: { type: 'string' },
         description: { type: 'string' },
         isFree: { type: 'boolean' },
+        preferredResolution: { type: 'string', enum: [...BUNNY_STREAM_RESOLUTIONS] },
       },
     },
   })

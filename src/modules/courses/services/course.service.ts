@@ -677,7 +677,12 @@ export class CourseService {
     lectureId: string,
     file: any,
     user?: { userId: string | number; type: string },
-    options?: { videoName?: string; description?: string; isFree?: boolean },
+    options?: {
+      videoName?: string;
+      description?: string;
+      isFree?: boolean;
+      preferredResolution?: string;
+    },
   ) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: lectureId } });
     if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
@@ -687,23 +692,53 @@ export class CourseService {
     const ext = path.extname(file.originalname || '') || '.mp4';
     const fileName = `${randomUUID()}${ext}`;
     const storagePath = `lectures/${lectureId}/videos/${fileName}`;
-    const videoUrl = await this.bunny.uploadImage(storagePath, file);
+    const storageVideoUrl = await this.bunny.uploadImage(storagePath, file);
 
     let streamEmbedUrl: string | null = null;
+    let streamPlayUrl: string | null = null;
+    let streamPlaylistUrl: string | null = null;
+    let streamFallbackUrl: string | null = null;
+    let availableResolutions: string[] | null = null;
+    let mp4Resolutions: Array<{ resolution: string; path: string }> | null = null;
+    let preferredResolutionUrl: string | null = null;
     try {
       const createdStream = await this.bunny.createStreamVideo(title);
       await this.bunny.uploadStreamVideo(createdStream.guid, file);
       streamEmbedUrl = this.bunny.getStreamEmbedUrl(createdStream.guid);
+      streamPlayUrl = this.bunny.getStreamPlayUrl(createdStream.guid);
+
+      const [playData, resolutions] = await Promise.all([
+        this.bunny.getVideoPlayData(createdStream.guid).catch(() => null),
+        this.bunny.getVideoResolutions(createdStream.guid).catch(() => null),
+      ]);
+      streamPlaylistUrl = playData?.playlistUrl ?? null;
+      streamFallbackUrl = playData?.fallbackUrl ?? null;
+      availableResolutions = resolutions?.availableResolutions ?? null;
+      mp4Resolutions = resolutions?.mp4Resolutions ?? null;
+
+      if (options?.preferredResolution && resolutions?.mp4Resolutions?.length) {
+        const resolution = options.preferredResolution.toLowerCase();
+        const match = resolutions.mp4Resolutions.find((item) => item.resolution.toLowerCase() === resolution);
+        preferredResolutionUrl = match?.path ?? null;
+      }
     } catch {
       streamEmbedUrl = null;
+      streamPlayUrl = null;
+      streamPlaylistUrl = null;
+      streamFallbackUrl = null;
+      availableResolutions = null;
+      mp4Resolutions = null;
+      preferredResolutionUrl = null;
     }
+
+    const persistedVideoUrl = streamPlayUrl ?? storageVideoUrl;
 
     const created = await this.prisma.video.create({
       data: {
         lectureId,
         videoName: title,
         description: options?.description,
-        videoUrl,
+        videoUrl: persistedVideoUrl,
         durationSeconds: null,
         isFree: options?.isFree ?? false,
       },
@@ -711,8 +746,16 @@ export class CourseService {
 
     return {
       ...created,
-      downloadUrl: videoUrl,
+      downloadUrl: storageVideoUrl,
+      storageVideoUrl,
       streamEmbedUrl,
+      streamPlayUrl,
+      streamPlaylistUrl,
+      streamFallbackUrl,
+      availableResolutions,
+      mp4Resolutions,
+      preferredResolution: options?.preferredResolution ?? null,
+      preferredResolutionUrl,
     };
   }
 

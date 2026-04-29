@@ -11,6 +11,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Roles } from '../../auth/roles.decorator';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { UploadVideoDto } from '../../lectures/dtos/upload-video.dto';
+import { BUNNY_STREAM_RESOLUTIONS } from '@/shared/bunny/bunny-resolution.constants';
 
 @ApiTags('courses')
 @ApiBearerAuth()
@@ -167,6 +168,7 @@ export class CourseController {
         videoName: { type: 'string' },
         description: { type: 'string' },
         isFree: { type: 'boolean' },
+        preferredResolution: { type: 'string', enum: [...BUNNY_STREAM_RESOLUTIONS] },
       },
     },
   })

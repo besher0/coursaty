@@ -1,6 +1,9 @@
 import {
   Body,
   Controller,
+  Get,
+  Param,
+  Patch,
   Post,
   UploadedFile,
   UseGuards,
@@ -12,6 +15,9 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UploadsService } from './uploads.service';
+import { UploadStreamVideoDto } from './dtos/upload-stream-video.dto';
+import { UpdateBunnyVideoSettingsDto } from './dtos/update-bunny-video-settings.dto';
+import { BUNNY_STREAM_RESOLUTIONS } from '@/shared/bunny/bunny-resolution.constants';
 
 @ApiTags('uploads')
 @ApiBearerAuth()
@@ -46,13 +52,30 @@ export class UploadsController {
       properties: {
         file: { type: 'string', format: 'binary' },
         title: { type: 'string' },
+        preferredResolution: { type: 'string', enum: [...BUNNY_STREAM_RESOLUTIONS] },
       },
     },
   })
   @UseInterceptors(FileInterceptor('file'))
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  uploadVideo(@UploadedFile() file: any, @Body('title') title?: string) {
-    return this.uploads.uploadVideo(file, title);
+  uploadVideo(@UploadedFile() file: any, @Body() body: UploadStreamVideoDto) {
+    return this.uploads.uploadVideo(file, body);
+  }
+
+  @Patch('videos/settings/resolutions')
+  @ApiOperation({ summary: 'Update Bunny Stream library resolution settings (Bunny Cloud)' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  updateVideoResolutionSettings(@Body() body: UpdateBunnyVideoSettingsDto) {
+    return this.uploads.updateBunnyVideoSettings(body);
+  }
+
+  @Get('videos/:videoId/resolutions')
+  @ApiOperation({ summary: 'Get available resolutions for Bunny Stream video (Bunny Cloud)' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  getVideoResolutions(@Param('videoId') videoId: string) {
+    return this.uploads.getBunnyVideoResolutions(videoId);
   }
 }
