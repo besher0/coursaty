@@ -221,23 +221,11 @@ export class DashboardService {
     user: { userId: string | number; type: string },
     guestFilter?: DashboardGuestFilter,
   ) {
-    const { collegeId, departmentId, collegeYearId } = await this.getStudentCollege(user, guestFilter);
-    const activeSeasonId = await this.getActiveHomeSeasonId();
-
-    const subjectWhere = {
-      collegeId,
-      ...(collegeYearId ? { collegeYearId } : {}),
-      ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
-      ...(departmentId
-        ? {
-            OR: [{ departmentId: null }, { departmentId }],
-          }
-        : {}),
-    };
+    const { collegeId } = await this.getStudentCollege(user, guestFilter);
 
     const programs = await this.prisma.subject.findMany({
       where: {
-        ...subjectWhere,
+        collegeId,
         isProgram: true,
       },
       include: {
@@ -280,7 +268,6 @@ export class DashboardService {
       const coursesWithImages = await this.prisma.course.findMany({
         where: {
           subjectId: { in: allProgramIds },
-          ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
           imageUrl: { not: null },
         },
         select: {

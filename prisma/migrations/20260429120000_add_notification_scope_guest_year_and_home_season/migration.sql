@@ -1,4 +1,4 @@
-﻿-- Add optional university targeting to notifications
+-- Add optional university targeting to notifications
 ALTER TABLE "Notification"
 ADD COLUMN IF NOT EXISTS "universityId" TEXT;
 

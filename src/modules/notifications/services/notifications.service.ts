@@ -128,7 +128,15 @@ export class NotificationsService {
       ),
     );
 
-    const [teachers, admins] = await Promise.all([
+    const fallbackUniversityIds = Array.from(
+      new Set(
+        notifications
+          .filter((notification) => !notification.university && notification.college?.universityId)
+          .map((notification) => notification.college.universityId),
+      ),
+    );
+
+    const [teachers, admins, fallbackUniversities] = await Promise.all([
       teacherIds.length
         ? this.prisma.teacher.findMany({
             where: { id: { in: teacherIds } },
@@ -141,10 +149,18 @@ export class NotificationsService {
             select: { id: true, name: true },
           })
         : Promise.resolve([]),
+      fallbackUniversityIds.length
+        ? this.prisma.university.findMany({
+            where: { id: { in: fallbackUniversityIds } },
+          })
+        : Promise.resolve([]),
     ]);
 
     const teacherNameById = new Map(teachers.map((teacher) => [teacher.id, teacher.name]));
     const adminNameById = new Map(admins.map((admin) => [admin.id, admin.name]));
+    const fallbackUniversityById = new Map(
+      fallbackUniversities.map((university) => [university.id, university]),
+    );
 
     return notifications.map((notification) => {
       const senderRole = notification.createdBy?.userableType ?? null;
@@ -158,8 +174,15 @@ export class NotificationsService {
         senderName = adminNameById.get(senderEntityId) ?? null;
       }
 
+      const resolvedUniversity =
+        notification.university ??
+        (notification.college?.universityId
+          ? (fallbackUniversityById.get(notification.college.universityId) ?? null)
+          : null);
+
       return {
         ...notification,
+        university: resolvedUniversity,
         sender: {
           userId: notification.createdBy?.id ?? null,
           role: senderRole,
