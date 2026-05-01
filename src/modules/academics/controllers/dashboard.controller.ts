@@ -10,9 +10,19 @@ import { OptionalJwtAuthGuard } from '@/modules/auth/guards/optional-jwt-auth.gu
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
-  private buildGuestFilter(query: { deviceId?: string }) {
+  private buildGuestFilter(query: {
+    deviceId?: string;
+    universityId?: string;
+    collegeId?: string;
+    departmentId?: string;
+    collegeYearId?: string;
+  }) {
     return {
       deviceId: query.deviceId,
+      universityId: query.universityId,
+      collegeId: query.collegeId,
+      departmentId: query.departmentId,
+      collegeYearId: query.collegeYearId,
     };
   }
 
@@ -132,6 +142,7 @@ export class DashboardController {
   @ApiQuery({ name: 'page', required: false, description: 'Optional page number, default is 1' })
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items per page, default is 10' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
+  @ApiQuery({ name: 'universityId', required: false, description: 'Optional university id to filter courses by university' })
   getMixedCourses(
     @Req() req: any,
     @Query('type') type: 'all' | 'subject' | 'program' = 'all',
@@ -140,15 +151,19 @@ export class DashboardController {
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
     @Query('deviceId') deviceId?: string,
+    @Query('universityId') universityId?: string,
   ) {
+    const parsedPage = parseInt(page);
+    const parsedLimit = parseInt(limit);
+
     return this.dashboardService.getMixedCourses(
       req.user,
       type,
       subjectId,
       programId,
-      parseInt(page),
-      parseInt(limit),
-      this.buildGuestFilter({ deviceId }),
+      Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1,
+      Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10,
+      this.buildGuestFilter({ deviceId, universityId }),
     );
   }
 

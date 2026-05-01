@@ -190,13 +190,58 @@ export class AcademicsService {
       },
     });
   }
-  listSubjects(collegeId: string, departmentId?: string) {
-    return this.prisma.subject.findMany({
+  async listSubjects(collegeId: string, departmentId?: string) {
+    const subjects = await this.prisma.subject.findMany({
       where: {
         collegeId,
         departmentId: departmentId || undefined,
       },
+      include: {
+        collegeYear: {
+          include: {
+            academicYear: {
+              select: {
+                id: true,
+                yearName: true,
+                yearNumber: true,
+              },
+            },
+          },
+        },
+        season: {
+          select: {
+            id: true,
+            seasonName: true,
+            seasonNumber: true,
+          },
+        },
+      },
+      orderBy: [
+        { collegeYear: { academicYear: { yearNumber: 'asc' } } },
+        { season: { seasonNumber: 'asc' } },
+        { subjectName: 'asc' },
+      ],
     });
+
+    return subjects.map((subject) => ({
+      ...subject,
+      yearName: subject.collegeYear?.academicYear?.yearName ?? null,
+      seasonName: subject.season?.seasonName ?? null,
+      year: subject.collegeYear?.academicYear
+        ? {
+            id: subject.collegeYear.academicYear.id,
+            name: subject.collegeYear.academicYear.yearName,
+            number: subject.collegeYear.academicYear.yearNumber,
+          }
+        : null,
+      season: subject.season
+        ? {
+            id: subject.season.id,
+            name: subject.season.seasonName,
+            number: subject.season.seasonNumber,
+          }
+        : null,
+    }));
   }
 
   updateSubject(id: string, dto: UpdateSubjectDto) {

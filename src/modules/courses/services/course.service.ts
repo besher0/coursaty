@@ -347,6 +347,11 @@ export class CourseService {
         locked: !hasAccess,
       },
       details: {
+        universityId: course.universityId,
+        collegeId: course.collegeId,
+        departmentId: course.departmentId,
+        yearId: course.collegeYear?.academicYear?.id ?? null,
+        seasonId: course.season?.id ?? null,
         teacher: {
           id: course.teacher.id,
           name: course.teacher.name,
