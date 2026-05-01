@@ -320,8 +320,14 @@ export class CourseService {
 
     const isOwnerOrAdmin = await this.isCourseOwnerOrAdmin(user, course.id);
     const isSubscribed = await this.hasStudentSubscription(user, course.id);
-    const isExpired = !!course.expiresAt && course.expiresAt.getTime() <= Date.now();
+    const nowTs = Date.now();
+    const isExpired = !!course.expiresAt && course.expiresAt.getTime() <= nowTs;
     const hasAccess = course.isFree || isOwnerOrAdmin || (isSubscribed && !isExpired);
+    const expiresInSeconds = course.expiresAt
+      ? Math.max(0, Math.floor((course.expiresAt.getTime() - nowTs) / 1000))
+      : null;
+    const expiresInDays =
+      expiresInSeconds === null ? null : Number((expiresInSeconds / 86400).toFixed(2));
 
     const basePrice = Number(course.price);
     const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
@@ -360,6 +366,10 @@ export class CourseService {
           telegramUrl: course.teacher.telegramUrl ?? null,
         },
         durationSeconds: course.duration ? course.duration * 3600 : null,
+        expiresAt: course.expiresAt,
+        expiresInSeconds,
+        expiresInDays,
+        isExpired,
         description: course.description,
         introVideoUrl: course.introVideoUrl,
         discussionGroupUrl: course.discussionGroupUrl,
