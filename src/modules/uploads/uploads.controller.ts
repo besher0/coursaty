@@ -17,6 +17,9 @@ import { Roles } from '../auth/roles.decorator';
 import { UploadsService } from './uploads.service';
 import { UploadStreamVideoDto } from './dtos/upload-stream-video.dto';
 import { UpdateBunnyVideoSettingsDto } from './dtos/update-bunny-video-settings.dto';
+import { InitUploadVideoTusDto } from './dtos/init-upload-video-tus.dto';
+import { CompleteUploadVideoTusDto } from './dtos/complete-upload-video-tus.dto';
+import { RefreshUploadVideoTusDto } from './dtos/refresh-upload-video-tus.dto';
 import { BUNNY_STREAM_RESOLUTIONS } from '@/shared/bunny/bunny-resolution.constants';
 
 @ApiTags('uploads')
@@ -61,6 +64,30 @@ export class UploadsController {
   @Roles('TEACHER', 'ADMIN')
   uploadVideo(@UploadedFile() file: any, @Body() body: UploadStreamVideoDto) {
     return this.uploads.uploadVideo(file, body);
+  }
+
+  @Post('videos/tus/init')
+  @ApiOperation({ summary: 'Initialize Bunny TUS resumable upload for generic video upload' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  initTusVideoUpload(@Body() body: InitUploadVideoTusDto) {
+    return this.uploads.initTusVideoUpload(body);
+  }
+
+  @Post('videos/tus/complete')
+  @ApiOperation({ summary: 'Complete Bunny TUS upload and return playback links' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  completeTusVideoUpload(@Body() body: CompleteUploadVideoTusDto) {
+    return this.uploads.completeTusVideoUpload(body);
+  }
+
+  @Post('videos/tus/refresh')
+  @ApiOperation({ summary: 'Refresh Bunny TUS signature for an existing videoId' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  refreshTusVideoUpload(@Body() body: RefreshUploadVideoTusDto) {
+    return this.uploads.refreshTusVideoUpload(body);
   }
 
   @Patch('videos/settings/resolutions')

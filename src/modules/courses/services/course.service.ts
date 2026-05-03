@@ -6,6 +6,9 @@ import { UpdateCourseDto } from '../dtos/update-course.dto';
 import { DomainException } from '@/common/errors/domain.exception';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
+import { InitTusVideoUploadDto } from '../../lectures/dtos/init-tus-video-upload.dto';
+import { CompleteTusVideoUploadDto } from '../../lectures/dtos/complete-tus-video-upload.dto';
+import { RefreshTusVideoUploadDto } from '../../lectures/dtos/refresh-tus-video-upload.dto';
 
 @Injectable()
 export class CourseService {
@@ -353,6 +356,7 @@ export class CourseService {
         locked: !hasAccess,
       },
       details: {
+        categoryId: course.categoryId,
         universityId: course.universityId,
         collegeId: course.collegeId,
         departmentId: course.departmentId,
@@ -737,55 +741,31 @@ export class CourseService {
     const storagePath = `lectures/${lectureId}/videos/${fileName}`;
     const storageVideoUrl = await this.bunny.uploadImage(storagePath, file);
 
-    let streamEmbedUrl: string | null = null;
-    let streamPlayUrl: string | null = null;
-    let streamPlaylistUrl: string | null = null;
-    let streamFallbackUrl: string | null = null;
-    let availableResolutions: string[] | null = null;
-    let mp4Resolutions: Array<{ resolution: string; path: string }> | null = null;
-    let preferredResolutionUrl: string | null = null;
+    let streamPlayback = {
+      streamVideoId: null as string | null,
+      streamEmbedUrl: null as string | null,
+      streamPlayUrl: null as string | null,
+      streamPlaylistUrl: null as string | null,
+      streamFallbackUrl: null as string | null,
+      availableResolutions: null as string[] | null,
+      mp4Resolutions: null as Array<{ resolution: string; path: string }> | null,
+      preferredResolution: (options?.preferredResolution ?? null) as string | null,
+      preferredResolutionUrl: null as string | null,
+      isPlayable: null as boolean | null,
+      isPlaylistPlayable: null as boolean | null,
+    };
     try {
       const createdStream = await this.bunny.createStreamVideo(title);
       await this.bunny.uploadStreamVideo(createdStream.guid, file);
-      streamEmbedUrl = this.bunny.getStreamEmbedUrl(createdStream.guid);
-      streamPlayUrl = this.bunny.getStreamPlayUrl(createdStream.guid);
-
-      type StreamPlayData = {
-        playlistUrl: string | null;
-        fallbackUrl: string | null;
-      };
-      type StreamResolutions = {
-        availableResolutions: string[];
-        mp4Resolutions: Array<{ resolution: string; path: string }>;
-      };
-
-      const [playData, resolutions]: [StreamPlayData | null, StreamResolutions | null] = await Promise.all([
-        this.bunny.getVideoPlayData(createdStream.guid).catch((): StreamPlayData | null => null),
-        this.bunny.getVideoResolutions(createdStream.guid).catch((): StreamResolutions | null => null),
-      ]);
-      streamPlaylistUrl = playData?.playlistUrl ?? null;
-      streamFallbackUrl = playData?.fallbackUrl ?? null;
-      availableResolutions = resolutions?.availableResolutions ?? null;
-      mp4Resolutions = resolutions?.mp4Resolutions ?? null;
-
-      if (options?.preferredResolution && resolutions?.mp4Resolutions?.length) {
-        const resolution = options.preferredResolution.toLowerCase();
-        const match = resolutions.mp4Resolutions.find(
-          (item: { resolution: string; path: string }) => item.resolution.toLowerCase() === resolution,
-        );
-        preferredResolutionUrl = match?.path ?? null;
-      }
+      streamPlayback = await this.bunny.getStreamPlaybackPayload(createdStream.guid, options?.preferredResolution);
     } catch {
-      streamEmbedUrl = null;
-      streamPlayUrl = null;
-      streamPlaylistUrl = null;
-      streamFallbackUrl = null;
-      availableResolutions = null;
-      mp4Resolutions = null;
-      preferredResolutionUrl = null;
+      streamPlayback = {
+        ...streamPlayback,
+        streamVideoId: null,
+      };
     }
 
-    const persistedVideoUrl = streamPlayUrl ?? storageVideoUrl;
+    const persistedVideoUrl = streamPlayback.streamPlayUrl ?? storageVideoUrl;
 
     const created = await this.prisma.video.create({
       data: {
@@ -802,14 +782,101 @@ export class CourseService {
       ...created,
       downloadUrl: storageVideoUrl,
       storageVideoUrl,
-      streamEmbedUrl,
-      streamPlayUrl,
-      streamPlaylistUrl,
-      streamFallbackUrl,
-      availableResolutions,
-      mp4Resolutions,
-      preferredResolution: options?.preferredResolution ?? null,
-      preferredResolutionUrl,
+      ...streamPlayback,
+    };
+  }
+
+  async initTusLectureVideoUpload(
+    lectureId: string,
+    user?: { userId: string | number; type: string },
+    dto?: InitTusVideoUploadDto,
+  ) {
+    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
+    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
+
+    const title = dto?.videoName?.trim() || `lecture-${lectureId}-video`;
+    const uploadSession = await this.bunny.createTusUploadSession(title, dto?.expiresInSeconds ?? 3600);
+
+    return {
+      lectureId: String(lectureId),
+      upload: {
+        videoId: uploadSession.videoId,
+        endpoint: uploadSession.tusEndpoint,
+        libraryId: uploadSession.libraryId,
+        authorizationExpire: uploadSession.authorizationExpire,
+        authorizationSignature: uploadSession.authorizationSignature,
+        headers: uploadSession.headers,
+      },
+    };
+  }
+
+  async completeTusLectureVideoUpload(
+    lectureId: string,
+    user?: { userId: string | number; type: string },
+    dto?: CompleteTusVideoUploadDto,
+  ) {
+    if (!dto?.videoId) throw new BadRequestException('videoId مطلوب');
+
+    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
+    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
+
+    const streamPlayUrl = this.bunny.getStreamPlayUrl(dto.videoId);
+    const existing = await this.prisma.video.findFirst({
+      where: {
+        lectureId: String(lectureId),
+        videoUrl: streamPlayUrl,
+      },
+    });
+
+    const streamPlayback = await this.bunny.getStreamPlaybackPayload(dto.videoId, dto.preferredResolution);
+    if (existing) {
+      return {
+        ...existing,
+        ...streamPlayback,
+      };
+    }
+
+    const title = dto.videoName?.trim() || `video-${dto.videoId}`;
+    const created = await this.prisma.video.create({
+      data: {
+        lectureId: String(lectureId),
+        videoName: title,
+        description: dto.description,
+        videoUrl: streamPlayUrl,
+        isFree: dto.isFree ?? false,
+      },
+    });
+
+    return {
+      ...created,
+      ...streamPlayback,
+    };
+  }
+
+  async refreshTusLectureVideoUpload(
+    lectureId: string,
+    user?: { userId: string | number; type: string },
+    dto?: RefreshTusVideoUploadDto,
+  ) {
+    if (!dto?.videoId) throw new BadRequestException('videoId مطلوب');
+
+    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
+    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
+
+    const refreshed = this.bunny.signTusUpload(dto.videoId, dto.expiresInSeconds ?? 3600);
+    return {
+      lectureId: String(lectureId),
+      upload: {
+        videoId: dto.videoId,
+        endpoint: refreshed.tusEndpoint,
+        libraryId: refreshed.libraryId,
+        authorizationExpire: refreshed.authorizationExpire,
+        authorizationSignature: refreshed.authorizationSignature,
+        headers: refreshed.headers,
+      },
     };
   }
 

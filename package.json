@@ -14,7 +14,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "backfill:province-links": "ts-node src/scripts/backfill-province-links.ts",
-    "seed:provinces": "ts-node src/scripts/seed-provinces.ts"
+    "seed:provinces": "ts-node src/scripts/seed-provinces.ts",
+    "upload:video:auto": "ts-node src/scripts/upload-video-auto.ts"
   },
   "dependencies": {
     "@nestjs/cache-manager": "^3.1.0",
@@ -36,7 +37,8 @@
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.1.13",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "tus-js-client": "^4.3.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.3.2",

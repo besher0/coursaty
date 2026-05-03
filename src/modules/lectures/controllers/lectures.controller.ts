@@ -16,6 +16,9 @@ import { CreateQuestionDto } from '../dtos/create-question.dto';
 import { UpdateQuestionDto } from '../dtos/update-question.dto';
 import { CreateVideoSegmentDto } from '../dtos/create-video-segment.dto';
 import { UpdateVideoSegmentDto } from '../dtos/update-video-segment.dto';
+import { InitTusVideoUploadDto } from '../dtos/init-tus-video-upload.dto';
+import { CompleteTusVideoUploadDto } from '../dtos/complete-tus-video-upload.dto';
+import { RefreshTusVideoUploadDto } from '../dtos/refresh-tus-video-upload.dto';
 import { BUNNY_STREAM_RESOLUTIONS } from '@/shared/bunny/bunny-resolution.constants';
 
 @ApiTags('lectures')
@@ -140,6 +143,42 @@ export class LecturesController {
     @Req() req: any,
   ) {
     return this.lectures.uploadLectureVideo(lectureId, file, body, req.user);
+  }
+
+  @Post(':lectureId/videos/tus/init')
+  @ApiOperation({ summary: 'Initialize Bunny TUS resumable upload for lecture video' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  initTusUpload(
+    @Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string,
+    @Body() body: InitTusVideoUploadDto,
+    @Req() req: any,
+  ) {
+    return this.lectures.initTusVideoUpload(lectureId, body, req.user);
+  }
+
+  @Post(':lectureId/videos/tus/complete')
+  @ApiOperation({ summary: 'Finalize Bunny TUS upload and create lecture video record' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  completeTusUpload(
+    @Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string,
+    @Body() body: CompleteTusVideoUploadDto,
+    @Req() req: any,
+  ) {
+    return this.lectures.completeTusVideoUpload(lectureId, body, req.user);
+  }
+
+  @Post(':lectureId/videos/tus/refresh')
+  @ApiOperation({ summary: 'Refresh Bunny TUS signature for an existing lecture videoId' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  refreshTusUpload(
+    @Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string,
+    @Body() body: RefreshTusVideoUploadDto,
+    @Req() req: any,
+  ) {
+    return this.lectures.refreshTusVideoUpload(lectureId, body, req.user);
   }
 
   @Patch('videos/:id')

@@ -1,7 +1,7 @@
 import { BadGatewayException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { BUNNY_STREAM_RESOLUTIONS, BunnyStreamResolution } from './bunny-resolution.constants';
 
 type BunnyResolutionPath = {
@@ -19,6 +19,7 @@ type BunnyVideoResolutionsResponse = {
 
 @Injectable()
 export class BunnyService {
+  private static readonly TUS_UPLOAD_ENDPOINT = 'https://video.bunnycdn.com/tusupload';
   private readonly streamLibraryId: string;
   private readonly apiKey: string;
   private readonly coreApiKey: string;
@@ -79,6 +80,43 @@ export class BunnyService {
 
   getStreamEmbedUrl(guid: string): string {
     return `https://player.mediadelivery.net/embed/${this.streamLibraryId}/${guid}`;
+  }
+
+  getTusUploadEndpoint(): string {
+    return BunnyService.TUS_UPLOAD_ENDPOINT;
+  }
+
+  async createTusUploadSession(title: string, expiresInSeconds = 3600) {
+    const { guid } = await this.createStreamVideo(title);
+    const signedUpload = this.signTusUpload(guid, expiresInSeconds);
+
+    return {
+      videoId: guid,
+      ...signedUpload,
+    };
+  }
+
+  signTusUpload(videoId: string, expiresInSeconds = 3600) {
+    this.assertStreamConfigured();
+
+    const ttlSeconds = this.clampTusTtl(expiresInSeconds);
+    const authorizationExpire = Math.floor(Date.now() / 1000) + ttlSeconds;
+    const signaturePayload = `${this.streamLibraryId}${this.apiKey}${authorizationExpire}${videoId}`;
+    const authorizationSignature = createHash('sha256').update(signaturePayload).digest('hex');
+    const libraryId = this.streamLibraryId;
+
+    return {
+      tusEndpoint: this.getTusUploadEndpoint(),
+      libraryId,
+      authorizationExpire,
+      authorizationSignature,
+      headers: {
+        AuthorizationSignature: authorizationSignature,
+        AuthorizationExpire: String(authorizationExpire),
+        VideoId: videoId,
+        LibraryId: libraryId,
+      },
+    };
   }
 
   async updateLibraryResolutionSettings(options: {
@@ -156,6 +194,34 @@ export class BunnyService {
       availableResolutions: response.data?.video?.availableResolutions ?? null,
       isPlayable: response.data?.isPlayable ?? null,
       isPlaylistPlayable: response.data?.isPlaylistPlayable ?? null,
+    };
+  }
+
+  async getStreamPlaybackPayload(videoId: string, preferredResolution?: string) {
+    const [playData, resolutions] = await Promise.all([
+      this.getVideoPlayData(videoId).catch(() => null),
+      this.getVideoResolutions(videoId).catch(() => null),
+    ]);
+
+    let preferredResolutionUrl: string | null = null;
+    if (preferredResolution && resolutions?.mp4Resolutions?.length) {
+      const normalized = preferredResolution.toLowerCase();
+      const match = resolutions.mp4Resolutions.find((item) => item.resolution.toLowerCase() === normalized);
+      preferredResolutionUrl = match?.path ?? null;
+    }
+
+    return {
+      streamVideoId: videoId,
+      streamEmbedUrl: this.getStreamEmbedUrl(videoId),
+      streamPlayUrl: this.getStreamPlayUrl(videoId),
+      streamPlaylistUrl: playData?.playlistUrl ?? null,
+      streamFallbackUrl: playData?.fallbackUrl ?? null,
+      availableResolutions: resolutions?.availableResolutions ?? null,
+      mp4Resolutions: resolutions?.mp4Resolutions ?? null,
+      preferredResolution: preferredResolution ?? null,
+      preferredResolutionUrl,
+      isPlayable: playData?.isPlayable ?? null,
+      isPlaylistPlayable: playData?.isPlaylistPlayable ?? null,
     };
   }
 
@@ -248,6 +314,16 @@ export class BunnyService {
 
   private async sleep(ms: number) {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private clampTusTtl(expiresInSeconds: number): number {
+    const DEFAULT_TTL = 3600;
+    const MIN_TTL = 60;
+    const MAX_TTL = 86400;
+
+    if (!Number.isFinite(expiresInSeconds)) return DEFAULT_TTL;
+    const rounded = Math.floor(expiresInSeconds);
+    return Math.min(MAX_TTL, Math.max(MIN_TTL, rounded));
   }
 
   private readEnv(key: string): string {

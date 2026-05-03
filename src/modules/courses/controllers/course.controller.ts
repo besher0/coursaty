@@ -11,6 +11,9 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Roles } from '../../auth/roles.decorator';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { UploadVideoDto } from '../../lectures/dtos/upload-video.dto';
+import { InitTusVideoUploadDto } from '../../lectures/dtos/init-tus-video-upload.dto';
+import { CompleteTusVideoUploadDto } from '../../lectures/dtos/complete-tus-video-upload.dto';
+import { RefreshTusVideoUploadDto } from '../../lectures/dtos/refresh-tus-video-upload.dto';
 import { BUNNY_STREAM_RESOLUTIONS } from '@/shared/bunny/bunny-resolution.constants';
 
 @ApiTags('courses')
@@ -182,5 +185,41 @@ export class CourseController {
     @Req() req: any,
   ) {
     return this.courseService.uploadLectureVideo(lectureId, file, req.user, body);
+  }
+
+  @Post(':courseId/lectures/:lectureId/videos/tus/init')
+  @ApiOperation({ summary: 'Initialize Bunny TUS resumable upload for lecture video' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  async initLectureVideoTusUpload(
+    @Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string,
+    @Body() body: InitTusVideoUploadDto,
+    @Req() req: any,
+  ) {
+    return this.courseService.initTusLectureVideoUpload(lectureId, req.user, body);
+  }
+
+  @Post(':courseId/lectures/:lectureId/videos/tus/complete')
+  @ApiOperation({ summary: 'Finalize Bunny TUS upload and create lecture video record' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  async completeLectureVideoTusUpload(
+    @Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string,
+    @Body() body: CompleteTusVideoUploadDto,
+    @Req() req: any,
+  ) {
+    return this.courseService.completeTusLectureVideoUpload(lectureId, req.user, body);
+  }
+
+  @Post(':courseId/lectures/:lectureId/videos/tus/refresh')
+  @ApiOperation({ summary: 'Refresh Bunny TUS signature for an existing lecture videoId' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  async refreshLectureVideoTusUpload(
+    @Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string,
+    @Body() body: RefreshTusVideoUploadDto,
+    @Req() req: any,
+  ) {
+    return this.courseService.refreshTusLectureVideoUpload(lectureId, req.user, body);
   }
 }

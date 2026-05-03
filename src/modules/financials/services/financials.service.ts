@@ -13,6 +13,145 @@ export class FinancialsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  private readonly subscriptionCourseInclude = {
+    course: {
+      include: {
+        teacher: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            image: true,
+            telegramUrl: true,
+            instagramUrl: true,
+            likesCount: true,
+            createdAt: true,
+          },
+        },
+        subject: {
+          select: {
+            id: true,
+            subjectName: true,
+            isProgram: true,
+            imageUrl: true,
+            collegeId: true,
+            departmentId: true,
+            collegeYearId: true,
+            seasonId: true,
+          },
+        },
+        category: {
+          select: {
+            id: true,
+            name: true,
+            sortOrder: true,
+            requiresAcademicLinks: true,
+            isProgram: true,
+            createdAt: true,
+          },
+        },
+        university: {
+          select: {
+            id: true,
+            name: true,
+            provinceId: true,
+          },
+        },
+        college: {
+          select: {
+            id: true,
+            name: true,
+            universityId: true,
+          },
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+            collegeId: true,
+          },
+        },
+        collegeYear: {
+          select: {
+            id: true,
+            collegeId: true,
+            departmentId: true,
+            academicYearId: true,
+            isActive: true,
+            academicYear: {
+              select: {
+                id: true,
+                yearName: true,
+                yearNumber: true,
+              },
+            },
+          },
+        },
+        season: {
+          select: {
+            id: true,
+            seasonName: true,
+            seasonNumber: true,
+            isHomeActive: true,
+          },
+        },
+        approvedBy: {
+          select: {
+            id: true,
+            name: true,
+            createdAt: true,
+          },
+        },
+        _count: {
+          select: {
+            subscriptions: true,
+            lectures: true,
+            courseRatings: true,
+            codeGroups: true,
+          },
+        },
+        lectures: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            imageUrl: true,
+            sortOrder: true,
+            _count: {
+              select: {
+                videos: true,
+                files: true,
+                questions: true,
+              },
+            },
+          },
+          orderBy: {
+            sortOrder: 'asc',
+          },
+        },
+      },
+    },
+  } satisfies Prisma.StudentSubscriptionInclude;
+
+  private mapSubscribedCourseDetails(
+    subscription: Prisma.StudentSubscriptionGetPayload<{ include: { course: true } }>,
+  ) {
+    return {
+      ...subscription.course,
+      subscribedAt: subscription.createdAt,
+      subscriptionExpiresAt: subscription.expiresAt,
+      subscription: {
+        id: subscription.id,
+        basePrice: subscription.basePrice,
+        courseDiscountAmount: subscription.courseDiscountAmount,
+        codeDiscountAmount: subscription.codeDiscountAmount,
+        finalPrice: subscription.finalPrice,
+        subscribedAt: subscription.createdAt,
+        expiresAt: subscription.expiresAt,
+      },
+    };
+  }
+
   private async resolveStudentContext(user?: { userId: string | number; type: string }) {
     if (user?.type !== 'STUDENT') {
       throw new ForbiddenException('يجب تسجيل الدخول بحساب طالب');
@@ -375,17 +514,13 @@ export class FinancialsService {
         studentId,
         OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
       },
-      include: { course: true },
+      include: this.subscriptionCourseInclude,
       orderBy: { createdAt: 'desc' },
     });
 
     return {
       studentName: student.name,
-      courses: subscriptions.map((s) => ({
-        ...s.course,
-        subscribedAt: s.createdAt,
-        subscriptionExpiresAt: s.expiresAt,
-      })),
+      courses: subscriptions.map((s) => this.mapSubscribedCourseDetails(s)),
     };
   }
 
@@ -398,17 +533,13 @@ export class FinancialsService {
         studentId,
         expiresAt: { lt: now },
       },
-      include: { course: true },
+      include: this.subscriptionCourseInclude,
       orderBy: { createdAt: 'desc' },
     });
 
     return {
       studentName: student.name,
-      courses: subscriptions.map((s) => ({
-        ...s.course,
-        subscribedAt: s.createdAt,
-        subscriptionExpiresAt: s.expiresAt,
-      })),
+      courses: subscriptions.map((s) => this.mapSubscribedCourseDetails(s)),
     };
   }
 }
