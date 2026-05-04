@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AdminsService } from '../services/admins.service';
 import { AdminDashboardService } from '../services/admin-dashboard.service';
 import { CreateAdminDto } from '../dtos/create-admin.dto';
 import { AdminDashboardDto, AdminDashboardQueryDto } from '../dtos/admin-dashboard.dto';
+import { DashboardCoursesQueryDto } from '../dtos/dashboard-courses-query.dto';
 import { UsersDirectoryQueryDto } from '../dtos/users-directory-query.dto';
 import { UpdateUserStatusDto } from '../dtos/update-user-status.dto';
+import { ManageSubjectTeacherDto } from '../dtos/manage-subject-teacher.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/modules/auth/guards/roles.guard';
 import { Roles } from '@/modules/auth/roles.decorator';
@@ -39,12 +41,47 @@ export class AdminsController {
   @ApiOperation({
     summary: 'Get admin dashboard with metrics, codes, and pending items',
   })
+  @ApiQuery({ name: 'universityId', required: false, description: 'Filter dashboard by university id' })
   @ApiOkResponse({
     type: AdminDashboardDto,
     description: 'Admin dashboard data',
   })
   async getDashboard(@Query() query: AdminDashboardQueryDto) {
     return this.dashboardService.getDashboard(query);
+  }
+
+  @Get('dashboard/courses/subjects')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary: 'Get subject courses for admin (with optional subject/university filters)',
+  })
+  @ApiOkResponse({ description: 'Subject courses' })
+  async getDashboardSubjectCourses(@Query() query: DashboardCoursesQueryDto) {
+    return this.admins.getDashboardSubjectCourses(
+      query.subjectId,
+      query.universityId,
+      query.page,
+      query.limit,
+    );
+  }
+
+  @Get('dashboard/courses/programs')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary: 'Get program courses for admin (with optional program/university filters)',
+  })
+  @ApiOkResponse({ description: 'Program courses' })
+  async getDashboardProgramCourses(@Query() query: DashboardCoursesQueryDto) {
+    return this.admins.getDashboardProgramCourses(
+      query.programId,
+      query.universityId,
+      query.page,
+      query.limit,
+    );
   }
 
   @Get('code-statistics')
@@ -119,6 +156,64 @@ export class AdminsController {
     return this.admins.getProgramsByCollegeId(collegeId);
   }
 
+  @Get('subjects/:subjectId/teachers')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary: 'Get teachers assigned to a subject/program',
+  })
+  @ApiOkResponse({ description: 'Assigned teachers list' })
+  async getSubjectTeachers(
+    @Param('subjectId', new ParseUUIDPipe({ version: '4' })) subjectId: string,
+  ) {
+    return this.admins.getSubjectTeachers(subjectId);
+  }
+
+  @Post('subjects/:subjectId/teachers')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary: 'Assign teacher to a subject/program',
+  })
+  @ApiCreatedResponse({ description: 'Teacher assigned to subject/program' })
+  async assignTeacherToSubject(
+    @Param('subjectId', new ParseUUIDPipe({ version: '4' })) subjectId: string,
+    @Body() body: ManageSubjectTeacherDto,
+  ) {
+    return this.admins.assignTeacherToSubject(subjectId, body.teacherId);
+  }
+
+  @Delete('subjects/:subjectId/teachers/:teacherId')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary: 'Remove teacher from a subject/program',
+  })
+  @ApiOkResponse({ description: 'Teacher removed from subject/program' })
+  async removeTeacherFromSubject(
+    @Param('subjectId', new ParseUUIDPipe({ version: '4' })) subjectId: string,
+    @Param('teacherId', new ParseUUIDPipe({ version: '4' })) teacherId: string,
+  ) {
+    return this.admins.removeTeacherFromSubject(subjectId, teacherId);
+  }
+
+  @Get('teachers/:teacherId/allowed-subjects')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary: 'Get allowed subjects/programs for a teacher',
+  })
+  @ApiOkResponse({ description: 'Teacher allowed subjects/programs' })
+  async getTeacherAllowedSubjects(
+    @Param('teacherId', new ParseUUIDPipe({ version: '4' })) teacherId: string,
+  ) {
+    return this.admins.getTeacherAllowedSubjects(teacherId);
+  }
+
   @Get('getTeachersByCollageID')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -163,6 +258,36 @@ export class AdminsController {
     @Param('universityId', new ParseUUIDPipe({ version: '4' })) universityId: string,
   ) {
     return this.admins.getStudentsByUniversityId(universityId);
+  }
+
+  @Get('students/:studentId/profile')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary:
+      'Get detailed student profile with college, department, and subscribed courses grouped by active/inactive',
+  })
+  @ApiOkResponse({ description: 'Student profile details' })
+  async getStudentProfile(
+    @Param('studentId', new ParseUUIDPipe({ version: '4' })) studentId: string,
+  ) {
+    return this.admins.getStudentProfile(studentId);
+  }
+
+  @Get('teachers/:teacherId/profile')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary:
+      'Get detailed teacher profile with active/finished courses and interactive students count',
+  })
+  @ApiOkResponse({ description: 'Teacher profile details' })
+  async getTeacherProfile(
+    @Param('teacherId', new ParseUUIDPipe({ version: '4' })) teacherId: string,
+  ) {
+    return this.admins.getTeacherProfile(teacherId);
   }
 
   @Get('departments/:departmentId/subjects')

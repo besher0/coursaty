@@ -18,6 +18,40 @@ export class AdminsService {
     };
   }
 
+  private buildCourseCardWithTeacher(course: any) {
+    return {
+      id: course.id,
+      name: course.name,
+      imageUrl: course.imageUrl ?? null,
+      price: course.price,
+      status: course.status,
+      season: course.season
+        ? {
+            id: course.season.id,
+            name: course.season.seasonName,
+            number: course.season.seasonNumber,
+          }
+        : null,
+      year: course.collegeYear?.academicYear
+        ? {
+            id: course.collegeYear.academicYear.id,
+            name: course.collegeYear.academicYear.yearName,
+            number: course.collegeYear.academicYear.yearNumber,
+          }
+        : null,
+      teacher: course.teacher
+        ? {
+            id: course.teacher.id,
+            name: course.teacher.name,
+            image: course.teacher.image ?? null,
+            telegramUrl: course.teacher.telegramUrl ?? null,
+            instagramUrl: course.teacher.instagramUrl ?? null,
+          }
+        : null,
+      studentsCount: course._count?.subscriptions ?? 0,
+    };
+  }
+
   async create(dto: CreateAdminDto) {
     return this.prisma.admin.create({
       data: {
@@ -435,6 +469,278 @@ export class AdminsService {
     });
   }
 
+  async getSubjectTeachers(subjectId: string) {
+    const subject = await this.prisma.subject.findUnique({
+      where: { id: subjectId },
+      select: {
+        id: true,
+        subjectName: true,
+        isProgram: true,
+      },
+    });
+
+    if (!subject) throw new NotFoundException('المادة/البرنامج غير موجود');
+
+    const permissions = await this.prisma.teacherSubjectPermission.findMany({
+      where: { subjectId },
+      include: {
+        teacher: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+            description: true,
+            _count: {
+              select: {
+                courses: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    const teacherIds = permissions.map((permission) => permission.teacherId);
+    const users = teacherIds.length
+      ? await this.prisma.user.findMany({
+          where: {
+            userableType: 'TEACHER',
+            userableId: { in: teacherIds },
+          },
+          select: {
+            userableId: true,
+            status: true,
+          },
+        })
+      : [];
+
+    const statusByTeacherId = new Map(users.map((user) => [user.userableId, user.status]));
+
+    return {
+      subject: {
+        id: subject.id,
+        name: subject.subjectName,
+        isProgram: subject.isProgram,
+      },
+      teachers: permissions.map((permission) => ({
+        id: permission.teacher.id,
+        name: permission.teacher.name,
+        image: permission.teacher.image,
+        description: permission.teacher.description,
+        coursesCount: permission.teacher._count.courses,
+        status: statusByTeacherId.get(permission.teacher.id) ?? null,
+        assignedAt: permission.createdAt,
+      })),
+    };
+  }
+
+  async assignTeacherToSubject(subjectId: string, teacherId: string) {
+    const [subject, teacher] = await this.prisma.$transaction([
+      this.prisma.subject.findUnique({
+        where: { id: subjectId },
+        select: {
+          id: true,
+          subjectName: true,
+          isProgram: true,
+        },
+      }),
+      this.prisma.teacher.findUnique({
+        where: { id: teacherId },
+        select: {
+          id: true,
+          name: true,
+        },
+      }),
+    ]);
+
+    if (!subject) throw new NotFoundException('المادة/البرنامج غير موجود');
+    if (!teacher) throw new NotFoundException('الأستاذ غير موجود');
+
+    const existing = await this.prisma.teacherSubjectPermission.findUnique({
+      where: {
+        teacherId_subjectId: {
+          teacherId,
+          subjectId,
+        },
+      },
+      select: {
+        teacherId: true,
+        subjectId: true,
+        createdAt: true,
+      },
+    });
+
+    if (existing) {
+      return {
+        assigned: false,
+        message: 'الأستاذ مرتبط مسبقاً بهذه المادة/البرنامج',
+        subject: {
+          id: subject.id,
+          name: subject.subjectName,
+          isProgram: subject.isProgram,
+        },
+        teacher: {
+          id: teacher.id,
+          name: teacher.name,
+        },
+        assignedAt: existing.createdAt,
+      };
+    }
+
+    const permission = await this.prisma.teacherSubjectPermission.create({
+      data: {
+        teacherId,
+        subjectId,
+      },
+      select: {
+        createdAt: true,
+      },
+    });
+
+    return {
+      assigned: true,
+      subject: {
+        id: subject.id,
+        name: subject.subjectName,
+        isProgram: subject.isProgram,
+      },
+      teacher: {
+        id: teacher.id,
+        name: teacher.name,
+      },
+      assignedAt: permission.createdAt,
+    };
+  }
+
+  async removeTeacherFromSubject(subjectId: string, teacherId: string) {
+    const [subject, teacher] = await this.prisma.$transaction([
+      this.prisma.subject.findUnique({
+        where: { id: subjectId },
+        select: {
+          id: true,
+          subjectName: true,
+          isProgram: true,
+        },
+      }),
+      this.prisma.teacher.findUnique({
+        where: { id: teacherId },
+        select: {
+          id: true,
+          name: true,
+        },
+      }),
+    ]);
+
+    if (!subject) throw new NotFoundException('المادة/البرنامج غير موجود');
+    if (!teacher) throw new NotFoundException('الأستاذ غير موجود');
+
+    const removed = await this.prisma.teacherSubjectPermission.deleteMany({
+      where: {
+        subjectId,
+        teacherId,
+      },
+    });
+
+    if (!removed.count) {
+      throw new NotFoundException('الأستاذ غير مرتبط بهذه المادة/البرنامج');
+    }
+
+    return {
+      removed: true,
+      subject: {
+        id: subject.id,
+        name: subject.subjectName,
+        isProgram: subject.isProgram,
+      },
+      teacher: {
+        id: teacher.id,
+        name: teacher.name,
+      },
+    };
+  }
+
+  async getTeacherAllowedSubjects(teacherId: string) {
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { id: teacherId },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    if (!teacher) throw new NotFoundException('الأستاذ غير موجود');
+
+    const permissions = await this.prisma.teacherSubjectPermission.findMany({
+      where: { teacherId },
+      include: {
+        subject: {
+          select: {
+            id: true,
+            subjectName: true,
+            isProgram: true,
+            imageUrl: true,
+            collegeId: true,
+            collegeYearId: true,
+            seasonId: true,
+            departmentId: true,
+            collegeYear: {
+              select: {
+                id: true,
+                academicYear: {
+                  select: {
+                    id: true,
+                    yearName: true,
+                    yearNumber: true,
+                  },
+                },
+              },
+            },
+            season: {
+              select: {
+                id: true,
+                seasonName: true,
+                seasonNumber: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ subject: { subjectName: 'asc' } }],
+    });
+
+    return {
+      teacher,
+      subjects: permissions.map((permission) => ({
+        id: permission.subject.id,
+        subjectName: permission.subject.subjectName,
+        isProgram: permission.subject.isProgram,
+        imageUrl: permission.subject.imageUrl,
+        collegeId: permission.subject.collegeId,
+        collegeYearId: permission.subject.collegeYearId,
+        seasonId: permission.subject.seasonId,
+        departmentId: permission.subject.departmentId,
+        assignedAt: permission.createdAt,
+        season: permission.subject.season
+          ? {
+              id: permission.subject.season.id,
+              name: permission.subject.season.seasonName,
+              number: permission.subject.season.seasonNumber,
+            }
+          : null,
+        academicYear: permission.subject.collegeYear?.academicYear
+          ? {
+              id: permission.subject.collegeYear.academicYear.id,
+              name: permission.subject.collegeYear.academicYear.yearName,
+              number: permission.subject.collegeYear.academicYear.yearNumber,
+            }
+          : null,
+      })),
+    };
+  }
+
   async getTeachersByUniversityId(universityId: string) {
     return this.prisma.teacher.findMany({
       where: {
@@ -560,6 +866,176 @@ export class AdminsService {
         yearNumber: 'asc',
       },
     });
+  }
+
+  async getDashboardSubjectCourses(
+    subjectId?: string,
+    universityId?: string,
+    page: number = 1,
+    limit: number = 10,
+  ) {
+    const { page: safePage, limit: safeLimit, skip } = this.normalizePagination(page, limit);
+
+    let subject: { id: string; name: string } | null = null;
+    if (subjectId) {
+      const foundSubject = await this.prisma.subject.findFirst({
+        where: {
+          id: subjectId,
+          isProgram: false,
+          ...(universityId ? { college: { universityId } } : {}),
+        },
+        select: {
+          id: true,
+          subjectName: true,
+        },
+      });
+
+      if (!foundSubject) throw new NotFoundException('المادة غير موجودة');
+      subject = {
+        id: foundSubject.id,
+        name: foundSubject.subjectName,
+      };
+    }
+
+    const where = {
+      ...(universityId ? { universityId } : {}),
+      subject: {
+        isProgram: false,
+        ...(subjectId ? { id: subjectId } : {}),
+      },
+    } as any;
+
+    const [total, courses] = await Promise.all([
+      this.prisma.course.count({ where }),
+      this.prisma.course.findMany({
+        where,
+        include: {
+          subject: {
+            select: {
+              id: true,
+              subjectName: true,
+            },
+          },
+          collegeYear: { include: { academicYear: true } },
+          season: true,
+          teacher: true,
+          _count: { select: { subscriptions: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: safeLimit,
+      }),
+    ]);
+
+    const totalPages = total ? Math.ceil(total / safeLimit) : 0;
+
+    return {
+      subject,
+      courses: {
+        data: courses.map((course) => ({
+          ...this.buildCourseCardWithTeacher(course),
+          subject: course.subject
+            ? {
+                id: course.subject.id,
+                name: course.subject.subjectName,
+              }
+            : null,
+        })),
+        pagination: {
+          page: safePage,
+          limit: safeLimit,
+          total,
+          totalPages,
+          hasNextPage: safePage < totalPages,
+          hasPreviousPage: safePage > 1,
+        },
+      },
+    };
+  }
+
+  async getDashboardProgramCourses(
+    programId?: string,
+    universityId?: string,
+    page: number = 1,
+    limit: number = 10,
+  ) {
+    const { page: safePage, limit: safeLimit, skip } = this.normalizePagination(page, limit);
+
+    let program: { id: string; name: string } | null = null;
+    if (programId) {
+      const foundProgram = await this.prisma.subject.findFirst({
+        where: {
+          id: programId,
+          isProgram: true,
+          ...(universityId ? { college: { universityId } } : {}),
+        },
+        select: {
+          id: true,
+          subjectName: true,
+        },
+      });
+
+      if (!foundProgram) throw new NotFoundException('البرنامج غير موجود');
+      program = {
+        id: foundProgram.id,
+        name: foundProgram.subjectName,
+      };
+    }
+
+    const where = {
+      ...(universityId ? { universityId } : {}),
+      subject: {
+        isProgram: true,
+        ...(programId ? { id: programId } : {}),
+      },
+    } as any;
+
+    const [total, courses] = await Promise.all([
+      this.prisma.course.count({ where }),
+      this.prisma.course.findMany({
+        where,
+        include: {
+          subject: {
+            select: {
+              id: true,
+              subjectName: true,
+            },
+          },
+          collegeYear: { include: { academicYear: true } },
+          season: true,
+          teacher: true,
+          _count: { select: { subscriptions: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: safeLimit,
+      }),
+    ]);
+
+    const totalPages = total ? Math.ceil(total / safeLimit) : 0;
+
+    return {
+      program,
+      courses: {
+        data: courses.map((course) => ({
+          ...this.buildCourseCardWithTeacher(course),
+          program: course.subject
+            ? {
+                id: course.subject.id,
+                name: course.subject.subjectName,
+              }
+            : null,
+        })),
+        pagination: {
+          page: safePage,
+          limit: safeLimit,
+          total,
+          totalPages,
+          hasNextPage: safePage < totalPages,
+          hasPreviousPage: safePage > 1,
+        },
+      },
+    };
   }
 
   async searchCourses(
@@ -925,4 +1401,326 @@ export class AdminsService {
       universities,
     };
   }
+
+  async getStudentProfile(studentId: string) {
+    const now = new Date();
+
+    const [student, studentUser] = await this.prisma.$transaction([
+      this.prisma.student.findUnique({
+        where: { id: studentId },
+        select: {
+          id: true,
+          name: true,
+          createdAt: true,
+          college: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          department: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          subscriptions: {
+            select: {
+              course: {
+                select: {
+                  id: true,
+                  name: true,
+                  duration: true,
+                  status: true,
+                  expiresAt: true,
+                  teacher: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
+                  season: {
+                    select: {
+                      id: true,
+                      seasonName: true,
+                      seasonNumber: true,
+                    },
+                  },
+                  category: {
+                    select: {
+                      id: true,
+                      name: true,
+                      isProgram: true,
+                    },
+                  },
+                  collegeYear: {
+                    select: {
+                      id: true,
+                      academicYear: {
+                        select: {
+                          id: true,
+                          yearName: true,
+                          yearNumber: true,
+                        },
+                      },
+                    },
+                  },
+                  _count: {
+                    select: {
+                      subscriptions: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.user.findFirst({
+        where: {
+          userableType: 'STUDENT',
+          userableId: studentId,
+        },
+        select: {
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    if (!student) throw new NotFoundException('Student not found');
+
+    const mappedCourses = student.subscriptions.map((subscription) => {
+      const course = subscription.course;
+
+      return {
+        courseId: course.id,
+        courseName: course.name,
+        studentsCount: course._count.subscriptions,
+        year: course.collegeYear?.academicYear
+          ? {
+              id: course.collegeYear.academicYear.id,
+              name: course.collegeYear.academicYear.yearName,
+              number: course.collegeYear.academicYear.yearNumber,
+            }
+          : null,
+        courseHours: course.duration,
+        category: course.category
+          ? {
+              id: course.category.id,
+              name: course.category.name,
+              isProgram: course.category.isProgram,
+            }
+          : null,
+        season: course.season
+          ? {
+              id: course.season.id,
+              name: course.season.seasonName,
+              number: course.season.seasonNumber,
+            }
+          : null,
+        expiresAt: course.expiresAt,
+        teacher: {
+          id: course.teacher.id,
+          name: course.teacher.name,
+        },
+        status: course.status,
+      };
+    });
+
+    return {
+      student: {
+        id: student.id,
+        name: student.name,
+        college: student.college,
+        department: student.department,
+        subscriptionsCount: student.subscriptions.length,
+        accountCreatedAt: studentUser?.createdAt ?? student.createdAt,
+      },
+      coursesByStatus: {
+        activeCourses: mappedCourses.filter(
+          (course) => course.status === 'APPROVED' && !courseHasEnded(course, now),
+        ),
+        inactiveCourses: mappedCourses.filter(
+          (course) =>
+            course.status !== 'APPROVED' ||
+            (course.status === 'APPROVED' && courseHasEnded(course, now)),
+        ),
+      },
+    };
+  }
+
+  async getTeacherProfile(teacherId: string) {
+    const now = new Date();
+
+    const [teacher, teacherUser] = await this.prisma.$transaction([
+      this.prisma.teacher.findUnique({
+        where: { id: teacherId },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          image: true,
+          createdAt: true,
+          _count: {
+            select: {
+              courses: true,
+            },
+          },
+          courses: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              createdAt: true,
+              expiresAt: true,
+              season: {
+                select: {
+                  id: true,
+                  seasonName: true,
+                  seasonNumber: true,
+                },
+              },
+              collegeYear: {
+                select: {
+                  id: true,
+                  academicYear: {
+                    select: {
+                      id: true,
+                      yearName: true,
+                      yearNumber: true,
+                    },
+                  },
+                },
+              },
+            },
+            orderBy: {
+              createdAt: 'desc',
+            },
+          },
+        },
+      }),
+      this.prisma.user.findFirst({
+        where: {
+          userableType: 'TEACHER',
+          userableId: teacherId,
+        },
+        select: {
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    if (!teacher) throw new NotFoundException('Teacher not found');
+
+    const courseIds = teacher.courses.map((course) => course.id);
+    const [teacherLikes, courseRatings, videoInteractions, ratingsByCourse] =
+      await Promise.all([
+        this.prisma.teacherLike.findMany({
+          where: { teacherId },
+          select: { studentId: true },
+          distinct: ['studentId'],
+        }),
+        this.prisma.courseRating.findMany({
+          where: {
+            course: { teacherId },
+          },
+          select: { studentId: true },
+          distinct: ['studentId'],
+        }),
+        this.prisma.videoInteraction.findMany({
+          where: {
+            video: {
+              lecture: {
+                course: {
+                  teacherId,
+                },
+              },
+            },
+            user: {
+              userableType: 'STUDENT',
+            },
+          },
+          select: {
+            user: {
+              select: {
+                userableId: true,
+              },
+            },
+          },
+          distinct: ['userId'],
+        }),
+        courseIds.length
+          ? this.prisma.courseRating.groupBy({
+              by: ['courseId'],
+              where: { courseId: { in: courseIds } },
+              _avg: { rating: true },
+            })
+          : Promise.resolve([]),
+      ]);
+
+    const interactiveStudentIds = new Set<string>();
+    teacherLikes.forEach((item) => interactiveStudentIds.add(item.studentId));
+    courseRatings.forEach((item) => interactiveStudentIds.add(item.studentId));
+    videoInteractions.forEach((item) => {
+      if (item.user?.userableId) interactiveStudentIds.add(item.user.userableId);
+    });
+
+    const ratingMap = new Map<string, number>(
+      ratingsByCourse.map((item) => [
+        item.courseId,
+        Number((Number(item._avg.rating ?? 0)).toFixed(2)),
+      ]),
+    );
+
+    const coursesForResponse = teacher.courses
+      .filter((course) => course.status === 'APPROVED')
+      .map((course) => ({
+        courseId: course.id,
+        courseName: course.name,
+        year: course.collegeYear?.academicYear
+          ? {
+              id: course.collegeYear.academicYear.id,
+              name: course.collegeYear.academicYear.yearName,
+              number: course.collegeYear.academicYear.yearNumber,
+            }
+          : null,
+        rating: ratingMap.get(course.id) ?? 0,
+        season: course.season
+          ? {
+              id: course.season.id,
+              name: course.season.seasonName,
+              number: course.season.seasonNumber,
+            }
+          : null,
+        startDate: course.createdAt,
+        endDate: course.expiresAt,
+      }));
+
+    return {
+      teacher: {
+        id: teacher.id,
+        name: teacher.name,
+        image: teacher.image,
+        coursesCount: teacher._count.courses,
+        interactiveStudentsCount: interactiveStudentIds.size,
+        description: teacher.description,
+        accountCreatedAt: teacherUser?.createdAt ?? teacher.createdAt,
+      },
+      coursesByStatus: {
+        activeCourses: coursesForResponse.filter(
+          (course) => !course.endDate || course.endDate > now,
+        ),
+        finishedCourses: coursesForResponse.filter(
+          (course) => !!course.endDate && course.endDate <= now,
+        ),
+      },
+    };
+  }
+}
+
+function courseHasEnded(
+  course: { expiresAt?: Date | null },
+  now: Date,
+) {
+  return !!course.expiresAt && course.expiresAt <= now;
 }

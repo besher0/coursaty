@@ -1,4 +1,4 @@
-﻿import { Injectable, NotFoundException } from '@nestjs/common';
+﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { UpdateUniversityDto } from '../dtos/update-university.dto';
 import { UpdateCollegeDto } from '../dtos/update-college.dto';
 import { UpdateDepartmentDto } from '../dtos/update-department.dto';
@@ -171,21 +171,33 @@ export class AcademicsService {
   // Subjects
   createSubject(
     collegeId: string,
-    collegeYearId: string,
-    seasonId: string,
+    collegeYearId: string | undefined,
+    seasonId: string | undefined,
     subjectName: string,
     departmentId?: string,
     isProgram?: boolean,
     imageUrl?: string,
   ) {
+    const program = isProgram ?? false;
+
+    if (program) {
+      if (collegeYearId !== undefined || seasonId !== undefined || departmentId !== undefined) {
+        throw new BadRequestException(
+          'البرنامج يجب أن يكون على مستوى الكلية فقط: ممنوع إرسال collegeYearId أو seasonId أو departmentId',
+        );
+      }
+    } else if (!collegeYearId || !seasonId) {
+      throw new BadRequestException('لإنشاء مادة عادية يجب إرسال collegeYearId و seasonId');
+    }
+
     return this.prisma.subject.create({
       data: {
         collegeId,
-        collegeYearId,
-        seasonId,
-        departmentId: departmentId || undefined,
+        collegeYearId: program ? null : collegeYearId,
+        seasonId: program ? null : seasonId,
+        departmentId: program ? null : (departmentId || undefined),
         subjectName,
-        isProgram: isProgram ?? false,
+        isProgram: program,
         imageUrl: imageUrl || undefined,
       },
     });
@@ -244,14 +256,44 @@ export class AcademicsService {
     }));
   }
 
-  updateSubject(id: string, dto: UpdateSubjectDto) {
+  async updateSubject(id: string, dto: UpdateSubjectDto) {
+    const current = await this.prisma.subject.findUnique({
+      where: { id },
+      select: {
+        isProgram: true,
+        collegeYearId: true,
+        seasonId: true,
+        departmentId: true,
+      },
+    });
+    if (!current) throw new NotFoundException('المادة/البرنامج غير موجود');
+
     const raw = dto as Record<string, unknown>;
     if (raw.collegeId !== undefined || raw.collegeYearId !== undefined || raw.seasonId !== undefined) {
       throw new DomainException();
     }
+
+    const targetIsProgram = dto.isProgram ?? current.isProgram;
+
+    if (targetIsProgram && dto.departmentId !== undefined) {
+      throw new BadRequestException('البرنامج لا يقبل الربط بقسم');
+    }
+
+    if (dto.isProgram === true && (!current.isProgram && (current.collegeYearId || current.seasonId || current.departmentId))) {
+      throw new BadRequestException(
+        'لا يمكن تحويل مادة مرتبطة بسنة/فصل/قسم إلى برنامج. أنشئ برنامجاً جديداً على مستوى الكلية.',
+      );
+    }
+
+    if (current.isProgram && dto.isProgram === false) {
+      throw new BadRequestException(
+        'لا يمكن تحويل برنامج إلى مادة من نفس الـ endpoint. أنشئ مادة جديدة مع سنة وفصل.',
+      );
+    }
+
     const data: any = {};
     if (dto.subjectName !== undefined) data.subjectName = dto.subjectName;
-    if (dto.departmentId !== undefined) data.departmentId = dto.departmentId || null;
+    if (!targetIsProgram && dto.departmentId !== undefined) data.departmentId = dto.departmentId || null;
     if (dto.isProgram !== undefined) data.isProgram = dto.isProgram;
     if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl || null;
     return this.prisma.subject.update({ where: { id }, data });
@@ -357,3 +399,5 @@ export class AcademicsService {
     return { success: true };
   }
 }
+
+

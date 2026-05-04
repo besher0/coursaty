@@ -21,9 +21,24 @@ export class AdvertisementsService {
     });
   }
 
-  findAll() {
+  findAll(filters?: { universityId?: string }) {
+    const universityId = filters?.universityId ? String(filters.universityId) : undefined;
+
     return this.prisma.advertisement.findMany({
-      include: { college: true },
+      where: universityId
+        ? {
+            college: {
+              universityId,
+            },
+          }
+        : undefined,
+      include: {
+        college: {
+          include: {
+            university: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -31,6 +46,13 @@ export class AdvertisementsService {
   findByCollege(collegeId: string) {
     return this.prisma.advertisement.findMany({
       where: { collegeId: String(collegeId) },
+      include: {
+        college: {
+          include: {
+            university: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -38,7 +60,13 @@ export class AdvertisementsService {
   async findOne(id: string) {
     const ad = await this.prisma.advertisement.findUnique({
       where: { id: String(id) },
-      include: { college: true },
+      include: {
+        college: {
+          include: {
+            university: true,
+          },
+        },
+      },
     });
     if (!ad) throw new NotFoundException('الإعلان غير موجود');
     return ad;
@@ -62,7 +90,13 @@ export class AdvertisementsService {
     return this.prisma.advertisement.update({
       where: { id: String(id) },
       data,
-      include: { college: true },
+      include: {
+        college: {
+          include: {
+            university: true,
+          },
+        },
+      },
     });
   }
 

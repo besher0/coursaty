@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InteractionsService } from '../services/interactions.service';
 import { CreateVideoInteractionDto } from '../dtos/create-video-interaction.dto';
@@ -48,5 +48,13 @@ export class VideoInteractionsController {
   @Roles('STUDENT')
   incrementView(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
     return this.interactions.incrementVideoView(id, req.user);
+  }
+
+  @Get(':id/likes')
+  @ApiOperation({ summary: 'Get likes count and current student like status for a video' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('STUDENT')
+  getVideoLikes(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
+    return this.interactions.getVideoLikes(id, req.user);
   }
 }

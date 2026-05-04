@@ -38,11 +38,24 @@ export class AdminDashboardService {
     return { page: normalizedPage, limit: normalizedLimit };
   }
 
+  private async getTeacherIdsByUniversity(universityId: string): Promise<string[]> {
+    const affiliations = await this.prisma.teacherAffiliation.findMany({
+      where: { universityId },
+      select: { teacherId: true },
+      distinct: ['teacherId'],
+    });
+
+    return affiliations.map((item) => item.teacherId);
+  }
+
   /**
    * Get all dashboard metrics at once
    */
-  async getDashboardMetrics(): Promise<DashboardMetricsDto> {
+  async getDashboardMetrics(universityId?: string): Promise<DashboardMetricsDto> {
     const { start: monthStart, end: monthEnd } = this.getMonthRange();
+    const teacherIds = universityId
+      ? await this.getTeacherIdsByUniversity(universityId)
+      : [];
 
     const [
       totalRevenueData,
@@ -55,25 +68,48 @@ export class AdminDashboardService {
       this.prisma.studentSubscription.aggregate({
         where: {
           createdAt: { gte: monthStart, lte: monthEnd },
+          ...(universityId
+            ? {
+                course: {
+                  universityId,
+                },
+              }
+            : {}),
         },
         _sum: { finalPrice: true },
       }),
       this.prisma.student.count({
         where: {
           createdAt: { gte: monthStart, lte: monthEnd },
+          ...(universityId ? { universityId } : {}),
         },
       }),
-      this.prisma.student.count(),
+      this.prisma.student.count({
+        ...(universityId ? { where: { universityId } } : {}),
+      }),
       this.prisma.course.count({
-        where: { status: 'APPROVED' },
-      }),
-      this.prisma.teacher.count(),
-      this.prisma.user.count({
         where: {
-          userableType: 'TEACHER',
-          status: 'pending',
+          status: 'APPROVED',
+          ...(universityId ? { universityId } : {}),
         },
       }),
+      universityId ? Promise.resolve(teacherIds.length) : this.prisma.teacher.count(),
+      universityId
+        ? teacherIds.length
+          ? this.prisma.user.count({
+              where: {
+                userableType: 'TEACHER',
+                status: 'pending',
+                userableId: { in: teacherIds },
+              },
+            })
+          : Promise.resolve(0)
+        : this.prisma.user.count({
+            where: {
+              userableType: 'TEACHER',
+              status: 'pending',
+            },
+          }),
 
     ]);
 
@@ -380,6 +416,7 @@ export class AdminDashboardService {
   async getPendingTeachers(
     page: number = 1,
     limit: number = 20,
+    universityId?: string,
   ): Promise<{
     teachers: TeacherPendingDto[];
     pagination: PaginationDto;
@@ -388,6 +425,21 @@ export class AdminDashboardService {
       this.normalizePagination(page, limit);
     const skip = (normalizedPage - 1) * normalizedLimit;
 
+    const teacherIdsFilter = universityId
+      ? await this.getTeacherIdsByUniversity(universityId)
+      : null;
+
+    if (teacherIdsFilter && !teacherIdsFilter.length) {
+      return {
+        teachers: [],
+        pagination: {
+          page: normalizedPage,
+          limit: normalizedLimit,
+          total: 0,
+        },
+      };
+    }
+
     const [pendingTeacherUsers, total] = await Promise.all([
       this.prisma.user.findMany({
         skip,
@@ -395,6 +447,7 @@ export class AdminDashboardService {
         where: {
           userableType: 'TEACHER',
           status: 'pending',
+          ...(teacherIdsFilter ? { userableId: { in: teacherIdsFilter } } : {}),
         },
         orderBy: { createdAt: 'desc' },
         select: {
@@ -405,6 +458,7 @@ export class AdminDashboardService {
         where: {
           userableType: 'TEACHER',
           status: 'pending',
+          ...(teacherIdsFilter ? { userableId: { in: teacherIdsFilter } } : {}),
         },
       }),
     ]);
@@ -419,7 +473,10 @@ export class AdminDashboardService {
             },
             include: {
               courses: {
-                where: { status: 'PENDING' },
+                where: {
+                  status: 'PENDING',
+                  ...(universityId ? { universityId } : {}),
+                },
                 select: {
                   id: true,
                   name: true,
@@ -470,6 +527,7 @@ export class AdminDashboardService {
   async getPendingCourses(
     page: number = 1,
     limit: number = 20,
+    universityId?: string,
   ): Promise<{
     courses: CoursePendingDto[];
     pagination: PaginationDto;
@@ -480,7 +538,10 @@ export class AdminDashboardService {
 
     const [courses, total] = await Promise.all([
       this.prisma.course.findMany({
-        where: { status: 'PENDING' },
+        where: {
+          status: 'PENDING',
+          ...(universityId ? { universityId } : {}),
+        },
         skip,
         take: normalizedLimit,
         include: {
@@ -493,7 +554,12 @@ export class AdminDashboardService {
         },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.course.count({ where: { status: 'PENDING' } }),
+      this.prisma.course.count({
+        where: {
+          status: 'PENDING',
+          ...(universityId ? { universityId } : {}),
+        },
+      }),
     ]);
 
     const coursesDisplay: CoursePendingDto[] = courses.map((course) => ({
@@ -521,6 +587,7 @@ export class AdminDashboardService {
   async getPendingNotifications(
     page: number = 1,
     limit: number = 20,
+    universityId?: string,
   ): Promise<{
     notifications: NotificationPendingDto[];
     pagination: PaginationDto;
@@ -528,15 +595,27 @@ export class AdminDashboardService {
     const { page: normalizedPage, limit: normalizedLimit } =
       this.normalizePagination(page, limit);
     const skip = (normalizedPage - 1) * normalizedLimit;
+    const where = {
+      status: 'PENDING' as const,
+      ...(universityId
+        ? {
+            OR: [
+              { universityId },
+              { college: { universityId } },
+              { department: { college: { universityId } } },
+            ],
+          }
+        : {}),
+    };
 
     const [notifications, total] = await Promise.all([
       this.prisma.notification.findMany({
-        where: { status: 'PENDING' },
+        where,
         skip,
         take: normalizedLimit,
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.notification.count({ where: { status: 'PENDING' } }),
+      this.prisma.notification.count({ where }),
     ]);
 
     const notificationsDisplay: NotificationPendingDto[] = notifications.map(
@@ -572,13 +651,14 @@ export class AdminDashboardService {
       { courses: pendingCourses, pagination: coursesPagination },
       { notifications, pagination: notificationsPagination },
     ] = await Promise.all([
-      this.getDashboardMetrics(),
+      this.getDashboardMetrics(query.universityId),
       // this.getCodes(query.codesPage, query.codesLimit),
-      this.getPendingTeachers(query.teachersPage, query.teachersLimit),
-      this.getPendingCourses(query.coursesPage, query.coursesLimit),
+      this.getPendingTeachers(query.teachersPage, query.teachersLimit, query.universityId),
+      this.getPendingCourses(query.coursesPage, query.coursesLimit, query.universityId),
       this.getPendingNotifications(
         query.notificationsPage,
         query.notificationsLimit,
+        query.universityId,
       ),
     ]);
 

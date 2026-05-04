@@ -116,6 +116,26 @@ export class InteractionsService {
     });
   }
 
+  async getVideoLikes(videoId: string, user: { userId: string | number; type: string } | undefined) {
+    const { dbUser } = await this.ensureVideoAccess(videoId, user);
+
+    const [likesCount, myLike] = await Promise.all([
+      this.prisma.videoInteraction.count({
+        where: { videoId, isLiked: true },
+      }),
+      this.prisma.videoInteraction.findFirst({
+        where: { videoId, userId: dbUser.id, isLiked: true },
+        select: { id: true },
+      }),
+    ]);
+
+    return {
+      videoId,
+      likesCount,
+      isLikedByUser: !!myLike,
+    };
+  }
+
   async updateVideoInteraction(
     id: string,
     user: { userId: string | number; type: string } | undefined,

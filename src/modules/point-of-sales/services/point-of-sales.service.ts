@@ -7,6 +7,60 @@ import { UpdatePointOfSaleDto } from '../dtos/update-point-of-sale.dto';
 export class PointOfSalesService {
   constructor(private prisma: PrismaService) {}
 
+  private pointOfSaleInclude = {
+    province: {
+      select: {
+        id: true,
+        name: true,
+        universities: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    },
+  } as const;
+
+  private collectMissingFields(pointOfSale: {
+    name?: string | null;
+    address?: string | null;
+    phone?: string | null;
+    description?: string | null;
+    image?: string | null;
+    imageLocation?: string | null;
+    provinceId?: string | null;
+    province?: { universities?: Array<{ id: string }> } | null;
+  }) {
+    const missingFields: string[] = [];
+
+    if (!pointOfSale.name?.trim()) missingFields.push('name');
+    if (!pointOfSale.address?.trim()) missingFields.push('address');
+    if (!pointOfSale.phone?.trim()) missingFields.push('phone');
+    if (!pointOfSale.description?.trim()) missingFields.push('description');
+    if (!pointOfSale.image?.trim()) missingFields.push('image');
+    if (!pointOfSale.imageLocation?.trim()) missingFields.push('imageLocation');
+    if (!pointOfSale.provinceId) missingFields.push('provinceId');
+    if (!pointOfSale.province?.universities?.length) {
+      missingFields.push('provinceUniversityId');
+    }
+
+    return missingFields;
+  }
+
+  private mapPointOfSaleWithProvinceInfo(pointOfSale: any) {
+    const universityIds = (pointOfSale.province?.universities ?? []).map((u: any) => u.id);
+    const missingFields = this.collectMissingFields(pointOfSale);
+
+    return {
+      ...pointOfSale,
+      provinceUniversityId: universityIds[0] ?? null,
+      provinceUniversityIds: universityIds,
+      missingFields,
+      isComplete: missingFields.length === 0,
+    };
+  }
+
   private async resolveProvinceIdFromUniversity(universityId: string) {
     const university = await this.prisma.university.findUnique({
       where: { id: String(universityId) },
@@ -27,7 +81,7 @@ export class PointOfSalesService {
       throw new NotFoundException('المحافظة غير موجودة');
     }
 
-    return this.prisma.pointOfSale.create({
+    const created = await this.prisma.pointOfSale.create({
       data: {
         name: createPointOfSaleDto.name,
         address: createPointOfSaleDto.address,
@@ -37,7 +91,10 @@ export class PointOfSalesService {
         imageLocation: createPointOfSaleDto.imageLocation,
         province: { connect: { id: provinceId } },
       },
+      include: this.pointOfSaleInclude,
     });
+
+    return this.mapPointOfSaleWithProvinceInfo(created);
   }
 
   async findAll(filters?: { universityId?: string; provinceId?: string }) {
@@ -47,28 +104,37 @@ export class PointOfSalesService {
       provinceId = await this.resolveProvinceIdFromUniversity(String(filters.universityId));
     }
 
-    return this.prisma.pointOfSale.findMany({
+    const pointOfSales = await this.prisma.pointOfSale.findMany({
       where: provinceId ? { provinceId } : undefined,
+      include: this.pointOfSaleInclude,
       orderBy: {
         createdAt: 'desc',
       },
     });
+
+    return pointOfSales.map((pointOfSale) => this.mapPointOfSaleWithProvinceInfo(pointOfSale));
   }
 
   async findByUniversity(universityId: string) {
     const provinceId = await this.resolveProvinceIdFromUniversity(universityId);
 
-    return this.prisma.pointOfSale.findMany({
+    const pointOfSales = await this.prisma.pointOfSale.findMany({
       where: { provinceId },
+      include: this.pointOfSaleInclude,
       orderBy: { createdAt: 'desc' },
     });
+
+    return pointOfSales.map((pointOfSale) => this.mapPointOfSaleWithProvinceInfo(pointOfSale));
   }
 
   async findByProvince(provinceId: string) {
-    return this.prisma.pointOfSale.findMany({
+    const pointOfSales = await this.prisma.pointOfSale.findMany({
       where: { provinceId },
+      include: this.pointOfSaleInclude,
       orderBy: { createdAt: 'desc' },
     });
+
+    return pointOfSales.map((pointOfSale) => this.mapPointOfSaleWithProvinceInfo(pointOfSale));
   }
 
   async findByStudentToken(user?: { userId: string | number; type: string }) {
@@ -99,9 +165,14 @@ export class PointOfSalesService {
   }
 
   async findOne(id: string) {
-    return this.prisma.pointOfSale.findUnique({
+    const pointOfSale = await this.prisma.pointOfSale.findUnique({
       where: { id },
+      include: this.pointOfSaleInclude,
     });
+
+    if (!pointOfSale) return null;
+
+    return this.mapPointOfSaleWithProvinceInfo(pointOfSale);
   }
 
   async update(id: string, updatePointOfSaleDto: UpdatePointOfSaleDto) {
@@ -118,7 +189,7 @@ export class PointOfSalesService {
       }
     }
 
-    return this.prisma.pointOfSale.update({
+    const updated = await this.prisma.pointOfSale.update({
       where: { id },
       data: {
         name: updatePointOfSaleDto.name,
@@ -129,7 +200,10 @@ export class PointOfSalesService {
         imageLocation: updatePointOfSaleDto.imageLocation,
         ...(provinceId !== undefined ? { province: { connect: { id: provinceId } } } : {}),
       },
+      include: this.pointOfSaleInclude,
     });
+
+    return this.mapPointOfSaleWithProvinceInfo(updated);
   }
 
   async remove(id: string) {

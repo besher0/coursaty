@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsString, IsOptional, Min, Max } from 'class-validator';
+import { IsNumber, IsOptional, IsUUID, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class PaginationDto {
@@ -193,6 +193,14 @@ export class AdminDashboardDto {
 }
 
 export class AdminDashboardQueryDto {
+  @ApiPropertyOptional({
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: 'Filter dashboard by university',
+  })
+  @IsOptional()
+  @IsUUID('4')
+  universityId?: string;
+
   @ApiPropertyOptional({ example: 1, description: 'Page number for codes' })
   @IsOptional()
   @Type(() => Number)

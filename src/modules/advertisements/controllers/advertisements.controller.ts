@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { AdvertisementsService } from '../services/advertisements.service';
 import { CreateAdvertisementDto } from '../dtos/create-advertisement.dto';
 import { UpdateAdvertisementDto } from '../dtos/update-advertisement.dto';
+import { ListAdvertisementsQueryDto } from '../dtos/list-advertisements-query.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
@@ -23,8 +24,9 @@ export class AdvertisementsController {
 
   @Get()
   @ApiOperation({ summary: 'Get all advertisements' })
-  findAll() {
-    return this.service.findAll();
+  @ApiQuery({ name: 'universityId', required: false, description: 'Filter by university id' })
+  findAll(@Query() query: ListAdvertisementsQueryDto) {
+    return this.service.findAll(query);
   }
 
   @Get('college/:collegeId')

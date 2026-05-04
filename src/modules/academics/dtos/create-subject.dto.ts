@@ -9,20 +9,22 @@ export class CreateSubjectDto {
   @IsUUID('4')
   collegeId: string;
 
-  @ApiProperty({
-    description: 'College Year ID (UUID)',
+  @ApiPropertyOptional({
+    description: 'College Year ID (UUID). Required for regular subjects, forbidden for programs.',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
+  @IsOptional()
   @IsUUID('4')
-  collegeYearId: string;
-  @ApiProperty({
-    description: 'Season ID (UUID)',
+  collegeYearId?: string;
+  @ApiPropertyOptional({
+    description: 'Season ID (UUID). Required for regular subjects, forbidden for programs.',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
+  @IsOptional()
   @IsUUID('4')
-  seasonId: string;
+  seasonId?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Department ID (UUID). Forbidden for programs.' })
   @IsOptional()
   @IsUUID('4')
   departmentId?: string;

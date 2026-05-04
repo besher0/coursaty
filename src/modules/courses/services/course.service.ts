@@ -106,30 +106,28 @@ export class CourseService {
       });
 
       if (!subject) throw new BadRequestException('المادة غير موجودة');
-      if (!subject.collegeYearId || !subject.seasonId) {
+      if (!subject.isProgram && (!subject.collegeYearId || !subject.seasonId)) {
         throw new BadRequestException('الهوية الأكاديمية للمادة غير مكتملة');
       }
 
-      if (user?.type === 'TEACHER') {
-        const permission = await this.prisma.teacherSubjectPermission.findUnique({
-          where: {
-            teacherId_subjectId: {
-              teacherId,
-              subjectId: String(dto.subjectId),
-            },
+      const permission = await this.prisma.teacherSubjectPermission.findUnique({
+        where: {
+          teacherId_subjectId: {
+            teacherId,
+            subjectId: String(dto.subjectId),
           },
-        });
+        },
+      });
 
-        if (!permission) {
-          throw new ForbiddenException('المدرس غير مخول بإنشاء كورسات لهذه المادة');
-        }
+      if (!permission) {
+        throw new ForbiddenException('لا توجد صلاحية لهذا المدرس على المادة/البرنامج');
       }
 
       collegeId = subject.collegeId;
       universityId = subject.college.universityId;
-      collegeYearId = subject.collegeYearId ?? null;
-      seasonId = subject.seasonId ?? null;
-      departmentId = subject.departmentId ?? null;
+      collegeYearId = subject.isProgram ? null : (subject.collegeYearId ?? null);
+      seasonId = subject.isProgram ? null : (subject.seasonId ?? null);
+      departmentId = subject.isProgram ? null : (subject.departmentId ?? null);
     } else {
       if (!dto.universityId || !dto.collegeId) {
         throw new BadRequestException('حقلا universityId و collegeId مطلوبان');
