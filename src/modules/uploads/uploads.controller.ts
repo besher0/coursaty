@@ -102,7 +102,7 @@ export class UploadsController {
   @Get('videos/:videoId/resolutions')
   @ApiOperation({ summary: 'Get available resolutions for Bunny Stream video (Bunny Cloud)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('TEACHER', 'ADMIN')
+  @Roles('STUDENT', 'TEACHER', 'ADMIN')
   getVideoResolutions(@Param('videoId', new ParseUUIDPipe({ version: '4' })) videoId: string) {
     return this.uploads.getBunnyVideoResolutions(videoId);
   }
