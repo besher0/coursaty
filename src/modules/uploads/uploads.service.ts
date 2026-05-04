@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { BunnyService } from '../../shared/bunny/bunny.service';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
@@ -118,10 +118,44 @@ export class UploadsService {
   }
 
   async getBunnyVideoResolutions(videoId: string) {
-    const [playData, resolutions] = await Promise.all([
+    const [playDataResult, resolutionsResult] = await Promise.allSettled([
       this.bunny.getVideoPlayData(videoId),
       this.bunny.getVideoResolutions(videoId),
     ]);
+
+    if (playDataResult.status === 'rejected' && resolutionsResult.status === 'rejected') {
+      const playStatus = this.extractStatus(playDataResult.reason);
+      const resolutionsStatus = this.extractStatus(resolutionsResult.reason);
+
+      if (playStatus === 404 || resolutionsStatus === 404) {
+        throw new NotFoundException('الفيديو غير موجود أو لم يكتمل رفعه بعد');
+      }
+    }
+
+    const playData =
+      playDataResult.status === 'fulfilled'
+        ? playDataResult.value
+        : {
+            videoId,
+            libraryId: null,
+            directPlayUrl: this.bunny.getStreamPlayUrl(videoId),
+            embedUrl: this.bunny.getStreamEmbedUrl(videoId),
+            playlistUrl: null,
+            fallbackUrl: null,
+            availableResolutions: null,
+            isPlayable: null,
+            isPlaylistPlayable: null,
+          };
+
+    const resolutions =
+      resolutionsResult.status === 'fulfilled'
+        ? resolutionsResult.value
+        : {
+            videoId,
+            availableResolutions: playData.availableResolutions ?? [],
+            playlistResolutions: [],
+            mp4Resolutions: [],
+          };
 
     return {
       ...playData,
@@ -129,5 +163,15 @@ export class UploadsService {
       playlistResolutions: resolutions.playlistResolutions,
       mp4Resolutions: resolutions.mp4Resolutions,
     };
+  }
+
+  private extractStatus(error: unknown): number | undefined {
+    if (error instanceof HttpException) return error.getStatus();
+    if (error && typeof error === 'object' && 'status' in error && typeof (error as any).status === 'number') {
+      return (error as any).status;
+    }
+
+    const responseStatus = (error as any)?.response?.status;
+    return typeof responseStatus === 'number' ? responseStatus : undefined;
   }
 }

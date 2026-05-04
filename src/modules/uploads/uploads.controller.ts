@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   UploadedFile,
@@ -102,7 +103,7 @@ export class UploadsController {
   @ApiOperation({ summary: 'Get available resolutions for Bunny Stream video (Bunny Cloud)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  getVideoResolutions(@Param('videoId') videoId: string) {
+  getVideoResolutions(@Param('videoId', new ParseUUIDPipe({ version: '4' })) videoId: string) {
     return this.uploads.getBunnyVideoResolutions(videoId);
   }
 }
