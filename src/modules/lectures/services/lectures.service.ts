@@ -38,7 +38,15 @@ export class LecturesService {
     const { hasAccess, isOwnerOrAdmin, isStudent } = await this.getCourseAccess(user, courseId);
     const lectures = await this.prisma.lecture.findMany({
       where: { courseId: String(courseId) },
-      include: { videos: true, files: true },
+      include: {
+        videos: {
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        },
+        files: {
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        },
+      },
+      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
     });
 
     if (!isOwnerOrAdmin && isStudent && !hasAccess) {
@@ -97,18 +105,23 @@ export class LecturesService {
     const path = `lectures/${lectureId}/${file.originalname}`;
     const url = await this.bunny.uploadImage(path, file);
 
+    const sortOrder = await this.getNextLectureFileSortOrder(lectureId);
+
     return this.prisma.lectureFile.create({
       data: {
         lectureId: String(lectureId),
         fileName: file.originalname,
         fileUrl: url,
         fileType: file.mimetype || 'file',
+        sortOrder,
       },
     });
   }
 
   async createLectureFile(dto: CreateLectureFileDto, user?: { userId: string | number; type: string }) {
     await this.assertLectureOwnership(user, dto.lectureId);
+    const sortOrder = dto.sortOrder ?? (await this.getNextLectureFileSortOrder(dto.lectureId));
+
     return this.prisma.lectureFile.create({
       data: {
         lectureId: String(dto.lectureId),
@@ -116,6 +129,7 @@ export class LecturesService {
         fileUrl: dto.fileUrl,
         fileType: dto.fileType,
         isFree: dto.isFree ?? false,
+        sortOrder,
       },
     });
   }
@@ -127,6 +141,7 @@ export class LecturesService {
 
     const data: any = {};
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
+    if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
 
     return this.prisma.lectureFile.update({ where: { id: String(id) }, data });
   }
@@ -256,8 +271,11 @@ export class LecturesService {
             },
           },
         },
-        files: true,
+        files: {
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        },
         videos: {
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
           include: {
             segments: {
               orderBy: [{ sortOrder: 'asc' }, { startSeconds: 'asc' }],
@@ -335,10 +353,13 @@ export class LecturesService {
       videoUrl: string;
       durationSeconds?: number;
       isFree?: boolean;
+      sortOrder?: number;
     },
     user?: { userId: string | number; type: string },
   ) {
     await this.assertLectureOwnership(user, dto.lectureId);
+    const sortOrder = dto.sortOrder ?? (await this.getNextVideoSortOrder(dto.lectureId));
+
     return this.prisma.video.create({
       data: {
         lectureId: String(dto.lectureId),
@@ -346,6 +367,7 @@ export class LecturesService {
         description: dto.description,
         videoUrl: dto.videoUrl,
         isFree: dto.isFree ?? false,
+        sortOrder,
       },
     });
   }
@@ -391,6 +413,7 @@ export class LecturesService {
     }
 
     const persistedVideoUrl = streamPlayback.streamPlayUrl ?? storageVideoUrl;
+    const sortOrder = dto.sortOrder ?? (await this.getNextVideoSortOrder(lectureId));
 
     const created = await this.prisma.video.create({
       data: {
@@ -399,6 +422,7 @@ export class LecturesService {
         description: dto.description,
         videoUrl: persistedVideoUrl,
         isFree: dto.isFree ?? false,
+        sortOrder,
       },
     });
 
@@ -454,6 +478,17 @@ export class LecturesService {
 
     const streamPlayback = await this.bunny.getStreamPlaybackPayload(dto.videoId, dto.preferredResolution);
     if (existing) {
+      if (dto.sortOrder !== undefined && existing.sortOrder !== dto.sortOrder) {
+        const updated = await this.prisma.video.update({
+          where: { id: existing.id },
+          data: { sortOrder: dto.sortOrder },
+        });
+        return {
+          ...updated,
+          ...streamPlayback,
+        };
+      }
+
       return {
         ...existing,
         ...streamPlayback,
@@ -461,6 +496,7 @@ export class LecturesService {
     }
 
     const title = dto.videoName?.trim() || `video-${dto.videoId}`;
+    const sortOrder = dto.sortOrder ?? (await this.getNextVideoSortOrder(lectureId));
     const created = await this.prisma.video.create({
       data: {
         lectureId: String(lectureId),
@@ -468,6 +504,7 @@ export class LecturesService {
         description: dto.description,
         videoUrl: streamPlayUrl,
         isFree: dto.isFree ?? false,
+        sortOrder,
       },
     });
 
@@ -512,8 +549,27 @@ export class LecturesService {
     if (dto.videoName !== undefined) data.videoName = dto.videoName;
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
+    if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
 
     return this.prisma.video.update({ where: { id: String(id) }, data });
+  }
+
+  private async getNextVideoSortOrder(lectureId: string) {
+    const maxSortOrderResult = await this.prisma.video.aggregate({
+      where: { lectureId: String(lectureId) },
+      _max: { sortOrder: true },
+    });
+
+    return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
+  }
+
+  private async getNextLectureFileSortOrder(lectureId: string) {
+    const maxSortOrderResult = await this.prisma.lectureFile.aggregate({
+      where: { lectureId: String(lectureId) },
+      _max: { sortOrder: true },
+    });
+
+    return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
   }
 
   async deleteVideo(id: string, user?: { userId: string | number; type: string }) {

@@ -93,6 +93,48 @@ export class DashboardController {
     );
   }
 
+  @Get('student/subjects')
+  @ApiOperation({ summary: 'Get student college subjects with full details (filter by year and season)' })
+  @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id (defaults to student year)' })
+  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional season id (defaults to active home season)' })
+  @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
+  @ApiQuery({ name: 'deviceID', required: false, description: 'Optional guest device id (alias for deviceId)' })
+  getStudentSubjects(
+    @Req() req: any,
+    @Query('collegeYearId') collegeYearId?: string,
+    @Query('seasonId') seasonId?: string,
+    @Query('deviceId') deviceId?: string,
+    @Query('deviceID') deviceID?: string,
+  ) {
+    const resolvedDeviceId = deviceId ?? deviceID;
+    return this.dashboardService.getStudentSubjects(
+      req.user,
+      { collegeYearId, seasonId },
+      this.buildGuestFilter({ deviceId: resolvedDeviceId, collegeYearId }),
+    );
+  }
+
+  @Get('student/programs')
+  @ApiOperation({ summary: 'Get student college programs with full details' })
+  @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id (defaults to student year)' })
+  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional season id (defaults to active home season)' })
+  @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
+  @ApiQuery({ name: 'deviceID', required: false, description: 'Optional guest device id (alias for deviceId)' })
+  getStudentProgramsFull(
+    @Req() req: any,
+    @Query('collegeYearId') collegeYearId?: string,
+    @Query('seasonId') seasonId?: string,
+    @Query('deviceId') deviceId?: string,
+    @Query('deviceID') deviceID?: string,
+  ) {
+    const resolvedDeviceId = deviceId ?? deviceID;
+    return this.dashboardService.getStudentProgramsFull(
+      req.user,
+      { collegeYearId, seasonId },
+      this.buildGuestFilter({ deviceId: resolvedDeviceId, collegeYearId }),
+    );
+  }
+
   @Get('subjects/:id/courses')
   @ApiOperation({ summary: 'Get subject courses in student college with pagination' })
   @ApiQuery({ name: 'page', required: false, description: 'Optional page number, default is 1' })

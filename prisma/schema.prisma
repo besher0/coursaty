@@ -435,12 +435,14 @@ model Video {
   durationSeconds Int?
   viewsCount      Int      @default(0)
   isFree          Boolean  @default(false)
+  sortOrder       Int?
 
   lecture       Lecture            @relation(fields: [lectureId], references: [id])
   interactions  VideoInteraction[]
   segments      VideoSegment[]
 
   @@index([lectureId])
+  @@index([sortOrder])
 }
 
 model VideoSegment {
@@ -506,10 +508,12 @@ model LectureFile {
   fileUrl   String
   fileType  String?
   isFree    Boolean  @default(false)
+  sortOrder Int?
 
   lecture Lecture @relation(fields: [lectureId], references: [id])
 
   @@index([lectureId])
+  @@index([sortOrder])
 }
 
 model Question {

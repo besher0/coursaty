@@ -265,6 +265,109 @@ export class DashboardService {
     };
   }
 
+  async getStudentSubjects(
+    user: { userId: string | number; type: string } | undefined,
+    options?: { collegeYearId?: string; seasonId?: string },
+    guestFilter?: DashboardGuestFilter,
+  ) {
+    const { collegeId, college, departmentId, collegeYearId } = await this.getStudentCollege(user, guestFilter);
+    const activeSeasonId = await this.getActiveHomeSeasonId();
+    const filters = await this.resolveSubjectFiltersForCollege(collegeId, collegeYearId, options);
+    const resolvedSeasonId = filters.seasonId ?? activeSeasonId;
+
+    const subjects = await this.prisma.subject.findMany({
+      where: {
+        collegeId,
+        isProgram: false,
+        ...(filters.collegeYearId ? { collegeYearId: filters.collegeYearId } : {}),
+        ...(resolvedSeasonId ? { seasonId: resolvedSeasonId } : {}),
+        ...(departmentId ? { OR: [{ departmentId: null }, { departmentId }] } : {}),
+      },
+      include: {
+        college: true,
+        department: true,
+        collegeYear: {
+          include: {
+            academicYear: true,
+            college: true,
+            department: true,
+          },
+        },
+        season: true,
+        _count: { select: { courses: true } },
+      },
+      orderBy: [
+        { collegeYear: { academicYear: { yearNumber: 'asc' } } },
+        { season: { seasonNumber: 'asc' } },
+        { subjectName: 'asc' },
+      ],
+    });
+
+    return {
+      college: {
+        id: college.id,
+        name: college.name,
+        universityId: college.universityId,
+      },
+      filters: {
+        collegeYearId: filters.collegeYearId ?? null,
+        seasonId: resolvedSeasonId ?? null,
+      },
+      subjects,
+    };
+  }
+
+  async getStudentProgramsFull(
+    user: { userId: string | number; type: string } | undefined,
+    options?: { collegeYearId?: string; seasonId?: string },
+    guestFilter?: DashboardGuestFilter,
+  ) {
+    const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
+    const activeSeasonId = await this.getActiveHomeSeasonId();
+    const filters = await this.resolveSubjectFiltersForCollege(collegeId, collegeYearId, options);
+    const resolvedSeasonId = filters.seasonId ?? activeSeasonId;
+
+    const programs = await this.prisma.subject.findMany({
+      where: {
+        collegeId,
+        isProgram: true,
+        ...(filters.collegeYearId ? { collegeYearId: filters.collegeYearId } : {}),
+        ...(resolvedSeasonId ? { seasonId: resolvedSeasonId } : {}),
+      },
+      include: {
+        college: true,
+        department: true,
+        collegeYear: {
+          include: {
+            academicYear: true,
+            college: true,
+            department: true,
+          },
+        },
+        season: true,
+        _count: { select: { courses: true } },
+      },
+      orderBy: [
+        { collegeYear: { academicYear: { yearNumber: 'asc' } } },
+        { season: { seasonNumber: 'asc' } },
+        { subjectName: 'asc' },
+      ],
+    });
+
+    return {
+      college: {
+        id: college.id,
+        name: college.name,
+        universityId: college.universityId,
+      },
+      filters: {
+        collegeYearId: filters.collegeYearId ?? null,
+        seasonId: resolvedSeasonId ?? null,
+      },
+      programs,
+    };
+  }
+
   async getStudentPrograms(
     user: { userId: string | number; type: string },
     guestFilter?: DashboardGuestFilter,

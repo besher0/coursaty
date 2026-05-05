@@ -14,7 +14,7 @@ export class VideoInteractionsController {
   constructor(private readonly interactions: InteractionsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create/update video interaction (like toggle/rate/comment)' })
+  @ApiOperation({ summary: 'Create/update video like interaction (toggle/set)' })
   @ApiOkResponse({ description: 'Interaction stored or updated' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('STUDENT')

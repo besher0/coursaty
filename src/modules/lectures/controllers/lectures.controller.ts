@@ -129,6 +129,7 @@ export class LecturesController {
         videoName: { type: 'string' },
         description: { type: 'string' },
         isFree: { type: 'boolean' },
+        sortOrder: { type: 'number' },
         preferredResolution: { type: 'string', enum: [...BUNNY_STREAM_RESOLUTIONS] },
       },
     },

@@ -1,5 +1,6 @@
-import { HttpException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { BunnyService } from '../../shared/bunny/bunny.service';
+import { PrismaService } from '@/prisma/prisma.service';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { UpdateBunnyVideoSettingsDto } from './dtos/update-bunny-video-settings.dto';
@@ -8,7 +9,10 @@ import { RefreshUploadVideoTusDto } from './dtos/refresh-upload-video-tus.dto';
 
 @Injectable()
 export class UploadsService {
-  constructor(private readonly bunny: BunnyService) {}
+  constructor(
+    private readonly bunny: BunnyService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async uploadFile(file: any) {
     const ext = path.extname(file.originalname || '') || '';
@@ -28,6 +32,7 @@ export class UploadsService {
     const fileName = `${randomUUID()}${ext}`;
     const storagePath = `uploads/videos/${fileName}`;
     const storageVideoUrl = await this.bunny.uploadImage(storagePath, file);
+    let streamUploadError: string | null = null;
 
     let streamPlayback = {
       streamVideoId: null as string | null,
@@ -47,6 +52,7 @@ export class UploadsService {
       await this.bunny.uploadStreamVideo(streamVideo.guid, file);
       streamPlayback = await this.bunny.getStreamPlaybackPayload(streamVideo.guid, options?.preferredResolution);
     } catch {
+      streamUploadError = 'Bunny Stream upload failed. File is available in Bunny Storage only.';
       streamPlayback = {
         ...streamPlayback,
         streamVideoId: null,
@@ -59,6 +65,9 @@ export class UploadsService {
       videoUrl: streamPlayback.streamPlayUrl ?? storageVideoUrl,
       downloadUrl: storageVideoUrl,
       storageVideoUrl,
+      storagePath,
+      streamUploadSucceeded: Boolean(streamPlayback.streamVideoId),
+      streamUploadError,
       embedUrl: streamPlayback.streamEmbedUrl,
       ...streamPlayback,
     };
@@ -118,9 +127,11 @@ export class UploadsService {
   }
 
   async getBunnyVideoResolutions(videoId: string) {
+    const { streamVideoId, source } = await this.resolveStreamVideoId(videoId);
+
     const [playDataResult, resolutionsResult] = await Promise.allSettled([
-      this.bunny.getVideoPlayData(videoId),
-      this.bunny.getVideoResolutions(videoId),
+      this.bunny.getVideoPlayData(streamVideoId),
+      this.bunny.getVideoResolutions(streamVideoId),
     ]);
 
     if (playDataResult.status === 'rejected' && resolutionsResult.status === 'rejected') {
@@ -136,10 +147,10 @@ export class UploadsService {
       playDataResult.status === 'fulfilled'
         ? playDataResult.value
         : {
-            videoId,
+            videoId: streamVideoId,
             libraryId: null,
-            directPlayUrl: this.bunny.getStreamPlayUrl(videoId),
-            embedUrl: this.bunny.getStreamEmbedUrl(videoId),
+            directPlayUrl: this.bunny.getStreamPlayUrl(streamVideoId),
+            embedUrl: this.bunny.getStreamEmbedUrl(streamVideoId),
             playlistUrl: null,
             fallbackUrl: null,
             availableResolutions: null,
@@ -151,18 +162,56 @@ export class UploadsService {
       resolutionsResult.status === 'fulfilled'
         ? resolutionsResult.value
         : {
-            videoId,
+            videoId: streamVideoId,
             availableResolutions: playData.availableResolutions ?? [],
             playlistResolutions: [],
             mp4Resolutions: [],
           };
 
     return {
+      requestedVideoId: videoId,
+      resolvedVideoId: streamVideoId,
+      resolvedFrom: source,
       ...playData,
       availableResolutions: resolutions.availableResolutions,
       playlistResolutions: resolutions.playlistResolutions,
       mp4Resolutions: resolutions.mp4Resolutions,
     };
+  }
+
+  private async resolveStreamVideoId(videoIdOrGuid: string): Promise<{ streamVideoId: string; source: 'stream_guid' | 'db_video_id' }> {
+    const input = String(videoIdOrGuid || '').trim();
+    if (!input) {
+      throw new BadRequestException('videoId مطلوب');
+    }
+
+    const dbVideo = await this.prisma.video.findUnique({
+      where: { id: input },
+      select: { videoUrl: true },
+    });
+
+    if (!dbVideo) {
+      return { streamVideoId: input, source: 'stream_guid' };
+    }
+
+    const streamVideoId = this.extractBunnyGuidFromUrl(dbVideo.videoUrl);
+    if (!streamVideoId) {
+      throw new BadRequestException('هذا الفيديو لا يحتوي على معرف Bunny Stream صالح');
+    }
+
+    return { streamVideoId, source: 'db_video_id' };
+  }
+
+  private extractBunnyGuidFromUrl(url?: string | null): string | null {
+    if (!url) return null;
+
+    const playMatch = url.match(/\/play\/[^/]+\/([0-9a-fA-F-]{36})(?:[/?#]|$)/);
+    if (playMatch?.[1]) return playMatch[1];
+
+    const embedMatch = url.match(/\/embed\/[^/]+\/([0-9a-fA-F-]{36})(?:[/?#]|$)/);
+    if (embedMatch?.[1]) return embedMatch[1];
+
+    return null;
   }
 
   private extractStatus(error: unknown): number | undefined {

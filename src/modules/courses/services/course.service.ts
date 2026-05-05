@@ -726,6 +726,7 @@ export class CourseService {
       videoName?: string;
       description?: string;
       isFree?: boolean;
+      sortOrder?: number;
       preferredResolution?: string;
     },
   ) {
@@ -764,6 +765,7 @@ export class CourseService {
     }
 
     const persistedVideoUrl = streamPlayback.streamPlayUrl ?? storageVideoUrl;
+    const sortOrder = options?.sortOrder ?? (await this.getNextLectureVideoSortOrder(lectureId));
 
     const created = await this.prisma.video.create({
       data: {
@@ -773,6 +775,7 @@ export class CourseService {
         videoUrl: persistedVideoUrl,
         durationSeconds: null,
         isFree: options?.isFree ?? false,
+        sortOrder,
       },
     });
 
@@ -830,6 +833,17 @@ export class CourseService {
 
     const streamPlayback = await this.bunny.getStreamPlaybackPayload(dto.videoId, dto.preferredResolution);
     if (existing) {
+      if (dto.sortOrder !== undefined && existing.sortOrder !== dto.sortOrder) {
+        const updated = await this.prisma.video.update({
+          where: { id: existing.id },
+          data: { sortOrder: dto.sortOrder },
+        });
+        return {
+          ...updated,
+          ...streamPlayback,
+        };
+      }
+
       return {
         ...existing,
         ...streamPlayback,
@@ -837,6 +851,7 @@ export class CourseService {
     }
 
     const title = dto.videoName?.trim() || `video-${dto.videoId}`;
+    const sortOrder = dto.sortOrder ?? (await this.getNextLectureVideoSortOrder(lectureId));
     const created = await this.prisma.video.create({
       data: {
         lectureId: String(lectureId),
@@ -844,6 +859,7 @@ export class CourseService {
         description: dto.description,
         videoUrl: streamPlayUrl,
         isFree: dto.isFree ?? false,
+        sortOrder,
       },
     });
 
@@ -884,6 +900,15 @@ export class CourseService {
         _count: { select: { subscriptions: true, lectures: true } },
       },
     });
+  }
+
+  private async getNextLectureVideoSortOrder(lectureId: string) {
+    const maxSortOrderResult = await this.prisma.video.aggregate({
+      where: { lectureId: String(lectureId) },
+      _max: { sortOrder: true },
+    });
+
+    return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
   }
 
   private async assertStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {

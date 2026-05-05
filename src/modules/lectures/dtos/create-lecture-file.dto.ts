@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateLectureFileDto {
   @ApiProperty({ format: 'uuid' })
@@ -24,4 +24,9 @@ export class CreateLectureFileDto {
   @IsOptional()
   @IsBoolean()
   isFree?: boolean;
+
+  @ApiPropertyOptional({ description: 'Display order for the file inside lecture' })
+  @IsOptional()
+  @IsNumber()
+  sortOrder?: number;
 }
