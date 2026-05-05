@@ -27,19 +27,24 @@ export class DashboardController {
   }
 
   @Get('student-college-info')
-  @ApiOperation({ summary: 'Get college advertisements, teachers, subjects, and programs for the student college/department' })
+  @ApiOperation({ summary: 'Get college advertisements, teachers, and subjects/programs filtered by year and season' })
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items limit, default is 7' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
+  @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id to filter subjects/programs' })
+  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional season id to filter subjects/programs' })
   getStudentCollegeInfo(
     @Req() req: any,
     @Query('limit') limit: string = '7',
     @Query('deviceId') deviceId?: string,
+    @Query('collegeYearId') collegeYearId?: string,
+    @Query('seasonId') seasonId?: string,
   ) {
     const parsedLimit = parseInt(limit);
     return this.dashboardService.getStudentCollegeInfo(
       req.user,
       Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 7,
-      this.buildGuestFilter({ deviceId }),
+      this.buildGuestFilter({ deviceId, collegeYearId }),
+      { collegeYearId, seasonId },
     );
   }
 
@@ -72,15 +77,18 @@ export class DashboardController {
   @Get('courses-by-subjects')
   @ApiOperation({ summary: 'Get courses organized by college, year, and season' })
   @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id' })
+  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional season id' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
   getCoursesByCollege(
     @Req() req: any,
     @Query('collegeYearId') collegeYearId?: string,
+    @Query('seasonId') seasonId?: string,
     @Query('deviceId') deviceId?: string,
   ) {
     return this.dashboardService.getCoursesByCollege(
       req.user,
       collegeYearId,
+      seasonId,
       this.buildGuestFilter({ deviceId }),
     );
   }
@@ -110,17 +118,21 @@ export class DashboardController {
   }
 
   @Get('programs/courses')
-  @ApiOperation({ summary: 'Get program courses in student college with pagination' })
+  @ApiOperation({ summary: 'Get all programs in student college, or courses for a selected program' })
   @ApiQuery({ name: 'id', required: false, description: 'Optional program id to filter courses' })
   @ApiQuery({ name: 'page', required: false, description: 'Optional page number, default is 1' })
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items per page, default is 10' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
+  @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id to filter programs/courses' })
+  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional season id to filter programs/courses' })
   getProgramCourses(
     @Req() req: any,
     @Query('id') programId?: string,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
     @Query('deviceId') deviceId?: string,
+    @Query('collegeYearId') collegeYearId?: string,
+    @Query('seasonId') seasonId?: string,
   ) {
     const parsedPage = parseInt(page);
     const parsedLimit = parseInt(limit);
@@ -130,7 +142,8 @@ export class DashboardController {
       programId,
       Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1,
       Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 10,
-      this.buildGuestFilter({ deviceId }),
+      this.buildGuestFilter({ deviceId, collegeYearId }),
+      { collegeYearId, seasonId },
     );
   }
 

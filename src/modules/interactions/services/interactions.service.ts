@@ -104,12 +104,73 @@ export class InteractionsService {
     data: { isLiked?: boolean; rating?: number; comment?: string },
   ) {
     const { dbUser } = await this.ensureVideoAccess(videoId, user);
+    const existingInteraction = await this.prisma.videoInteraction.findFirst({
+      where: { videoId, userId: dbUser.id },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // If payload only contains like signal, keep the same endpoint as a toggle.
+    const shouldToggleLike = data.rating === undefined && data.comment === undefined;
+
+    if (existingInteraction) {
+      if (shouldToggleLike) {
+        const nextLikeState = !existingInteraction.isLiked;
+
+        return this.prisma.$transaction(async (tx) => {
+          await tx.videoInteraction.updateMany({
+            where: {
+              videoId,
+              userId: dbUser.id,
+              isLiked: true,
+              NOT: { id: existingInteraction.id },
+            },
+            data: { isLiked: false },
+          });
+
+          return tx.videoInteraction.update({
+            where: { id: existingInteraction.id },
+            data: { isLiked: nextLikeState },
+          });
+        });
+      }
+
+      const updateData: { isLiked?: boolean; rating?: number; comment?: string } = {};
+      if (data.isLiked !== undefined) updateData.isLiked = data.isLiked;
+      if (data.rating !== undefined) updateData.rating = data.rating;
+      if (data.comment !== undefined) updateData.comment = data.comment;
+
+      if (!Object.keys(updateData).length) return existingInteraction;
+
+      if (data.isLiked === undefined) {
+        return this.prisma.videoInteraction.update({
+          where: { id: existingInteraction.id },
+          data: updateData,
+        });
+      }
+
+      return this.prisma.$transaction(async (tx) => {
+        await tx.videoInteraction.updateMany({
+          where: {
+            videoId,
+            userId: dbUser.id,
+            isLiked: true,
+            NOT: { id: existingInteraction.id },
+          },
+          data: { isLiked: false },
+        });
+
+        return tx.videoInteraction.update({
+          where: { id: existingInteraction.id },
+          data: updateData,
+        });
+      });
+    }
 
     return this.prisma.videoInteraction.create({
       data: {
         videoId,
         userId: dbUser.id,
-        isLiked: !!data.isLiked,
+        isLiked: shouldToggleLike ? true : !!data.isLiked,
         rating: data.rating,
         comment: data.comment,
       },

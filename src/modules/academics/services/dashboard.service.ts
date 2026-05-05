@@ -217,16 +217,68 @@ export class DashboardService {
     };
   }
 
+  private async resolveSubjectFiltersForCollege(
+    collegeId: string,
+    defaultCollegeYearId?: string | null,
+    options?: { collegeYearId?: string; seasonId?: string },
+  ) {
+    const normalizedCollegeYearId = options?.collegeYearId?.trim() || defaultCollegeYearId || null;
+    const normalizedSeasonId = options?.seasonId?.trim() || null;
+
+    if (
+      normalizedCollegeYearId &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizedCollegeYearId)
+    ) {
+      throw new BadRequestException('collegeYearId يجب أن يكون UUID v4 صالح');
+    }
+
+    if (
+      normalizedSeasonId &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizedSeasonId)
+    ) {
+      throw new BadRequestException('seasonId يجب أن يكون UUID v4 صالح');
+    }
+
+    if (normalizedCollegeYearId) {
+      const collegeYear = await this.prisma.collegeYear.findUnique({
+        where: { id: normalizedCollegeYearId },
+        select: { id: true, collegeId: true },
+      });
+
+      if (!collegeYear) throw new NotFoundException('السنة غير موجودة');
+      if (collegeYear.collegeId.toString() !== collegeId.toString()) {
+        throw new BadRequestException('السنة لا تتبع للكلية المحددة');
+      }
+    }
+
+    if (normalizedSeasonId) {
+      const season = await this.prisma.season.findUnique({
+        where: { id: normalizedSeasonId },
+        select: { id: true },
+      });
+      if (!season) throw new NotFoundException('الفصل غير موجود');
+    }
+
+    return {
+      collegeYearId: normalizedCollegeYearId,
+      seasonId: normalizedSeasonId,
+    };
+  }
+
   async getStudentPrograms(
     user: { userId: string | number; type: string },
     guestFilter?: DashboardGuestFilter,
+    options?: { collegeYearId?: string; seasonId?: string },
   ) {
-    const { collegeId } = await this.getStudentCollege(user, guestFilter);
+    const { collegeId, collegeYearId } = await this.getStudentCollege(user, guestFilter);
+    const filters = await this.resolveSubjectFiltersForCollege(collegeId, collegeYearId, options);
 
     const programs = await this.prisma.subject.findMany({
       where: {
         collegeId,
         isProgram: true,
+        ...(filters.collegeYearId ? { collegeYearId: filters.collegeYearId } : {}),
+        ...(filters.seasonId ? { seasonId: filters.seasonId } : {}),
       },
       include: {
         department: {
@@ -294,9 +346,12 @@ export class DashboardService {
     user: { userId: string | number; type: string },
     limit: number = 7,
     guestFilter?: DashboardGuestFilter,
+    options?: { collegeYearId?: string; seasonId?: string },
   ) {
     const { collegeId, college, departmentId, collegeYearId } = await this.getStudentCollege(user, guestFilter);
     const activeSeasonId = await this.getActiveHomeSeasonId();
+    const filters = await this.resolveSubjectFiltersForCollege(collegeId, collegeYearId, options);
+    const resolvedSeasonId = filters.seasonId ?? activeSeasonId;
 
     // Get advertisements for the college
     const advertisements = await this.prisma.advertisement.findMany({
@@ -330,8 +385,8 @@ export class DashboardService {
 
     const subjectWhere = {
       collegeId,
-      ...(collegeYearId ? { collegeYearId } : {}),
-      ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
+      ...(filters.collegeYearId ? { collegeYearId: filters.collegeYearId } : {}),
+      ...(resolvedSeasonId ? { seasonId: resolvedSeasonId } : {}),
       ...(departmentId
         ? {
             OR: [{ departmentId: null }, { departmentId }],
@@ -355,10 +410,12 @@ export class DashboardService {
         { season: { seasonNumber: 'asc' } },
         { subjectName: 'asc' },
       ],
-      take: limit,
     });
 
-    const programs = await this.getStudentPrograms(user, guestFilter);
+    const programs = await this.getStudentPrograms(user, guestFilter, {
+      collegeYearId: filters.collegeYearId ?? undefined,
+      seasonId: resolvedSeasonId ?? undefined,
+    });
 
     const allSubjectIds = [...subjects, ...programs].map((item) => item.id);
     const courseImagesBySubjectId = new Map<string, string>();
@@ -367,7 +424,7 @@ export class DashboardService {
       const coursesWithImages = await this.prisma.course.findMany({
         where: {
           subjectId: { in: allSubjectIds },
-          ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
+          ...(resolvedSeasonId ? { seasonId: resolvedSeasonId } : {}),
           imageUrl: { not: null },
         },
         select: {
@@ -626,6 +683,7 @@ export class DashboardService {
   async getCoursesByCollege(
     user: { userId: string | number; type: string },
     collegeYearId?: string,
+    seasonId?: string,
     guestFilter?: DashboardGuestFilter,
   ) {
     const {
@@ -635,9 +693,14 @@ export class DashboardService {
       collegeYearId: userCollegeYearId,
     } = await this.getStudentCollege(user, guestFilter);
     const activeSeasonId = await this.getActiveHomeSeasonId();
-    const selectedCollegeYearId = collegeYearId ? String(collegeYearId) : userCollegeYearId ?? undefined;
+    const filters = await this.resolveSubjectFiltersForCollege(collegeId, userCollegeYearId, {
+      collegeYearId,
+      seasonId,
+    });
+    const selectedCollegeYearId = filters.collegeYearId ?? undefined;
+    const selectedSeasonId = filters.seasonId ?? activeSeasonId;
     const seasons = await this.prisma.season.findMany({
-      where: activeSeasonId ? { id: activeSeasonId } : undefined,
+      where: selectedSeasonId ? { id: selectedSeasonId } : undefined,
       orderBy: { seasonNumber: 'asc' },
     });
 
@@ -660,7 +723,7 @@ export class DashboardService {
             collegeId,
             collegeYearId: year.id,
             isProgram: false,
-            ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
+            ...(selectedSeasonId ? { seasonId: selectedSeasonId } : {}),
             ...(departmentId
               ? {
                   OR: [{ departmentId: null }, { departmentId }],
@@ -810,9 +873,18 @@ export class DashboardService {
     page: number = 1,
     limit: number = 10,
     guestFilter?: DashboardGuestFilter,
+    options?: { collegeYearId?: string; seasonId?: string },
   ) {
     const { universityId, collegeId, collegeYearId } = await this.resolveCourseScope(user, guestFilter);
     const activeSeasonId = await this.getActiveHomeSeasonId();
+    const validatedFilters = collegeId
+      ? await this.resolveSubjectFiltersForCollege(collegeId, collegeYearId, options)
+      : {
+          collegeYearId: options?.collegeYearId?.trim() || collegeYearId || null,
+          seasonId: options?.seasonId?.trim() || null,
+        };
+    const resolvedSeasonId = validatedFilters.seasonId ?? activeSeasonId;
+    const resolvedCollegeYearId = validatedFilters.collegeYearId;
 
     const normalizedProgramId = programId?.trim();
 
@@ -823,34 +895,43 @@ export class DashboardService {
       throw new BadRequestException('id يجب أن يكون UUID v4 صالح');
     }
 
-    let program: { id: string; name: string } | null = null;
-    if (normalizedProgramId) {
-      const foundProgram = await this.prisma.subject.findFirst({
-        where: {
-          id: normalizedProgramId,
-          ...(collegeId ? { collegeId } : {}),
-          ...(universityId ? { college: { universityId } } : {}),
-          isProgram: true,
-          ...(collegeYearId ? { collegeYearId } : {}),
-          ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
-        },
+    if (!normalizedProgramId) {
+      const programs = await this.getStudentPrograms(user, guestFilter, {
+        collegeYearId: options?.collegeYearId,
+        seasonId: options?.seasonId,
       });
 
-      if (!foundProgram) throw new NotFoundException('البرنامج غير موجود');
-      program = {
-        id: foundProgram.id,
-        name: foundProgram.subjectName,
+      return {
+        programs,
       };
     }
+
+    let program: { id: string; name: string } | null = null;
+    const foundProgram = await this.prisma.subject.findFirst({
+      where: {
+        id: normalizedProgramId,
+        ...(collegeId ? { collegeId } : {}),
+        ...(universityId ? { college: { universityId } } : {}),
+        isProgram: true,
+        ...(resolvedCollegeYearId ? { collegeYearId: resolvedCollegeYearId } : {}),
+        ...(resolvedSeasonId ? { seasonId: resolvedSeasonId } : {}),
+      },
+    });
+
+    if (!foundProgram) throw new NotFoundException('البرنامج غير موجود');
+    program = {
+      id: foundProgram.id,
+      name: foundProgram.subjectName,
+    };
 
     const skip = (page - 1) * limit;
     const where = {
       ...(collegeId ? { collegeId } : {}),
       ...(universityId ? { universityId } : {}),
       subject: { isProgram: true },
-      ...(collegeYearId ? { collegeYearId } : {}),
-      ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
-      ...(normalizedProgramId ? { subjectId: normalizedProgramId } : {}),
+      ...(resolvedCollegeYearId ? { collegeYearId: resolvedCollegeYearId } : {}),
+      ...(resolvedSeasonId ? { seasonId: resolvedSeasonId } : {}),
+      subjectId: normalizedProgramId,
     } as any;
 
     const total = await this.prisma.course.count({ where });

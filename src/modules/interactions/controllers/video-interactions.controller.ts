@@ -14,8 +14,8 @@ export class VideoInteractionsController {
   constructor(private readonly interactions: InteractionsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create video interaction (like/rate/comment)' })
-  @ApiOkResponse({ description: 'Interaction stored' })
+  @ApiOperation({ summary: 'Create/update video interaction (like toggle/rate/comment)' })
+  @ApiOkResponse({ description: 'Interaction stored or updated' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('STUDENT')
   create(@Body() body: CreateVideoInteractionDto, @Req() req: any) {
