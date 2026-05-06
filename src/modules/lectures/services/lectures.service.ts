@@ -1,4 +1,5 @@
-﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { BunnyService } from '@/shared/bunny/bunny.service';
 import { CreateLectureDto } from '../dtos/create-lecture.dto';
@@ -36,18 +37,36 @@ export class LecturesService {
 
   async listLectures(courseId: string, user?: { userId: string | number; type: string }) {
     const { hasAccess, isOwnerOrAdmin, isStudent } = await this.getCourseAccess(user, courseId);
-    const lectures = await this.prisma.lecture.findMany({
-      where: { courseId: String(courseId) },
-      include: {
-        videos: {
-          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+    let lectures: any[];
+    try {
+      lectures = await this.prisma.lecture.findMany({
+        where: { courseId: String(courseId) },
+        include: {
+          videos: {
+            orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+          },
+          files: {
+            orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+          },
         },
-        files: {
-          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      });
+    } catch (error) {
+      if (!this.isAnySortOrderColumnMissing(error)) throw error;
+
+      lectures = await this.prisma.lecture.findMany({
+        where: { courseId: String(courseId) },
+        include: {
+          videos: {
+            orderBy: [{ id: 'asc' }],
+          },
+          files: {
+            orderBy: [{ id: 'asc' }],
+          },
         },
-      },
-      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-    });
+        orderBy: [{ id: 'asc' }],
+      });
+    }
 
     if (!isOwnerOrAdmin && isStudent && !hasAccess) {
       return lectures.map((lecture) => ({
@@ -107,31 +126,56 @@ export class LecturesService {
 
     const sortOrder = await this.getNextLectureFileSortOrder(lectureId);
 
-    return this.prisma.lectureFile.create({
-      data: {
-        lectureId: String(lectureId),
-        fileName: file.originalname,
-        fileUrl: url,
-        fileType: file.mimetype || 'file',
-        sortOrder,
-      },
-    });
+    try {
+      return await this.prisma.lectureFile.create({
+        data: {
+          lectureId: String(lectureId),
+          fileName: file.originalname,
+          fileUrl: url,
+          fileType: file.mimetype || 'file',
+          sortOrder,
+        },
+      });
+    } catch (error) {
+      if (!this.isMissingSortOrderColumn(error, 'LectureFile.sortOrder')) throw error;
+      return this.prisma.lectureFile.create({
+        data: {
+          lectureId: String(lectureId),
+          fileName: file.originalname,
+          fileUrl: url,
+          fileType: file.mimetype || 'file',
+        },
+      });
+    }
   }
 
   async createLectureFile(dto: CreateLectureFileDto, user?: { userId: string | number; type: string }) {
     await this.assertLectureOwnership(user, dto.lectureId);
     const sortOrder = dto.sortOrder ?? (await this.getNextLectureFileSortOrder(dto.lectureId));
 
-    return this.prisma.lectureFile.create({
-      data: {
-        lectureId: String(dto.lectureId),
-        fileName: dto.fileName,
-        fileUrl: dto.fileUrl,
-        fileType: dto.fileType,
-        isFree: dto.isFree ?? false,
-        sortOrder,
-      },
-    });
+    try {
+      return await this.prisma.lectureFile.create({
+        data: {
+          lectureId: String(dto.lectureId),
+          fileName: dto.fileName,
+          fileUrl: dto.fileUrl,
+          fileType: dto.fileType,
+          isFree: dto.isFree ?? false,
+          sortOrder,
+        },
+      });
+    } catch (error) {
+      if (!this.isMissingSortOrderColumn(error, 'LectureFile.sortOrder')) throw error;
+      return this.prisma.lectureFile.create({
+        data: {
+          lectureId: String(dto.lectureId),
+          fileName: dto.fileName,
+          fileUrl: dto.fileUrl,
+          fileType: dto.fileType,
+          isFree: dto.isFree ?? false,
+        },
+      });
+    }
   }
 
   async updateLectureFile(id: string, dto: UpdateLectureFileDto, user?: { userId: string | number; type: string }) {
@@ -143,7 +187,16 @@ export class LecturesService {
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
     if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
 
-    return this.prisma.lectureFile.update({ where: { id: String(id) }, data });
+    if (!Object.keys(data).length) return file;
+
+    try {
+      return await this.prisma.lectureFile.update({ where: { id: String(id) }, data });
+    } catch (error) {
+      if (!this.isMissingSortOrderColumn(error, 'LectureFile.sortOrder')) throw error;
+      delete data.sortOrder;
+      if (!Object.keys(data).length) return file;
+      return this.prisma.lectureFile.update({ where: { id: String(id) }, data });
+    }
   }
 
   async deleteLectureFile(id: string, user?: { userId: string | number; type: string }) {
@@ -248,43 +301,86 @@ export class LecturesService {
   }
 
   async getLectureDetails(lectureId: string, user?: { userId: string | number; type: string }) {
-    const lecture = await this.prisma.lecture.findUnique({
-      where: { id: String(lectureId) },
-      include: {
-        course: {
-          select: {
-            id: true,
-            teacher: {
-              select: {
-                id: true,
-                name: true,
-                description: true,
-                image: true,
-                telegramUrl: true,
-                instagramUrl: true,
-                _count: {
-                  select: {
-                    teacherLikes: true,
+    let lecture: any | null;
+    try {
+      lecture = await this.prisma.lecture.findUnique({
+        where: { id: String(lectureId) },
+        include: {
+          course: {
+            select: {
+              id: true,
+              teacher: {
+                select: {
+                  id: true,
+                  name: true,
+                  description: true,
+                  image: true,
+                  telegramUrl: true,
+                  instagramUrl: true,
+                  _count: {
+                    select: {
+                      teacherLikes: true,
+                    },
                   },
                 },
               },
             },
           },
-        },
-        files: {
-          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-        },
-        videos: {
-          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-          include: {
-            segments: {
-              orderBy: [{ sortOrder: 'asc' }, { startSeconds: 'asc' }],
+          files: {
+            orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+          },
+          videos: {
+            orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+            include: {
+              segments: {
+                orderBy: [{ sortOrder: 'asc' }, { startSeconds: 'asc' }],
+              },
             },
           },
+          questions: { include: { options: true } },
         },
-        questions: { include: { options: true } },
-      },
-    });
+      });
+    } catch (error) {
+      if (!this.isAnySortOrderColumnMissing(error)) throw error;
+
+      lecture = await this.prisma.lecture.findUnique({
+        where: { id: String(lectureId) },
+        include: {
+          course: {
+            select: {
+              id: true,
+              teacher: {
+                select: {
+                  id: true,
+                  name: true,
+                  description: true,
+                  image: true,
+                  telegramUrl: true,
+                  instagramUrl: true,
+                  _count: {
+                    select: {
+                      teacherLikes: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          files: {
+            orderBy: [{ id: 'asc' }],
+          },
+          videos: {
+            orderBy: [{ id: 'asc' }],
+            include: {
+              segments: {
+                orderBy: [{ sortOrder: 'asc' }, { startSeconds: 'asc' }],
+              },
+            },
+          },
+          questions: { include: { options: true } },
+        },
+      });
+    }
 
     if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
 
@@ -555,21 +651,31 @@ export class LecturesService {
   }
 
   private async getNextVideoSortOrder(lectureId: string) {
-    const maxSortOrderResult = await this.prisma.video.aggregate({
-      where: { lectureId: String(lectureId) },
-      _max: { sortOrder: true },
-    });
+    try {
+      const maxSortOrderResult = await this.prisma.video.aggregate({
+        where: { lectureId: String(lectureId) },
+        _max: { sortOrder: true },
+      });
 
-    return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
+      return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
+    } catch (error) {
+      if (!this.isMissingSortOrderColumn(error, 'Video.sortOrder')) throw error;
+      return 1;
+    }
   }
 
   private async getNextLectureFileSortOrder(lectureId: string) {
-    const maxSortOrderResult = await this.prisma.lectureFile.aggregate({
-      where: { lectureId: String(lectureId) },
-      _max: { sortOrder: true },
-    });
+    try {
+      const maxSortOrderResult = await this.prisma.lectureFile.aggregate({
+        where: { lectureId: String(lectureId) },
+        _max: { sortOrder: true },
+      });
 
-    return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
+      return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
+    } catch (error) {
+      if (!this.isMissingSortOrderColumn(error, 'LectureFile.sortOrder')) throw error;
+      return 1;
+    }
   }
 
   async deleteVideo(id: string, user?: { userId: string | number; type: string }) {
@@ -822,6 +928,21 @@ export class LecturesService {
     await this.assertLectureOwnership(user, question.lectureId);
 
     return this.prisma.question.delete({ where: { id: String(id) } });
+  }
+
+  private isAnySortOrderColumnMissing(error: unknown): boolean {
+    return (
+      this.isMissingSortOrderColumn(error, 'LectureFile.sortOrder') ||
+      this.isMissingSortOrderColumn(error, 'Video.sortOrder')
+    );
+  }
+
+  private isMissingSortOrderColumn(error: unknown, column: string): boolean {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+    if (error.code !== 'P2022') return false;
+
+    const metaColumn = String((error.meta as Record<string, unknown> | undefined)?.column ?? '');
+    return metaColumn.toLowerCase().endsWith(column.toLowerCase());
   }
 }
 
