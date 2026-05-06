@@ -170,6 +170,28 @@ export class AdminsController {
     return this.admins.getSubjectTeachers(subjectId);
   }
 
+  @Get('subjects/:subjectId/available-teachers')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get available teachers for subject/program (by college/department) ' })
+  async getAvailableTeachersForSubject(
+    @Param('subjectId', new ParseUUIDPipe({ version: '4' })) subjectId: string,
+  ) {
+    return this.admins.getAvailableTeachersForSubject(subjectId);
+  }
+
+  @Get('subjects/:subjectId/courses')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get courses of a subject' })
+  async getCoursesOfSubject(
+    @Param('subjectId', new ParseUUIDPipe({ version: '4' })) subjectId: string,
+  ) {
+    return this.admins.getCoursesOfSubject(subjectId);
+  }
+
   @Post('subjects/:subjectId/teachers')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -310,6 +332,50 @@ export class AdminsController {
     @Param('departmentId', new ParseUUIDPipe({ version: '4' })) departmentId: string,
   ) {
     return this.admins.getTeachersByDepartmentId(departmentId);
+  }
+
+  @Get('programs/:programId/available-teachers')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get available teachers for a program (by college/department)' })
+  async getAvailableTeachersForProgram(
+    @Param('programId', new ParseUUIDPipe({ version: '4' })) programId: string,
+  ) {
+    return this.admins.getAvailableTeachersForSubject(programId);
+  }
+
+  @Get('programs/:programId/courses')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get courses of a program' })
+  async getCoursesOfProgram(
+    @Param('programId', new ParseUUIDPipe({ version: '4' })) programId: string,
+  ) {
+    return this.admins.getCoursesOfProgram(programId);
+  }
+
+  @Get('teachers/:teacherId/courses')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get courses created by a teacher' })
+  async getCoursesOfTeacher(
+    @Param('teacherId', new ParseUUIDPipe({ version: '4' })) teacherId: string,
+  ) {
+    return this.admins.getCoursesOfTeacher(teacherId);
+  }
+
+  @Get('students/:studentId/courses')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get courses subscribed by a student' })
+  async getCoursesOfStudent(
+    @Param('studentId', new ParseUUIDPipe({ version: '4' })) studentId: string,
+  ) {
+    return this.admins.getCoursesOfStudent(studentId);
   }
 
   @Get('colleges/:collegeId/programs')
