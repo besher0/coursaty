@@ -13,6 +13,7 @@
     "test": "jest",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
     "backfill:province-links": "ts-node src/scripts/backfill-province-links.ts",
     "seed:provinces": "ts-node src/scripts/seed-provinces.ts",
     "upload:video:auto": "ts-node src/scripts/upload-video-auto.ts"

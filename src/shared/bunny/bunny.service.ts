@@ -247,6 +247,84 @@ export class BunnyService {
     return `https://${this.storagePublicHost}/${path}`;
   }
 
+  async verifyStorageCredentials() {
+    if (!this.storageZone || !this.storageHost || !this.storageApiKey) {
+      throw new BadGatewayException('Missing Bunny Storage config (BUNNY_STORAGE_ZONE/BUNNY_STORAGE_HOST/BUNNY_STORAGE_API_KEY)');
+    }
+
+    const probePath = `healthchecks/bunny-storage-${randomUUID()}.txt`;
+    const payload = Buffer.from(`probe:${new Date().toISOString()}`, 'utf8');
+    const url = `https://${this.storageHost}/${this.storageZone}/${probePath}`;
+    const startedAt = Date.now();
+
+    try {
+      await axios.put(url, payload, {
+        headers: {
+          AccessKey: this.storageApiKey,
+          'Content-Type': 'text/plain',
+          'Content-Length': payload.length,
+        },
+        timeout: 30000,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+      });
+
+      await axios.delete(url, {
+        headers: {
+          AccessKey: this.storageApiKey,
+        },
+        timeout: 30000,
+      });
+
+      return {
+        ok: true,
+        host: this.storageHost,
+        zone: this.storageZone,
+        publicHost: this.storagePublicHost,
+        probePath,
+        elapsedMs: Date.now() - startedAt,
+        storageKeyMask: this.maskSecret(this.storageApiKey),
+      };
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const code = error?.code || 'UNKNOWN';
+      const message = error?.message || 'Unknown error';
+      throw new BadGatewayException(
+        `Bunny Storage verification failed (${code}${status ? `/${status}` : ''}): ${message}. Check BUNNY_STORAGE_HOST region endpoint and BUNNY_STORAGE_API_KEY.`,
+      );
+    }
+  }
+
+  async verifyStreamCredentials() {
+    this.assertStreamConfigured();
+
+    const url = `https://video.bunnycdn.com/library/${this.streamLibraryId}/videos?page=1&itemsPerPage=1`;
+    const startedAt = Date.now();
+
+    try {
+      await axios.get(url, {
+        headers: {
+          AccessKey: this.apiKey,
+        },
+        timeout: 30000,
+      });
+
+      return {
+        ok: true,
+        libraryId: this.streamLibraryId,
+        elapsedMs: Date.now() - startedAt,
+        streamKeyMask: this.maskSecret(this.apiKey),
+      };
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const code = error?.code || 'UNKNOWN';
+      const message = error?.message || 'Unknown error';
+      throw new BadGatewayException(
+        `Bunny Stream verification failed (${code}${status ? `/${status}` : ''}): ${message}. Check BUNNY_STREAM_LIBRARY_ID and BUNNY_API_KEY.`,
+      );
+    }
+  }
+
   private assertStreamConfigured() {
     if (!this.streamLibraryId || !this.apiKey) {
       throw new BadGatewayException('Missing Bunny Stream config (BUNNY_STREAM_LIBRARY_ID/BUNNY_API_KEY)');
@@ -324,6 +402,13 @@ export class BunnyService {
     if (!Number.isFinite(expiresInSeconds)) return DEFAULT_TTL;
     const rounded = Math.floor(expiresInSeconds);
     return Math.min(MAX_TTL, Math.max(MIN_TTL, rounded));
+  }
+
+  private maskSecret(secret: string): string {
+    const value = String(secret || '').trim();
+    if (!value) return '';
+    if (value.length <= 8) return '*'.repeat(value.length);
+    return `${value.slice(0, 4)}...${value.slice(-4)}`;
   }
 
   private readEnv(key: string): string {

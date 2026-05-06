@@ -106,4 +106,12 @@ export class UploadsController {
   getVideoResolutions(@Param('videoId', new ParseUUIDPipe({ version: '4' })) videoId: string) {
     return this.uploads.getBunnyVideoResolutions(videoId);
   }
+
+  @Get('bunny/verify')
+  @ApiOperation({ summary: 'Verify Bunny Storage/Stream credentials and endpoints' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  verifyBunnyConfiguration() {
+    return this.uploads.verifyBunnyConfiguration();
+  }
 }

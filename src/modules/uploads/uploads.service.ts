@@ -126,6 +126,24 @@ export class UploadsService {
     });
   }
 
+  async verifyBunnyConfiguration() {
+    const [storageCheck, streamCheck] = await Promise.allSettled([
+      this.bunny.verifyStorageCredentials(),
+      this.bunny.verifyStreamCredentials(),
+    ]);
+
+    return {
+      storage:
+        storageCheck.status === 'fulfilled'
+          ? storageCheck.value
+          : { ok: false, message: this.getErrorMessage(storageCheck.reason) },
+      stream:
+        streamCheck.status === 'fulfilled'
+          ? streamCheck.value
+          : { ok: false, message: this.getErrorMessage(streamCheck.reason) },
+    };
+  }
+
   async getBunnyVideoResolutions(videoId: string) {
     const { streamVideoId, source } = await this.resolveStreamVideoId(videoId);
 
@@ -222,5 +240,21 @@ export class UploadsService {
 
     const responseStatus = (error as any)?.response?.status;
     return typeof responseStatus === 'number' ? responseStatus : undefined;
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      if (typeof response === 'string') return response;
+      if (response && typeof response === 'object') {
+        const message = (response as any).message;
+        if (Array.isArray(message)) return message.join(', ');
+        if (typeof message === 'string') return message;
+      }
+      return error.message;
+    }
+
+    const message = (error as any)?.message;
+    return typeof message === 'string' ? message : 'Unknown error';
   }
 }
