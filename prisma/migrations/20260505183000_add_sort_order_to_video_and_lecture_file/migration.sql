@@ -1,4 +1,4 @@
-﻿-- Add sortOrder for course content ordering
+-- Add sortOrder for course content ordering
 ALTER TABLE "Video"
 ADD COLUMN IF NOT EXISTS "sortOrder" INTEGER;
 

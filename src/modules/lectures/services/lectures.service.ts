@@ -378,7 +378,7 @@ export class LecturesService {
             orderBy: [{ id: 'asc' }],
             include: {
               segments: {
-                orderBy: [{ sortOrder: 'asc' }, { startSeconds: 'asc' }],
+                orderBy: [{ startSeconds: 'asc' }, { id: 'asc' }],
               },
             },
           },
@@ -938,7 +938,8 @@ export class LecturesService {
   private isAnySortOrderColumnMissing(error: unknown): boolean {
     return (
       this.isMissingSortOrderColumn(error, 'LectureFile.sortOrder') ||
-      this.isMissingSortOrderColumn(error, 'Video.sortOrder')
+      this.isMissingSortOrderColumn(error, 'Video.sortOrder') ||
+      this.isMissingSortOrderColumn(error, 'VideoSegment.sortOrder')
     );
   }
 

@@ -355,6 +355,7 @@ export class CourseService {
       },
       details: {
         categoryId: course.categoryId,
+        subjectId: course.subjectId,
         universityId: course.universityId,
         collegeId: course.collegeId,
         departmentId: course.departmentId,

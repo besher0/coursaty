@@ -174,12 +174,15 @@ export class DashboardService {
     }>,
   ) {
     const normalizedTeachers = teachers ?? [];
+    const primaryTeacher = normalizedTeachers[0] ?? null;
     return {
       id: subject.id,
       name: subject.subjectName,
       isProgram: subject.isProgram,
       imageUrl: imageUrl ?? null,
-      teacher: normalizedTeachers[0] ?? null,
+      teacher: primaryTeacher,
+      teacherId: primaryTeacher?.id ?? null,
+      teacherName: primaryTeacher?.name ?? null,
       teachers: normalizedTeachers,
       college: subject.college
         ? {
@@ -225,38 +228,76 @@ export class DashboardService {
 
     if (!normalizedIds.length) return teachersBySubjectId;
 
-    const courseTeachers = await this.prisma.course.findMany({
-      where: {
-        subjectId: { in: normalizedIds },
-        status: 'APPROVED',
-      },
-      select: {
-        subjectId: true,
-        teacher: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-            telegramUrl: true,
-            instagramUrl: true,
+    const [courseTeachers, permissionTeachers] = await Promise.all([
+      this.prisma.course.findMany({
+        where: {
+          subjectId: { in: normalizedIds },
+          status: 'APPROVED',
+        },
+        select: {
+          subjectId: true,
+          teacher: {
+            select: {
+              id: true,
+              name: true,
+              image: true,
+              telegramUrl: true,
+              instagramUrl: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.teacherSubjectPermission.findMany({
+        where: {
+          subjectId: { in: normalizedIds },
+        },
+        select: {
+          subjectId: true,
+          teacher: {
+            select: {
+              id: true,
+              name: true,
+              image: true,
+              telegramUrl: true,
+              instagramUrl: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    const appendTeacher = (
+      subjectId: string,
+      teacher: {
+        id: string;
+        name: string;
+        image: string | null;
+        telegramUrl: string | null;
+        instagramUrl: string | null;
+      } | null,
+    ) => {
+      if (!teacher) return;
+      const current = teachersBySubjectId.get(subjectId) ?? [];
+      if (current.some((item) => item.id === teacher.id)) return;
+      current.push({
+        id: teacher.id,
+        name: teacher.name,
+        image: teacher.image ?? null,
+        telegramUrl: teacher.telegramUrl ?? null,
+        instagramUrl: teacher.instagramUrl ?? null,
+      });
+      teachersBySubjectId.set(subjectId, current);
+    };
 
     for (const row of courseTeachers) {
-      if (!row.subjectId || !row.teacher) continue;
-      const current = teachersBySubjectId.get(row.subjectId) ?? [];
-      if (current.some((teacher) => teacher.id === row.teacher.id)) continue;
-      current.push({
-        id: row.teacher.id,
-        name: row.teacher.name,
-        image: row.teacher.image ?? null,
-        telegramUrl: row.teacher.telegramUrl ?? null,
-        instagramUrl: row.teacher.instagramUrl ?? null,
-      });
-      teachersBySubjectId.set(row.subjectId, current);
+      if (!row.subjectId) continue;
+      appendTeacher(row.subjectId, row.teacher);
+    }
+
+    for (const row of permissionTeachers) {
+      appendTeacher(row.subjectId, row.teacher);
     }
 
     return teachersBySubjectId;
@@ -413,9 +454,12 @@ export class DashboardService {
       },
       programs: programs.map((program) => {
         const programTeachers = teachersByProgramId.get(program.id) ?? [];
+        const primaryTeacher = programTeachers[0] ?? null;
         return {
           ...program,
-          teacher: programTeachers[0] ?? null,
+          teacher: primaryTeacher,
+          teacherId: primaryTeacher?.id ?? null,
+          teacherName: primaryTeacher?.name ?? null,
           teachers: programTeachers,
         };
       }),
