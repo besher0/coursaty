@@ -341,6 +341,13 @@ export class TeachersService {
         name: course.name,
         imageUrl: course.imageUrl ?? null,
         duration: course.duration,
+        teacher: {
+          id: teacher.id,
+          name: teacher.name,
+          image: teacher.image ?? null,
+          telegramUrl: teacher.telegramUrl ?? null,
+          instagramUrl: teacher.instagramUrl ?? null,
+        },
         season: course.season
           ? {
               id: course.season.id,
@@ -434,6 +441,13 @@ export class TeachersService {
               expiresAt: Date | null;
               studentsCount: number;
               createdAt: Date;
+              teacher: {
+                id: string;
+                name: string;
+                image: string | null;
+                telegramUrl: string | null;
+                instagramUrl: string | null;
+              };
               season: { id: string; name: string; number: number } | null;
             }>;
           }
@@ -480,6 +494,13 @@ export class TeachersService {
         expiresAt: course.expiresAt ?? null,
         createdAt: course.createdAt,
         studentsCount: course._count.subscriptions,
+        teacher: {
+          id: teacher.id,
+          name: teacher.name,
+          image: teacher.image ?? null,
+          telegramUrl: teacher.telegramUrl ?? null,
+          instagramUrl: teacher.instagramUrl ?? null,
+        },
         season: course.season
           ? { id: course.season.id, name: course.season.seasonName, number: course.season.seasonNumber }
           : null,

@@ -513,6 +513,9 @@ export class FinancialsService {
       where: {
         studentId,
         OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
+        course: {
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
       },
       include: this.subscriptionCourseInclude,
       orderBy: { createdAt: 'desc' },
@@ -531,7 +534,10 @@ export class FinancialsService {
     const subscriptions = await this.prisma.studentSubscription.findMany({
       where: {
         studentId,
-        expiresAt: { lt: now },
+        OR: [
+          { expiresAt: { lt: now } },
+          { course: { expiresAt: { lte: now } } },
+        ],
       },
       include: this.subscriptionCourseInclude,
       orderBy: { createdAt: 'desc' },

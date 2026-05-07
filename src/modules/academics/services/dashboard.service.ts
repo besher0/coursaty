@@ -145,30 +145,6 @@ export class DashboardService {
             number: course.collegeYear.academicYear.yearNumber,
           }
         : null,
-      studentsCount: course._count?.subscriptions ?? 0,
-    };
-  }
-
-  private buildCourseCardWithTeacher(course: any) {
-    return {
-      id: course.id,
-      name: course.name,
-      imageUrl: course.imageUrl ?? null,
-      price: course.price,
-      season: course.season
-        ? {
-            id: course.season.id,
-            name: course.season.seasonName,
-            number: course.season.seasonNumber,
-          }
-        : null,
-      year: course.collegeYear?.academicYear
-        ? {
-            id: course.collegeYear.academicYear.id,
-            name: course.collegeYear.academicYear.yearName,
-            number: course.collegeYear.academicYear.yearNumber,
-          }
-        : null,
       teacher: course.teacher
         ? {
             id: course.teacher.id,
@@ -182,12 +158,29 @@ export class DashboardService {
     };
   }
 
-  private buildSubjectCard(subject: any, imageUrl?: string | null) {
+  private buildCourseCardWithTeacher(course: any) {
+    return this.buildCourseCard(course);
+  }
+
+  private buildSubjectCard(
+    subject: any,
+    imageUrl?: string | null,
+    teachers?: Array<{
+      id: string;
+      name: string;
+      image: string | null;
+      telegramUrl: string | null;
+      instagramUrl: string | null;
+    }>,
+  ) {
+    const normalizedTeachers = teachers ?? [];
     return {
       id: subject.id,
       name: subject.subjectName,
       isProgram: subject.isProgram,
       imageUrl: imageUrl ?? null,
+      teacher: normalizedTeachers[0] ?? null,
+      teachers: normalizedTeachers,
       college: subject.college
         ? {
             id: subject.college.id,
@@ -215,6 +208,58 @@ export class DashboardService {
           }
         : null,
     };
+  }
+
+  private async getTeachersBySubjectIds(subjectIds: string[]) {
+    const normalizedIds = Array.from(new Set(subjectIds.filter(Boolean)));
+    const teachersBySubjectId = new Map<
+      string,
+      Array<{
+        id: string;
+        name: string;
+        image: string | null;
+        telegramUrl: string | null;
+        instagramUrl: string | null;
+      }>
+    >();
+
+    if (!normalizedIds.length) return teachersBySubjectId;
+
+    const courseTeachers = await this.prisma.course.findMany({
+      where: {
+        subjectId: { in: normalizedIds },
+        status: 'APPROVED',
+      },
+      select: {
+        subjectId: true,
+        teacher: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+            telegramUrl: true,
+            instagramUrl: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    for (const row of courseTeachers) {
+      if (!row.subjectId || !row.teacher) continue;
+      const current = teachersBySubjectId.get(row.subjectId) ?? [];
+      if (current.some((teacher) => teacher.id === row.teacher.id)) continue;
+      current.push({
+        id: row.teacher.id,
+        name: row.teacher.name,
+        image: row.teacher.image ?? null,
+        telegramUrl: row.teacher.telegramUrl ?? null,
+        instagramUrl: row.teacher.instagramUrl ?? null,
+      });
+      teachersBySubjectId.set(row.subjectId, current);
+    }
+
+    return teachersBySubjectId;
   }
 
   private async resolveSubjectFiltersForCollege(
@@ -354,6 +399,8 @@ export class DashboardService {
       ],
     });
 
+    const teachersByProgramId = await this.getTeachersBySubjectIds(programs.map((program) => program.id));
+
     return {
       college: {
         id: college.id,
@@ -364,7 +411,14 @@ export class DashboardService {
         collegeYearId: filters.collegeYearId ?? null,
         seasonId: resolvedSeasonId ?? null,
       },
-      programs,
+      programs: programs.map((program) => {
+        const programTeachers = teachersByProgramId.get(program.id) ?? [];
+        return {
+          ...program,
+          teacher: programTeachers[0] ?? null,
+          teachers: programTeachers,
+        };
+      }),
     };
   }
 
@@ -418,6 +472,7 @@ export class DashboardService {
 
     const allProgramIds = programs.map((p) => p.id);
     const courseImagesByProgramId = new Map<string, string>();
+    const teachersByProgramId = await this.getTeachersBySubjectIds(allProgramIds);
 
     if (allProgramIds.length > 0) {
       const coursesWithImages = await this.prisma.course.findMany({
@@ -441,7 +496,8 @@ export class DashboardService {
 
     return programs.map((program) => this.buildSubjectCard(
       program, 
-      program.imageUrl ?? courseImagesByProgramId.get(program.id) ?? null
+      program.imageUrl ?? courseImagesByProgramId.get(program.id) ?? null,
+      teachersByProgramId.get(program.id),
     ));
   }
 
@@ -706,6 +762,8 @@ export class DashboardService {
       }
     }
 
+    const teachersByProgramId = await this.getTeachersBySubjectIds(programs.map((program) => program.id));
+
     const skip = (normalizedPage - 1) * normalizedLimit;
     const coursesWhere = {
       collegeId,
@@ -748,6 +806,7 @@ export class DashboardService {
         this.buildSubjectCard(
           program,
           program.imageUrl ?? courseImagesBySubjectId.get(program.id) ?? null,
+          teachersByProgramId.get(program.id),
         ),
       ),
       teachers: teachers.map((teacher) => ({
@@ -1297,6 +1356,7 @@ export class DashboardService {
       include: {
         collegeYear: { include: { academicYear: true } },
         season: true,
+        teacher: true,
         _count: {
           select: {
             subscriptions: true,
@@ -1327,6 +1387,15 @@ export class DashboardService {
             id: course.season.id,
             seasonNumber: course.season.seasonNumber,
             seasonName: course.season.seasonName,
+          }
+        : null,
+      teacher: course.teacher
+        ? {
+            id: course.teacher.id,
+            name: course.teacher.name,
+            image: course.teacher.image ?? null,
+            telegramUrl: course.teacher.telegramUrl ?? null,
+            instagramUrl: course.teacher.instagramUrl ?? null,
           }
         : null,
     }));
@@ -1394,6 +1463,7 @@ export class DashboardService {
               include: {
                 collegeYear: { include: { academicYear: true } },
                 season: true,
+                teacher: true,
                 _count: { select: { subscriptions: true } },
               },
               orderBy: { createdAt: 'desc' },
@@ -1469,6 +1539,7 @@ export class DashboardService {
           include: {
             collegeYear: { include: { academicYear: true } },
             season: true,
+            teacher: true,
             _count: { select: { subscriptions: true } },
           },
           orderBy: { subscriptions: { _count: 'desc' } },
@@ -1534,6 +1605,7 @@ export class DashboardService {
           include: {
             collegeYear: { include: { academicYear: true } },
             season: true,
+            teacher: true,
             _count: { select: { subscriptions: true } },
           },
           orderBy: { createdAt: 'desc' },

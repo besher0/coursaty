@@ -897,6 +897,15 @@ export class CourseService {
   async listCourses() {
     return this.prisma.course.findMany({
       include: {
+        teacher: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+            telegramUrl: true,
+            instagramUrl: true,
+          },
+        },
         _count: { select: { subscriptions: true, lectures: true } },
       },
     });
@@ -924,6 +933,9 @@ export class CourseService {
     });
 
     if (!subscription) throw new ForbiddenException('يلزم اشتراك');
+    if (subscription.expiresAt && subscription.expiresAt.getTime() <= Date.now()) {
+      throw new ForbiddenException('انتهت صلاحية الاشتراك على هذا الكورس');
+    }
   }
 
   private async hasStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {
@@ -938,7 +950,9 @@ export class CourseService {
       },
     });
 
-    return !!subscription;
+    if (!subscription) return false;
+    if (subscription.expiresAt && subscription.expiresAt.getTime() <= Date.now()) return false;
+    return true;
   }
 
   private async assertCourseOwnership(user: { userId: string | number; type: string } | undefined, courseId: string) {

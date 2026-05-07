@@ -228,6 +228,9 @@ export class LecturesService {
     });
 
     if (!subscription) throw new ForbiddenException('يلزم اشتراك');
+    if (subscription.expiresAt && subscription.expiresAt.getTime() <= Date.now()) {
+      throw new ForbiddenException('انتهت صلاحية الاشتراك على هذا الكورس');
+    }
   }
 
   private async hasStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {
@@ -242,7 +245,9 @@ export class LecturesService {
       },
     });
 
-    return !!subscription;
+    if (!subscription) return false;
+    if (subscription.expiresAt && subscription.expiresAt.getTime() <= Date.now()) return false;
+    return true;
   }
 
   private async getCourseAccess(user: { userId: string | number; type: string } | undefined, courseId: string) {

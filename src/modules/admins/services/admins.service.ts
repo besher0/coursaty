@@ -1210,6 +1210,7 @@ export class AdminsService {
     const courses = await this.prisma.course.findMany({
       where: { teacherId },
       include: {
+        teacher: { select: { id: true, name: true, image: true, telegramUrl: true, instagramUrl: true } },
         subject: { select: { id: true, subjectName: true, isProgram: true } },
         college: { select: { id: true, name: true } },
         department: { select: { id: true, name: true } },
@@ -1231,6 +1232,15 @@ export class AdminsService {
         duration: course.duration,
         status: course.status,
         expiresAt: course.expiresAt,
+        teacher: course.teacher
+          ? {
+              id: course.teacher.id,
+              name: course.teacher.name,
+              image: course.teacher.image ?? null,
+              telegramUrl: course.teacher.telegramUrl ?? null,
+              instagramUrl: course.teacher.instagramUrl ?? null,
+            }
+          : null,
         subject: course.subject ? { id: course.subject.id, name: course.subject.subjectName, isProgram: course.subject.isProgram } : null,
         college: course.college,
         department: course.department,

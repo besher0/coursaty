@@ -291,6 +291,9 @@ export class InteractionsService {
     });
 
     if (!subscription) throw new ForbiddenException('يلزم اشتراك');
+    if (subscription.expiresAt && subscription.expiresAt.getTime() <= Date.now()) {
+      throw new ForbiddenException('انتهت صلاحية الاشتراك على هذا الكورس');
+    }
     return { video, dbUser };
   }
 
