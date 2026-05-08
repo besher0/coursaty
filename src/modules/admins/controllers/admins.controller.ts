@@ -50,6 +50,63 @@ export class AdminsController {
     return this.dashboardService.getDashboard(query);
   }
 
+  @Get('universities/:universityId/pending-courses')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get pending courses by university id' })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (default 20, max 50)' })
+  async getPendingCoursesByUniversityId(
+    @Param('universityId', new ParseUUIDPipe({ version: '4' })) universityId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.dashboardService.getPendingCoursesByUniversityId(
+      universityId,
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 20,
+    );
+  }
+
+  @Get('universities/:universityId/pending-teachers')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get pending teachers by university id' })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (default 20, max 50)' })
+  async getPendingTeachersByUniversityId(
+    @Param('universityId', new ParseUUIDPipe({ version: '4' })) universityId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.dashboardService.getPendingTeachersByUniversityId(
+      universityId,
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 20,
+    );
+  }
+
+  @Get('universities/:universityId/pending-notifications')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Get pending notifications by university id' })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (default 20, max 50)' })
+  async getPendingNotificationsByUniversityId(
+    @Param('universityId', new ParseUUIDPipe({ version: '4' })) universityId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.dashboardService.getPendingNotificationsByUniversityId(
+      universityId,
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 20,
+    );
+  }
+
   @Get('dashboard/courses/subjects')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -450,18 +507,24 @@ export class AdminsController {
   @ApiQuery({ name: 'collegeId', required: false, description: 'Filter by college (UUID)' })
   @ApiQuery({ name: 'year', required: false, description: 'Filter by year (e.g. 2026)' })
   @ApiQuery({ name: 'month', required: false, description: 'Filter by month (1-12)' })
+  @ApiQuery({ name: 'dateFrom', required: false, description: 'Filter start date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'dateTo', required: false, description: 'Filter end date (YYYY-MM-DD)' })
   @ApiOkResponse({ description: 'Revenue statistics' })
   async getRevenue(
     @Query('universityId') universityId?: string,
     @Query('collegeId') collegeId?: string,
     @Query('year') year?: string,
     @Query('month') month?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
   ) {
     return this.admins.getRevenue(
       universityId,
       collegeId,
       year ? Number(year) : undefined,
       month ? Number(month) : undefined,
+      dateFrom,
+      dateTo,
     );
   }
 

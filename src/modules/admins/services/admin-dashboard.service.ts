@@ -521,6 +521,14 @@ export class AdminDashboardService {
     };
   }
 
+  async getPendingTeachersByUniversityId(
+    universityId: string,
+    page: number = 1,
+    limit: number = 20,
+  ) {
+    return this.getPendingTeachers(page, limit, universityId);
+  }
+
   /**
    * Get pending courses with pagination
    */
@@ -581,6 +589,14 @@ export class AdminDashboardService {
     };
   }
 
+  async getPendingCoursesByUniversityId(
+    universityId: string,
+    page: number = 1,
+    limit: number = 20,
+  ) {
+    return this.getPendingCourses(page, limit, universityId);
+  }
+
   /**
    * Get pending notifications with pagination
    */
@@ -614,9 +630,51 @@ export class AdminDashboardService {
         skip,
         take: normalizedLimit,
         orderBy: { createdAt: 'desc' },
+        include: {
+          createdBy: {
+            select: {
+              id: true,
+              userableId: true,
+              userableType: true,
+            },
+          },
+        },
       }),
       this.prisma.notification.count({ where }),
     ]);
+
+    const teacherIds = Array.from(
+      new Set(
+        notifications
+          .filter((notification) => notification.createdBy?.userableType === 'TEACHER')
+          .map((notification) => notification.createdBy!.userableId),
+      ),
+    );
+    const adminIds = Array.from(
+      new Set(
+        notifications
+          .filter((notification) => notification.createdBy?.userableType === 'ADMIN')
+          .map((notification) => notification.createdBy!.userableId),
+      ),
+    );
+
+    const [teachers, admins] = await Promise.all([
+      teacherIds.length
+        ? this.prisma.teacher.findMany({
+            where: { id: { in: teacherIds } },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+      adminIds.length
+        ? this.prisma.admin.findMany({
+            where: { id: { in: adminIds } },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const teacherNameById = new Map(teachers.map((teacher) => [teacher.id, teacher.name]));
+    const adminNameById = new Map(admins.map((admin) => [admin.id, admin.name]));
 
     const notificationsDisplay: NotificationPendingDto[] = notifications.map(
       (notif) => ({
@@ -625,6 +683,17 @@ export class AdminDashboardService {
         description: notif.description,
         status: notif.status,
         createdAt: notif.createdAt,
+        sender: {
+          userId: notif.createdBy?.id ?? null,
+          userType: (notif.createdBy?.userableType as 'TEACHER' | 'ADMIN' | null) ?? null,
+          entityId: notif.createdBy?.userableId ?? null,
+          name:
+            notif.createdBy?.userableType === 'TEACHER'
+              ? (teacherNameById.get(notif.createdBy.userableId) ?? null)
+              : notif.createdBy?.userableType === 'ADMIN'
+                ? (adminNameById.get(notif.createdBy.userableId) ?? null)
+                : null,
+        },
       }),
     );
 
@@ -636,6 +705,14 @@ export class AdminDashboardService {
         total,
       },
     };
+  }
+
+  async getPendingNotificationsByUniversityId(
+    universityId: string,
+    page: number = 1,
+    limit: number = 20,
+  ) {
+    return this.getPendingNotifications(page, limit, universityId);
   }
 
   /**

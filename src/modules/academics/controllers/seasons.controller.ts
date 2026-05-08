@@ -19,7 +19,7 @@ export class SeasonsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   create(@Body() body: CreateSeasonDto) {
-    return this.academics.createSeason(body.seasonName, body.seasonNumber);
+    return this.academics.createSeason(body.seasonName, body.seasonNumber, body.isHomeActive);
   }
 
   @Get()

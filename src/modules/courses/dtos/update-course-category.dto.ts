@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 export class UpdateCourseCategoryDto {
 	@ApiPropertyOptional()
@@ -12,4 +12,10 @@ export class UpdateCourseCategoryDto {
 	@IsOptional()
 	@IsBoolean()
 	isProgram?: boolean;
+
+	@ApiPropertyOptional({ description: 'Display order (lower first)' })
+	@IsOptional()
+	@IsInt()
+	@Min(0)
+	sortOrder?: number;
 }

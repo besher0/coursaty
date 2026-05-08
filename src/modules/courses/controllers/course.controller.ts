@@ -43,7 +43,7 @@ export class CourseController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   createCourseCategory(@Body() dto: CreateCourseCategoryDto) {
-    return this.courseService.createCourseCategory(dto.name, dto.isProgram);
+    return this.courseService.createCourseCategory(dto.name, dto.isProgram, dto.sortOrder);
   }
 
   @Patch('categories/:id')
@@ -51,7 +51,7 @@ export class CourseController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   updateCourseCategory(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Body() dto: UpdateCourseCategoryDto) {
-    return this.courseService.updateCourseCategory(id, dto.name, dto.isProgram);
+    return this.courseService.updateCourseCategory(id, dto.name, dto.isProgram, dto.sortOrder);
   }
 
   @Delete('categories/:id')

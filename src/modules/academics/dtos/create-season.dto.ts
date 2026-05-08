@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber, IsString } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateSeasonDto {
   @ApiProperty()
@@ -9,4 +9,9 @@ export class CreateSeasonDto {
   @ApiProperty()
   @IsNumber()
   seasonNumber: number;
+
+  @ApiProperty({ required: false, default: false })
+  @IsOptional()
+  @IsBoolean()
+  isHomeActive?: boolean;
 }

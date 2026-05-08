@@ -136,6 +136,21 @@ export class NotificationPendingDto {
 
   @ApiProperty({ example: '2026-02-15T10:00:00.000Z' })
   createdAt: Date;
+
+  @ApiProperty({
+    example: {
+      userId: '550e8400-e29b-41d4-a716-446655440000',
+      userType: 'TEACHER',
+      entityId: '550e8400-e29b-41d4-a716-446655440001',
+      name: 'Ahmed Hassan',
+    },
+  })
+  sender: {
+    userId: string | null;
+    userType: 'TEACHER' | 'ADMIN' | null;
+    entityId: string | null;
+    name: string | null;
+  };
 }
 
 export class DashboardMetricsDto {

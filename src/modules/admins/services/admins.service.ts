@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateAdminDto } from '../dtos/create-admin.dto';
 import { UsersDirectoryQueryDto, UsersDirectoryType } from '../dtos/users-directory-query.dto';
@@ -22,9 +22,12 @@ export class AdminsService {
     return {
       id: course.id,
       name: course.name,
+      description: course.description ?? null,
       imageUrl: course.imageUrl ?? null,
       price: course.price,
+      duration: course.duration ?? null,
       status: course.status,
+      expiresAt: course.expiresAt ?? null,
       season: course.season
         ? {
             id: course.season.id,
@@ -39,6 +42,13 @@ export class AdminsService {
             number: course.collegeYear.academicYear.yearNumber,
           }
         : null,
+      academicYear: course.collegeYear?.academicYear
+        ? {
+            id: course.collegeYear.academicYear.id,
+            yearName: course.collegeYear.academicYear.yearName,
+            yearNumber: course.collegeYear.academicYear.yearNumber,
+          }
+        : null,
       teacher: course.teacher
         ? {
             id: course.teacher.id,
@@ -46,6 +56,32 @@ export class AdminsService {
             image: course.teacher.image ?? null,
             telegramUrl: course.teacher.telegramUrl ?? null,
             instagramUrl: course.teacher.instagramUrl ?? null,
+          }
+        : null,
+      subject: course.subject
+        ? {
+            id: course.subject.id,
+            name: course.subject.subjectName,
+            isProgram: course.subject.isProgram ?? null,
+          }
+        : null,
+      category: course.category
+        ? {
+            id: course.category.id,
+            name: course.category.name,
+            isProgram: course.category.isProgram ?? null,
+          }
+        : null,
+      college: course.college
+        ? {
+            id: course.college.id,
+            name: course.college.name,
+          }
+        : null,
+      department: course.department
+        ? {
+            id: course.department.id,
+            name: course.department.name,
           }
         : null,
       studentsCount: course._count?.subscriptions ?? 0,
@@ -552,9 +588,17 @@ export class AdminsService {
 
     const assignedIds = new Set(assigned.map((a) => a.teacherId));
 
-    const whereAffiliation: any = {};
-    if (subject.collegeId) whereAffiliation.collegeId = subject.collegeId;
-    if (subject.departmentId) whereAffiliation.departmentId = subject.departmentId;
+    const whereAffiliation: any = {
+      ...(subject.collegeId ? { collegeId: subject.collegeId } : {}),
+      ...(subject.departmentId
+        ? {
+            OR: [
+              { departmentId: subject.departmentId },
+              { departmentId: null },
+            ],
+          }
+        : {}),
+    };
 
     const teachers = await this.prisma.teacher.findMany({
       where: {
@@ -1118,6 +1162,7 @@ export class AdminsService {
       where: { subjectId },
       include: {
         teacher: { select: { id: true, name: true, image: true } },
+        subject: { select: { id: true, subjectName: true, isProgram: true } },
         college: { select: { id: true, name: true } },
         department: { select: { id: true, name: true } },
         season: { select: { id: true, seasonName: true, seasonNumber: true } },
@@ -1130,26 +1175,7 @@ export class AdminsService {
 
     return {
       subject: { id: subject.id, name: subject.subjectName, isProgram: subject.isProgram },
-      courses: courses.map((course) => ({
-        id: course.id,
-        name: course.name,
-        description: course.description ?? null,
-        imageUrl: course.imageUrl ?? null,
-        price: course.price,
-        duration: course.duration,
-        status: course.status,
-        expiresAt: course.expiresAt,
-        teacher: course.teacher
-          ? { id: course.teacher.id, name: course.teacher.name, image: course.teacher.image ?? null }
-          : null,
-        college: course.college,
-        department: course.department,
-        season: course.season
-          ? { id: course.season.id, name: course.season.seasonName, number: course.season.seasonNumber }
-          : null,
-        academicYear: course.collegeYear?.academicYear ?? null,
-        studentsCount: course._count.subscriptions ?? 0,
-      })),
+      courses: courses.map((course) => this.buildCourseCardWithTeacher(course)),
     };
   }
 
@@ -1165,6 +1191,7 @@ export class AdminsService {
       where: { subjectId: programId },
       include: {
         teacher: { select: { id: true, name: true, image: true } },
+        subject: { select: { id: true, subjectName: true, isProgram: true } },
         college: { select: { id: true, name: true } },
         department: { select: { id: true, name: true } },
         season: { select: { id: true, seasonName: true, seasonNumber: true } },
@@ -1177,26 +1204,7 @@ export class AdminsService {
 
     return {
       program: { id: program.id, name: program.subjectName },
-      courses: courses.map((course) => ({
-        id: course.id,
-        name: course.name,
-        description: course.description ?? null,
-        imageUrl: course.imageUrl ?? null,
-        price: course.price,
-        duration: course.duration,
-        status: course.status,
-        expiresAt: course.expiresAt,
-        teacher: course.teacher
-          ? { id: course.teacher.id, name: course.teacher.name, image: course.teacher.image ?? null }
-          : null,
-        college: course.college,
-        department: course.department,
-        season: course.season
-          ? { id: course.season.id, name: course.season.seasonName, number: course.season.seasonNumber }
-          : null,
-        academicYear: course.collegeYear?.academicYear ?? null,
-        studentsCount: course._count.subscriptions ?? 0,
-      })),
+      courses: courses.map((course) => this.buildCourseCardWithTeacher(course)),
     };
   }
 
@@ -1216,6 +1224,7 @@ export class AdminsService {
         department: { select: { id: true, name: true } },
         season: { select: { id: true, seasonName: true, seasonNumber: true } },
         collegeYear: { include: { academicYear: true } },
+        category: { select: { id: true, name: true, isProgram: true } },
         _count: { select: { subscriptions: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -1223,31 +1232,7 @@ export class AdminsService {
 
     return {
       teacher: { id: teacher.id, name: teacher.name },
-      courses: courses.map((course) => ({
-        id: course.id,
-        name: course.name,
-        description: course.description ?? null,
-        imageUrl: course.imageUrl ?? null,
-        price: course.price,
-        duration: course.duration,
-        status: course.status,
-        expiresAt: course.expiresAt,
-        teacher: course.teacher
-          ? {
-              id: course.teacher.id,
-              name: course.teacher.name,
-              image: course.teacher.image ?? null,
-              telegramUrl: course.teacher.telegramUrl ?? null,
-              instagramUrl: course.teacher.instagramUrl ?? null,
-            }
-          : null,
-        subject: course.subject ? { id: course.subject.id, name: course.subject.subjectName, isProgram: course.subject.isProgram } : null,
-        college: course.college,
-        department: course.department,
-        season: course.season ? { id: course.season.id, name: course.season.seasonName, number: course.season.seasonNumber } : null,
-        academicYear: course.collegeYear?.academicYear ?? null,
-        studentsCount: course._count.subscriptions ?? 0,
-      })),
+      courses: courses.map((course) => this.buildCourseCardWithTeacher(course)),
     };
   }
 
@@ -1263,10 +1248,13 @@ export class AdminsService {
       include: {
         course: {
           include: {
-            teacher: { select: { id: true, name: true } },
+            teacher: { select: { id: true, name: true, image: true, telegramUrl: true, instagramUrl: true } },
             subject: { select: { id: true, subjectName: true, isProgram: true } },
+            college: { select: { id: true, name: true } },
+            department: { select: { id: true, name: true } },
             season: { select: { id: true, seasonName: true, seasonNumber: true } },
             collegeYear: { include: { academicYear: true } },
+            category: { select: { id: true, name: true, isProgram: true } },
             _count: { select: { subscriptions: true } },
           },
         },
@@ -1277,19 +1265,7 @@ export class AdminsService {
     return {
       student: { id: student.id, name: student.name, universityNumber: student.universityNumber ?? null, college: student.college },
       courses: subs.map((s) => ({
-        id: s.course.id,
-        name: s.course.name,
-        description: s.course.description ?? null,
-        imageUrl: s.course.imageUrl ?? null,
-        price: s.course.price,
-        duration: s.course.duration,
-        status: s.course.status,
-        expiresAt: s.course.expiresAt,
-        teacher: s.course.teacher ? { id: s.course.teacher.id, name: s.course.teacher.name } : null,
-        subject: s.course.subject ? { id: s.course.subject.id, name: s.course.subject.subjectName, isProgram: s.course.subject.isProgram } : null,
-        season: s.course.season ? { id: s.course.season.id, name: s.course.season.seasonName, number: s.course.season.seasonNumber } : null,
-        academicYear: s.course.collegeYear?.academicYear ?? null,
-        studentsCount: s.course._count.subscriptions ?? 0,
+        ...this.buildCourseCardWithTeacher(s.course),
         subscribedAt: s.createdAt,
       })),
     };
@@ -1439,9 +1415,32 @@ export class AdminsService {
     collegeId?: string,
     year?: number,
     month?: number,
+    dateFrom?: string,
+    dateTo?: string,
   ) {
     const dateFilter: Record<string, any> = {};
-    if (year && month) {
+    if (dateFrom || dateTo) {
+      const parsedFrom = dateFrom ? new Date(dateFrom) : null;
+      const parsedTo = dateTo ? new Date(dateTo) : null;
+
+      if (dateFrom && Number.isNaN(parsedFrom?.getTime())) {
+        throw new BadRequestException('dateFrom غير صالح');
+      }
+      if (dateTo && Number.isNaN(parsedTo?.getTime())) {
+        throw new BadRequestException('dateTo غير صالح');
+      }
+
+      if (!parsedFrom || !parsedTo) {
+        throw new BadRequestException('عند استخدام الفترة الزمنية يجب إرسال dateFrom و dateTo معاً');
+      }
+      if (parsedFrom > parsedTo) {
+        throw new BadRequestException('dateFrom يجب أن يكون قبل أو يساوي dateTo');
+      }
+
+      const endInclusive = new Date(parsedTo);
+      endInclusive.setHours(23, 59, 59, 999);
+      dateFilter.createdAt = { gte: parsedFrom, lte: endInclusive };
+    } else if (year && month) {
       const start = new Date(year, month - 1, 1);
       const end = new Date(year, month, 1);
       dateFilter.createdAt = { gte: start, lt: end };
@@ -1507,6 +1506,8 @@ export class AdminsService {
           collegeName: college?.name ?? null,
           year: year ?? null,
           month: month ?? null,
+          dateFrom: dateFrom ?? null,
+          dateTo: dateTo ?? null,
         },
         subscribersCount: subscriptions.length,
         totalRevenue: round(totalRevenue),
@@ -1578,6 +1579,8 @@ export class AdminsService {
           collegeId: null,
           year: year ?? null,
           month: month ?? null,
+          dateFrom: dateFrom ?? null,
+          dateTo: dateTo ?? null,
         },
         summary: {
           subscribersCount: subscriptions.length,
@@ -1648,6 +1651,8 @@ export class AdminsService {
         collegeId: null,
         year: year ?? null,
         month: month ?? null,
+        dateFrom: dateFrom ?? null,
+        dateTo: dateTo ?? null,
       },
       summary: {
         subscribersCount: subscriptions.length,
@@ -1803,7 +1808,8 @@ export class AdminsService {
         department: student.department,
         universityNumber: student.universityNumber ?? null,
         phone: studentUser?.phone ?? null,
-        status: studentUser?.status ?? null,
+        status: studentUser?.status ?? 'active',
+        hasUserAccount: !!studentUser,
         academicYear: student.collegeYear?.academicYear
           ? {
               id: student.collegeYear.academicYear.id,

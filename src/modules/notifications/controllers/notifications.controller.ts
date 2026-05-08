@@ -26,7 +26,7 @@ export class NotificationsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
   listMy(@Req() req: any, @Query() query: ListNotificationsQueryDto) {
-    return this.notifications.listMyNotifications(req.user, query.universityId);
+    return this.notifications.listMyNotifications(req.user, query.universityId, query.activeOnly);
   }
 
   @Get('pending')

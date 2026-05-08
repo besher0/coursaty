@@ -226,7 +226,7 @@ export class NotificationsService {
     return enriched;
   }
 
-  async listMyNotifications(user?: TokenUser, universityId?: string) {
+  async listMyNotifications(user?: TokenUser, universityId?: string, activeOnly: boolean = true) {
     const dbUser = await this.getUserFromToken(user);
 
     if (dbUser.userableType !== 'TEACHER' && dbUser.userableType !== 'ADMIN') {
@@ -242,6 +242,10 @@ export class NotificationsService {
     const universityScopeFilter = this.buildUniversityScopeFilter(universityId);
     if (universityScopeFilter) {
       filters.push(universityScopeFilter);
+    }
+
+    if (activeOnly) {
+      filters.push({ status: 'APPROVED' });
     }
 
     const where = filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : { AND: filters };

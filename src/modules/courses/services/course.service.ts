@@ -30,28 +30,30 @@ export class CourseService {
     };
   }
 
-  async createCourseCategory(name: string, isProgram?: boolean) {
-    const maxSortOrderResult = await this.prisma.courseCategory.aggregate({
-      _max: { sortOrder: true },
-    });
-
-    const nextSortOrder = (maxSortOrderResult._max.sortOrder ?? 0) + 1;
+  async createCourseCategory(name: string, isProgram?: boolean, sortOrder?: number) {
+    let resolvedSortOrder = sortOrder;
+    if (resolvedSortOrder === undefined) {
+      const maxSortOrderResult = await this.prisma.courseCategory.aggregate({
+        _max: { sortOrder: true },
+      });
+      resolvedSortOrder = (maxSortOrderResult._max.sortOrder ?? 0) + 1;
+    }
 
     return this.prisma.courseCategory.create({
       data: {
         name,
         isProgram,
-        sortOrder: nextSortOrder,
+        sortOrder: resolvedSortOrder,
         // Keep current business rule and existing data behavior.
         requiresAcademicLinks: true,
       },
     });
   }
 
-  async updateCourseCategory(id: string, name?: string, isProgram?: boolean) {
+  async updateCourseCategory(id: string, name?: string, isProgram?: boolean, sortOrder?: number) {
     return this.prisma.courseCategory.update({
       where: { id },
-      data: { name, isProgram },
+      data: { name, isProgram, sortOrder },
     });
   }
 
@@ -263,7 +265,8 @@ export class CourseService {
       data.categoryId = String(dto.categoryId);
     }
 
-    return this.prisma.course.update({ where: { id: String(id) }, data });
+    await this.prisma.course.update({ where: { id: String(id) }, data });
+    return this.getCourseDetails(String(id), user);
   }
 
   deleteCourse(id: string, user?: { userId: string | number; type: string }) {

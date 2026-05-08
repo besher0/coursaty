@@ -359,8 +359,16 @@ export class AcademicsService {
   }
 
   // Seasons
-  createSeason(seasonName: string, seasonNumber: number) {
-    return this.prisma.season.create({ data: { seasonName, seasonNumber } });
+  async createSeason(seasonName: string, seasonNumber: number, isHomeActive?: boolean) {
+    if (isHomeActive) {
+      const [, created] = await this.prisma.$transaction([
+        this.prisma.season.updateMany({ data: { isHomeActive: false } }),
+        this.prisma.season.create({ data: { seasonName, seasonNumber, isHomeActive: true } }),
+      ]);
+      return created;
+    }
+
+    return this.prisma.season.create({ data: { seasonName, seasonNumber, isHomeActive: false } });
   }
   listSeasons() {
     return this.prisma.season.findMany({
@@ -368,10 +376,20 @@ export class AcademicsService {
     });
   }
 
-  updateSeason(id: string, dto: UpdateSeasonDto) {
+  async updateSeason(id: string, dto: UpdateSeasonDto) {
     const data: any = {};
     if (dto.seasonName !== undefined) data.seasonName = dto.seasonName;
     if (dto.seasonNumber !== undefined) data.seasonNumber = dto.seasonNumber;
+    if (dto.isHomeActive !== undefined) data.isHomeActive = dto.isHomeActive;
+
+    if (dto.isHomeActive === true) {
+      const [, updated] = await this.prisma.$transaction([
+        this.prisma.season.updateMany({ data: { isHomeActive: false } }),
+        this.prisma.season.update({ where: { id }, data }),
+      ]);
+      return updated;
+    }
+
     return this.prisma.season.update({ where: { id }, data });
   }
 
