@@ -1272,28 +1272,31 @@ export class DashboardService {
     user: { userId: string | number; type: string },
     guestFilter?: DashboardGuestFilter,
   ) {
-    const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
-    const activeSeasonId = await this.getActiveHomeSeasonId();
+    const { collegeId, college } = await this.getStudentCollege(user, guestFilter);
 
-    // Get all teachers who teach in this college
+    // Teacher directory should include anyone affiliated with this college,
+    // even if they currently have no courses in the active season/year.
     const teachers = await this.prisma.teacher.findMany({
       where: {
-        courses: {
-          some: {
-            OR: [
-              {
-                college: { id: collegeId },
-                ...(collegeYearId ? { collegeYearId } : {}),
-                ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
+        OR: [
+          {
+            affiliations: {
+              some: {
+                collegeId,
               },
-              {
-                subject: { collegeId: collegeId },
-                ...(collegeYearId ? { collegeYearId } : {}),
-                ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
-              },
-            ],
+            },
           },
-        },
+          {
+            courses: {
+              some: {
+                OR: [
+                  { college: { id: collegeId } },
+                  { subject: { collegeId } },
+                ],
+              },
+            },
+          },
+        ],
       },
       include: {
         _count: {
