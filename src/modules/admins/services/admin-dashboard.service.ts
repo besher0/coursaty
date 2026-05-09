@@ -451,6 +451,7 @@ export class AdminDashboardService {
         },
         orderBy: { createdAt: 'desc' },
         select: {
+          id: true,
           userableId: true,
         },
       }),
@@ -499,6 +500,7 @@ export class AdminDashboardService {
 
       teachersDisplay.push({
         id: teacher.id,
+        userId: user.id,
         name: teacher.name,
         description: teacher.description,
         pendingCoursesCount: teacher.courses.length,
@@ -570,11 +572,32 @@ export class AdminDashboardService {
       }),
     ]);
 
+    const teacherIds = courses.map((course) => course.teacher.id);
+    const teacherUsers = teacherIds.length
+      ? await this.prisma.user.findMany({
+          where: {
+            userableType: 'TEACHER',
+            userableId: { in: teacherIds },
+          },
+          select: {
+            id: true,
+            userableId: true,
+          },
+        })
+      : [];
+    const teacherUserIdByTeacherId = new Map(
+      teacherUsers.map((user) => [user.userableId, user.id]),
+    );
+
     const coursesDisplay: CoursePendingDto[] = courses.map((course) => ({
       id: course.id,
       name: course.name,
       subject: course.subject?.subjectName || 'N/A',
-      teacher: course.teacher,
+      teacher: {
+        id: course.teacher.id,
+        userId: teacherUserIdByTeacherId.get(course.teacher.id) ?? null,
+        name: course.teacher.name,
+      },
       status: course.status,
       createdAt: course.createdAt,
     }));

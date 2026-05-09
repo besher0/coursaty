@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { NotificationsService } from '../services/notifications.service';
 import { CreateNotificationDto } from '../dtos/create-notification.dto';
@@ -51,6 +51,22 @@ export class NotificationsController {
   @Roles('ADMIN')
   reject(@Param('id') id: string, @Req() req: any) {
     return this.notifications.rejectNotification(id, req.user);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get notification details by id' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN', 'STUDENT')
+  notificationById(@Param('id') id: string, @Req() req: any) {
+    return this.notifications.notificationById(id, req.user);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete notification permanently (teacher/admin)' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  remove(@Param('id') id: string, @Req() req: any) {
+    return this.notifications.deleteNotification(id, req.user);
   }
 
   @Get()

@@ -1664,103 +1664,105 @@ export class AdminsService {
     };
   }
 
-  async getStudentProfile(studentId: string) {
+  async getStudentProfile(studentIdOrUniversityNumber: string) {
     const now = new Date();
 
-    const [student, studentUser] = await this.prisma.$transaction([
-      this.prisma.student.findUnique({
-        where: { id: studentId },
-        select: {
-          id: true,
-          name: true,
-          universityNumber: true,
-          createdAt: true,
-          college: {
-            select: {
-              id: true,
-              name: true,
+    const student = await this.prisma.student.findFirst({
+      where: {
+        OR: [{ id: studentIdOrUniversityNumber }, { universityNumber: studentIdOrUniversityNumber }],
+      },
+      select: {
+        id: true,
+        name: true,
+        universityNumber: true,
+        createdAt: true,
+        college: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        collegeYear: {
+          select: {
+            id: true,
+            academicYear: {
+              select: { id: true, yearName: true, yearNumber: true },
             },
           },
-          department: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-          collegeYear: {
-            select: {
-              id: true,
-              academicYear: {
-                select: { id: true, yearName: true, yearNumber: true },
-              },
-            },
-          },
-          subscriptions: {
-            select: {
-              course: {
-                select: {
-                  id: true,
-                  name: true,
-                  duration: true,
-                  status: true,
-                  expiresAt: true,
-                  teacher: {
-                    select: {
-                      id: true,
-                      name: true,
-                    },
+        },
+        subscriptions: {
+          select: {
+            course: {
+              select: {
+                id: true,
+                name: true,
+                duration: true,
+                status: true,
+                expiresAt: true,
+                teacher: {
+                  select: {
+                    id: true,
+                    name: true,
                   },
-                  season: {
-                    select: {
-                      id: true,
-                      seasonName: true,
-                      seasonNumber: true,
-                    },
+                },
+                season: {
+                  select: {
+                    id: true,
+                    seasonName: true,
+                    seasonNumber: true,
                   },
-                  category: {
-                    select: {
-                      id: true,
-                      name: true,
-                      isProgram: true,
-                    },
+                },
+                category: {
+                  select: {
+                    id: true,
+                    name: true,
+                    isProgram: true,
                   },
-                  collegeYear: {
-                    select: {
-                      id: true,
-                      academicYear: {
-                        select: {
-                          id: true,
-                          yearName: true,
-                          yearNumber: true,
-                        },
+                },
+                collegeYear: {
+                  select: {
+                    id: true,
+                    academicYear: {
+                      select: {
+                        id: true,
+                        yearName: true,
+                        yearNumber: true,
                       },
                     },
                   },
-                  _count: {
-                    select: {
-                      subscriptions: true,
-                    },
+                },
+                _count: {
+                  select: {
+                    subscriptions: true,
                   },
                 },
               },
             },
           },
         },
-      }),
-      this.prisma.user.findFirst({
-        where: {
-          userableType: 'STUDENT',
-          userableId: studentId,
-        },
-        select: {
-          createdAt: true,
-          phone: true,
-          status: true,
-        },
-      }),
-    ]);
+      },
+    });
 
     if (!student) throw new NotFoundException('Student not found');
+
+    const studentUser = await this.prisma.user.findFirst({
+      where: {
+        userableType: 'STUDENT',
+        userableId: student.id,
+      },
+      select: {
+        id: true,
+        createdAt: true,
+        phone: true,
+        status: true,
+      },
+    });
 
     const mappedCourses = student.subscriptions.map((subscription) => {
       const course = subscription.course;
@@ -1800,9 +1802,18 @@ export class AdminsService {
       };
     });
 
+    const studentYear = student.collegeYear?.academicYear
+      ? {
+          id: student.collegeYear.academicYear.id,
+          name: student.collegeYear.academicYear.yearName,
+          number: student.collegeYear.academicYear.yearNumber,
+        }
+      : null;
+
     return {
       student: {
         id: student.id,
+        userId: studentUser?.id ?? null,
         name: student.name,
         college: student.college,
         department: student.department,
@@ -1810,13 +1821,8 @@ export class AdminsService {
         phone: studentUser?.phone ?? null,
         status: studentUser?.status ?? 'active',
         hasUserAccount: !!studentUser,
-        academicYear: student.collegeYear?.academicYear
-          ? {
-              id: student.collegeYear.academicYear.id,
-              name: student.collegeYear.academicYear.yearName,
-              number: student.collegeYear.academicYear.yearNumber,
-            }
-          : null,
+        academicYear: studentYear,
+        year: studentYear,
         subscriptionsCount: student.subscriptions.length,
         accountCreatedAt: studentUser?.createdAt ?? student.createdAt,
         activeCoursesCount: mappedCourses.filter(
@@ -1900,6 +1906,7 @@ export class AdminsService {
           userableId: teacherId,
         },
         select: {
+          id: true,
           createdAt: true,
           phone: true,
           status: true,
@@ -1972,7 +1979,7 @@ export class AdminsService {
     const coursesForResponse = teacher.courses
       .filter((course) => course.status === 'APPROVED')
       .map((course) => ({
-        courseId: course.id,
+        id: course.id,
         courseName: course.name,
         year: course.collegeYear?.academicYear
           ? {
@@ -1996,6 +2003,7 @@ export class AdminsService {
     return {
       teacher: {
         id: teacher.id,
+        userId: teacherUser?.id ?? null,
         name: teacher.name,
         image: teacher.image,
         coursesCount: teacher._count.courses,

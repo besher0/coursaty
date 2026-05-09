@@ -357,16 +357,16 @@ export class DashboardService {
     guestFilter?: DashboardGuestFilter,
   ) {
     const { collegeId, college, departmentId, collegeYearId } = await this.getStudentCollege(user, guestFilter);
-    const activeSeasonId = await this.getActiveHomeSeasonId();
-    const filters = await this.resolveSubjectFiltersForCollege(collegeId, collegeYearId, options);
-    const resolvedSeasonId = filters.seasonId ?? activeSeasonId;
+    // For this endpoint, only apply explicit year/season filters when provided.
+    // Default response should include all years and all seasons for the college scope.
+    const filters = await this.resolveSubjectFiltersForCollege(collegeId, null, options);
 
     const subjects = await this.prisma.subject.findMany({
       where: {
         collegeId,
         isProgram: false,
         ...(filters.collegeYearId ? { collegeYearId: filters.collegeYearId } : {}),
-        ...(resolvedSeasonId ? { seasonId: resolvedSeasonId } : {}),
+        ...(filters.seasonId ? { seasonId: filters.seasonId } : {}),
         ...(departmentId ? { OR: [{ departmentId: null }, { departmentId }] } : {}),
       },
       include: {
@@ -389,17 +389,111 @@ export class DashboardService {
       ],
     });
 
+    const teachersBySubjectId = await this.getTeachersBySubjectIds(subjects.map((subject) => subject.id));
+    const mappedSubjects = subjects.map((subject) =>
+      this.buildSubjectCard(
+        subject,
+        subject.imageUrl ?? null,
+        teachersBySubjectId.get(subject.id),
+      ),
+    );
+
+    const yearsMap = new Map<
+      string,
+      {
+        year: { id: string | null; name: string | null; number: number | null };
+        seasonsMap: Map<
+          string,
+          {
+            season: { id: string | null; name: string | null; number: number | null };
+            subjects: any[];
+          }
+        >;
+      }
+    >();
+
+    for (const subject of mappedSubjects) {
+      const year = subject.year
+        ? {
+            id: subject.year.id,
+            name: subject.year.name,
+            number: subject.year.number,
+          }
+        : {
+            id: null,
+            name: null,
+            number: null,
+          };
+      const season = subject.season
+        ? {
+            id: subject.season.id,
+            name: subject.season.name,
+            number: subject.season.number,
+          }
+        : {
+            id: null,
+            name: null,
+            number: null,
+          };
+
+      const yearKey = year.id ?? 'no-year';
+      const seasonKey = season.id ?? 'no-season';
+
+      if (!yearsMap.has(yearKey)) {
+        yearsMap.set(yearKey, {
+          year,
+          seasonsMap: new Map(),
+        });
+      }
+
+      const yearEntry = yearsMap.get(yearKey)!;
+      if (!yearEntry.seasonsMap.has(seasonKey)) {
+        yearEntry.seasonsMap.set(seasonKey, {
+          season,
+          subjects: [],
+        });
+      }
+
+      yearEntry.seasonsMap.get(seasonKey)!.subjects.push(subject);
+    }
+
+    const years = Array.from(yearsMap.values())
+      .sort((a, b) => {
+        const aNumber = a.year.number ?? Number.MAX_SAFE_INTEGER;
+        const bNumber = b.year.number ?? Number.MAX_SAFE_INTEGER;
+        return aNumber - bNumber;
+      })
+      .map((yearEntry) => ({
+        year: yearEntry.year,
+        seasons: Array.from(yearEntry.seasonsMap.values())
+          .sort((a, b) => {
+            const aNumber = a.season.number ?? Number.MAX_SAFE_INTEGER;
+            const bNumber = b.season.number ?? Number.MAX_SAFE_INTEGER;
+            return aNumber - bNumber;
+          })
+          .map((seasonEntry) => ({
+            season: seasonEntry.season,
+            subjects: seasonEntry.subjects,
+          })),
+      }));
+
     return {
       college: {
         id: college.id,
         name: college.name,
         universityId: college.universityId,
       },
+      scope: {
+        departmentId: departmentId ?? null,
+        source: user?.type === 'STUDENT' ? 'token' : 'deviceId',
+        studentCollegeYearId: collegeYearId ?? null,
+      },
       filters: {
         collegeYearId: filters.collegeYearId ?? null,
-        seasonId: resolvedSeasonId ?? null,
+        seasonId: filters.seasonId ?? null,
       },
-      subjects,
+      years,
+      subjects: mappedSubjects,
     };
   }
 

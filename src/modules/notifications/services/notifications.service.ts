@@ -193,6 +193,40 @@ export class NotificationsService {
     });
   }
 
+  private isNotificationVisibleToStudent(
+    notification: {
+      status: string;
+      universityId: string | null;
+      collegeId: string | null;
+      departmentId: string | null;
+    },
+    student: {
+      universityId: string;
+      collegeId: string;
+      departmentId: string | null;
+    },
+  ) {
+    if (notification.status !== 'APPROVED') return false;
+
+    if (notification.universityId && notification.universityId === student.universityId) {
+      return true;
+    }
+
+    if (notification.collegeId === student.collegeId && notification.departmentId === null) {
+      return true;
+    }
+
+    if (
+      student.departmentId &&
+      notification.collegeId === student.collegeId &&
+      notification.departmentId === student.departmentId
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
   async createNotification(dto: CreateNotificationDto, user?: TokenUser) {
     const dbUser = await this.getUserFromToken(user);
 
@@ -300,6 +334,59 @@ export class NotificationsService {
     });
 
     return this.attachSenderInfo(notifications);
+  }
+
+  async notificationById(id: string, user?: TokenUser) {
+    const dbUser = await this.getUserFromToken(user);
+
+    const notification = await this.prisma.notification.findUnique({
+      where: { id },
+      include: { createdBy: true, university: true, college: true, department: true, approvedBy: true },
+    });
+
+    if (!notification) throw new NotFoundException('الإشعار غير موجود');
+
+    if (dbUser.userableType === 'TEACHER' && notification.createdById !== dbUser.id) {
+      throw new BadRequestException('لا تملك صلاحية الوصول لهذا الإشعار');
+    }
+
+    if (dbUser.userableType === 'STUDENT') {
+      const student = await this.prisma.student.findUnique({
+        where: { id: dbUser.userableId },
+        select: { universityId: true, collegeId: true, departmentId: true },
+      });
+      if (!student) throw new BadRequestException('الطالب غير موجود');
+
+      if (!this.isNotificationVisibleToStudent(notification, student)) {
+        throw new NotFoundException('الإشعار غير موجود');
+      }
+    }
+
+    const [enriched] = await this.attachSenderInfo([notification]);
+    return enriched;
+  }
+
+  async deleteNotification(id: string, user?: TokenUser) {
+    const dbUser = await this.getUserFromToken(user);
+
+    if (dbUser.userableType !== 'TEACHER' && dbUser.userableType !== 'ADMIN') {
+      throw new BadRequestException('فقط المدرسون والمدراء يمكنهم حذف الإشعارات');
+    }
+
+    const notification = await this.prisma.notification.findUnique({ where: { id } });
+    if (!notification) throw new NotFoundException('الإشعار غير موجود');
+
+    if (dbUser.userableType === 'TEACHER' && notification.createdById !== dbUser.id) {
+      throw new BadRequestException('لا يمكنك حذف إشعار لا يخصك');
+    }
+
+    await this.prisma.notification.delete({ where: { id } });
+
+    return {
+      id,
+      deleted: true,
+      message: 'تم حذف الإشعار بشكل نهائي',
+    };
   }
 
   async approveNotification(id: string, user?: TokenUser) {

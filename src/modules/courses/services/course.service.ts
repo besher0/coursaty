@@ -474,6 +474,15 @@ export class CourseService {
       ? null
       : Math.max(0, basePrice - (basePrice * courseDiscountPct) / 100);
 
+    const ratingsAgg = await this.prisma.courseRating.aggregate({
+      where: { courseId: course.id },
+      _avg: { rating: true },
+      _count: { _all: true },
+    });
+
+    const averageRating = Number((Number(ratingsAgg._avg.rating ?? 0)).toFixed(2));
+    const ratingsCount = ratingsAgg._count._all;
+
     return {
       course: {
         id: course.id,
@@ -520,6 +529,12 @@ export class CourseService {
         discussionGroupUrl: course.discussionGroupUrl,
         telegramUrl: course.discussionGroupUrl,
         instagramUrl: course.teacher.instagramUrl ?? null,
+        rating: {
+          outOf: 5,
+          average: averageRating,
+          count: ratingsCount,
+          ratersCount: ratingsCount,
+        },
       },
       lectures: course.lectures.map((lec) => ({
         id: lec.id,

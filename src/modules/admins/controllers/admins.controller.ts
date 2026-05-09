@@ -349,7 +349,7 @@ export class AdminsController {
   })
   @ApiOkResponse({ description: 'Student profile details' })
   async getStudentProfile(
-    @Param('studentId', new ParseUUIDPipe({ version: '4' })) studentId: string,
+    @Param('studentId') studentId: string,
   ) {
     return this.admins.getStudentProfile(studentId);
   }

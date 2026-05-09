@@ -74,6 +74,9 @@ export class TeacherPendingDto {
   @ApiProperty({ example: 1 })
   id: string;
 
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
+  userId: string;
+
   @ApiProperty({ example: 'Ahmed Hassan' })
   name: string;
 
@@ -111,8 +114,14 @@ export class CoursePendingDto {
   @ApiProperty({ example: 'Mathematics' })
   subject: string;
 
-  @ApiProperty({ example: { id: 1, name: 'Ahmed Hassan' } })
-  teacher: { id: string; name: string };
+  @ApiProperty({
+    example: {
+      id: '550e8400-e29b-41d4-a716-446655440001',
+      userId: '550e8400-e29b-41d4-a716-446655440000',
+      name: 'Ahmed Hassan',
+    },
+  })
+  teacher: { id: string; userId: string | null; name: string };
 
   @ApiProperty({ example: 'PENDING' })
   status: string;

@@ -1,5 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsArray, IsEnum, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
 
 export enum UserType {
   STUDENT = 'STUDENT',
@@ -10,6 +11,21 @@ export enum UserType {
 export enum UserGender {
   MALE = 'MALE',
   FEMALE = 'FEMALE',
+}
+
+class RegisterTeacherAffiliationDto {
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID('4')
+  universityId: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID('4')
+  collegeId: string;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID('4')
+  departmentId?: string;
 }
 
 export class RegisterDto {
@@ -38,4 +54,14 @@ export class RegisterDto {
   @IsOptional()
   @IsEnum(UserGender)
   gender?: UserGender;
+
+  @ApiPropertyOptional({
+    type: [RegisterTeacherAffiliationDto],
+    description: 'Optional affiliations to save at teacher account creation.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RegisterTeacherAffiliationDto)
+  teacherAffiliations?: RegisterTeacherAffiliationDto[];
 }

@@ -13,52 +13,75 @@ export class TeachersService {
   ) {}
 
   async create(dto: CreateTeacherDto) {
-    const hasAnyAffiliationField =
+    const hasLegacyAffiliationFields =
       dto.universityId !== undefined || dto.collegeId !== undefined || dto.departmentId !== undefined;
 
-    if (hasAnyAffiliationField && (!dto.universityId || !dto.collegeId)) {
-      throw new BadRequestException('عند إنشاء الانتساب الأولي، حقلا universityId و collegeId مطلوبان');
-    }
-
-    if (dto.universityId && dto.collegeId) {
-      const university = await this.prisma.university.findUnique({ where: { id: dto.universityId } });
-      if (!university) throw new NotFoundException('الجامعة غير موجودة');
-
-      const college = await this.prisma.college.findUnique({ where: { id: dto.collegeId } });
-      if (!college) throw new NotFoundException('الكلية غير موجودة');
-      if (college.universityId !== dto.universityId) {
-        throw new ForbiddenException('الكلية لا تتبع للجامعة');
-      }
-
-      if (dto.departmentId !== undefined) {
-        const department = await this.prisma.department.findUnique({ where: { id: dto.departmentId } });
-        if (!department) throw new NotFoundException('القسم غير موجود');
-        if (department.collegeId !== dto.collegeId) {
-          throw new ForbiddenException('القسم لا يتبع للكلية');
-        }
-      }
-    }
-
-    const teacher = await this.prisma.teacher.create({
-      data: {
-        name: dto.name,
-        description: dto.description,
-        image: dto.image,
-        telegramUrl: dto.telegramUrl,
-        instagramUrl: dto.instagramUrl,
-      },
-    });
-
-    if (dto.universityId && dto.collegeId) {
-      await this.prisma.teacherAffiliation.create({
-        data: {
-          teacherId: teacher.id,
-          universityId: dto.universityId,
-          collegeId: dto.collegeId,
-          departmentId: dto.departmentId ?? null,
-        },
+    const rawAffiliations = [...(dto.affiliations ?? [])];
+    if (hasLegacyAffiliationFields) {
+      rawAffiliations.push({
+        universityId: dto.universityId,
+        collegeId: dto.collegeId,
+        departmentId: dto.departmentId,
       });
     }
+
+    const normalizedAffiliations = rawAffiliations.map((affiliation) => {
+      const universityId = affiliation.universityId;
+      const collegeId = affiliation.collegeId;
+      const departmentId = affiliation.departmentId;
+
+      if (!universityId || !collegeId) {
+        throw new BadRequestException('كل انتساب يجب أن يحتوي الحقلين universityId و collegeId');
+      }
+
+      return {
+        universityId,
+        collegeId,
+        departmentId: departmentId ?? null,
+      };
+    });
+
+    const uniqueAffiliations = Array.from(
+      new Map(
+        normalizedAffiliations.map((affiliation) => [
+          `${affiliation.universityId}:${affiliation.collegeId}:${affiliation.departmentId ?? ''}`,
+          affiliation,
+        ]),
+      ).values(),
+    );
+
+    for (const affiliation of uniqueAffiliations) {
+      await this.validateAffiliationScope(
+        affiliation.universityId,
+        affiliation.collegeId,
+        affiliation.departmentId ?? undefined,
+      );
+    }
+
+    const teacher = await this.prisma.$transaction(async (tx) => {
+      const createdTeacher = await tx.teacher.create({
+        data: {
+          name: dto.name,
+          description: dto.description,
+          image: dto.image,
+          telegramUrl: dto.telegramUrl,
+          instagramUrl: dto.instagramUrl,
+        },
+      });
+
+      if (uniqueAffiliations.length > 0) {
+        await tx.teacherAffiliation.createMany({
+          data: uniqueAffiliations.map((affiliation) => ({
+            teacherId: createdTeacher.id,
+            universityId: affiliation.universityId,
+            collegeId: affiliation.collegeId,
+            departmentId: affiliation.departmentId,
+          })),
+        });
+      }
+
+      return createdTeacher;
+    });
 
     return teacher;
   }
