@@ -424,25 +424,27 @@ export class TeachersService {
     const [totalCount, courses] = await this.prisma.$transaction([
       this.prisma.course.count({ where }),
       this.prisma.course.findMany({
-      where,
-      select: {
-        id: true,
-        name: true,
-        imageUrl: true,
-        duration: true,
-        expiresAt: true,
-        university: { select: { id: true, name: true } },
-        collegeYear: {
-          select: {
-            id: true,
-            academicYear: { select: { id: true, yearName: true, yearNumber: true } },
+        where,
+        select: {
+          id: true,
+          name: true,
+          imageUrl: true,
+          duration: true,
+          expiresAt: true,
+          university: { select: { id: true, name: true } },
+          college: { select: { id: true, name: true } },
+          department: { select: { id: true, name: true } },
+          collegeYear: {
+            select: {
+              id: true,
+              academicYear: { select: { id: true, yearName: true, yearNumber: true } },
+            },
           },
+          season: { select: { id: true, seasonName: true, seasonNumber: true } },
+          _count: { select: { subscriptions: true } },
+          createdAt: true,
         },
-        season: { select: { id: true, seasonName: true, seasonNumber: true } },
-        _count: { select: { subscriptions: true } },
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: 'desc' },
         skip: pagination.skip,
         take: pagination.take,
       }),
@@ -464,6 +466,8 @@ export class TeachersService {
               expiresAt: Date | null;
               studentsCount: number;
               createdAt: Date;
+              college: { id: string; name: string } | null;
+              department: { id: string; name: string } | null;
               teacher: {
                 id: string;
                 name: string;
@@ -517,6 +521,8 @@ export class TeachersService {
         expiresAt: course.expiresAt ?? null,
         createdAt: course.createdAt,
         studentsCount: course._count.subscriptions,
+        college: course.college ? { id: course.college.id, name: course.college.name } : null,
+        department: course.department ? { id: course.department.id, name: course.department.name } : null,
         teacher: {
           id: teacher.id,
           name: teacher.name,
@@ -676,6 +682,20 @@ export class TeachersService {
         ])
       : [[], []];
 
+    const [withdrawals, withdrawnAgg] = await Promise.all([
+      this.prisma.teacherWithdrawal.findMany({
+        where: { teacherId },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.teacherWithdrawal.aggregate({
+        where: {
+          teacherId,
+          status: 'APPROVED',
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+
     const revenueMap = new Map<string, { grossRevenue: number; subscribersCount: number }>(
       revenueByCourse.map((item) => [
         item.courseId,
@@ -739,6 +759,12 @@ export class TeachersService {
       },
     );
 
+    // Calculate withdrawal statistics
+    const teacherEarnings = totals.teacherRevenue;
+    const withdrawnAmount = this.toNumber(withdrawnAgg._sum.amount);
+    const remainingAmount = Math.max(0, teacherEarnings - withdrawnAmount);
+    const withdrawalCount = withdrawals.filter((w) => w.status === 'APPROVED').length;
+
     return {
       teacher: {
         id: teacher.id,
@@ -750,7 +776,107 @@ export class TeachersService {
         adminRevenue: this.roundCurrency(totals.adminRevenue),
         subscribersCount: totals.subscribersCount,
       },
+      withdrawals: {
+        withdrawnAmount: this.roundCurrency(withdrawnAmount),
+        remainingAmount: this.roundCurrency(remainingAmount),
+        withdrawalCount: withdrawalCount,
+        withdrawalsCount: withdrawalCount,
+      },
       courses: coursesRevenue,
+    };
+  }
+
+  async getTeacherRevenueByPeriod(teacherId: string) {
+    const teacher = await this.getTeacherById(teacherId);
+
+    const courses = await this.prisma.course.findMany({
+      where: { teacherId },
+      select: { id: true, teacherPercentage: true },
+    });
+
+    if (courses.length === 0) {
+      return {
+        teacher: {
+          id: teacher.id,
+          name: teacher.name,
+        },
+        years: [],
+      };
+    }
+
+    const courseIds = courses.map((c) => c.id);
+    const subscriptions = await this.prisma.studentSubscription.findMany({
+      where: { courseId: { in: courseIds } },
+      select: { courseId: true, finalPrice: true, createdAt: true },
+    });
+
+    // Create a map of course teacher percentages
+    const coursePercentageMap = new Map(courses.map((c) => [c.id, this.toNumber(c.teacherPercentage)]));
+
+    // Group by year and month
+    const yearsMap = new Map<
+      number,
+      Map<
+        number,
+        {
+          monthName: string;
+          totalRevenue: number;
+          teacherRevenue: number;
+          subscriptionCount: number;
+        }
+      >
+    >();
+
+    subscriptions.forEach((sub) => {
+      const year = sub.createdAt.getFullYear();
+      const month = sub.createdAt.getMonth();
+      const monthName = sub.createdAt.toLocaleString('en', { month: 'long' });
+
+      if (!yearsMap.has(year)) {
+        yearsMap.set(year, new Map());
+      }
+
+      const monthsMap = yearsMap.get(year)!;
+      if (!monthsMap.has(month)) {
+        monthsMap.set(month, {
+          monthName,
+          totalRevenue: 0,
+          teacherRevenue: 0,
+          subscriptionCount: 0,
+        });
+      }
+
+      const monthData = monthsMap.get(month)!;
+      const finalPrice = this.toNumber(sub.finalPrice);
+      const teacherPercentage = coursePercentageMap.get(sub.courseId) || 0;
+      const teacherEarnings = (finalPrice * teacherPercentage) / 100;
+
+      monthData.totalRevenue += finalPrice;
+      monthData.teacherRevenue += teacherEarnings;
+      monthData.subscriptionCount += 1;
+    });
+
+    // Convert to array and sort
+    const yearsArray = Array.from(yearsMap.entries())
+      .sort((a, b) => b[0] - a[0]) // Sort by year descending
+      .map(([year, monthsMap]) => ({
+        year,
+        months: Array.from(monthsMap.entries())
+          .sort((a, b) => b[0] - a[0]) // Sort by month descending
+          .map(([_, monthData]) => ({
+            monthName: monthData.monthName,
+            totalRevenue: this.roundCurrency(monthData.totalRevenue),
+            teacherRevenue: this.roundCurrency(monthData.teacherRevenue),
+            subscriptionCount: monthData.subscriptionCount,
+          })),
+      }));
+
+    return {
+      teacher: {
+        id: teacher.id,
+        name: teacher.name,
+      },
+      years: yearsArray,
     };
   }
 
@@ -764,7 +890,6 @@ export class TeachersService {
 
   async getTeacherWithdrawals(teacherId: string, params?: { page?: number; limit?: number }) {
     await this.getTeacherById(teacherId);
-
     const pagination = this.normalizePagination(params?.page, params?.limit);
 
     const [total, withdrawals, withdrawnAgg, teacherEarnings] = await Promise.all([

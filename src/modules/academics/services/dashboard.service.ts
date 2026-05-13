@@ -650,9 +650,16 @@ export class DashboardService {
     const filters = await this.resolveSubjectFiltersForCollege(collegeId, collegeYearId, options);
     const resolvedSeasonId = filters.seasonId ?? activeSeasonId;
 
-    // Get advertisements for the college
+    // Get ads targeted by department/college/university, plus global ads for all students.
     const advertisements = await this.prisma.advertisement.findMany({
-      where: { collegeId },
+      where: {
+        OR: [
+          { universityId: null, collegeId: null, departmentId: null },
+          { universityId: college.universityId },
+          { collegeId },
+          ...(departmentId ? [{ departmentId }] : []),
+        ],
+      },
       orderBy: { createdAt: 'desc' },
     });
 

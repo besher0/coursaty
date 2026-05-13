@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AdminsService } from '../services/admins.service';
 import { AdminDashboardService } from '../services/admin-dashboard.service';
@@ -8,6 +8,7 @@ import { DashboardCoursesQueryDto } from '../dtos/dashboard-courses-query.dto';
 import { UsersDirectoryQueryDto } from '../dtos/users-directory-query.dto';
 import { UpdateUserStatusDto } from '../dtos/update-user-status.dto';
 import { ManageSubjectTeacherDto } from '../dtos/manage-subject-teacher.dto';
+import { ResetStudentPasswordDto } from '../dtos/reset-student-password.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/modules/auth/guards/roles.guard';
 import { Roles } from '@/modules/auth/roles.decorator';
@@ -34,6 +35,15 @@ export class AdminsController {
     return this.admins.list();
   }
 
+  @Get('me')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get current admin profile' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  async getProfile(@Req() req: any) {
+    return this.admins.getAdminProfile(req.user.userId);
+  }
+
   @Get('dashboard')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -55,18 +65,10 @@ export class AdminsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Get pending courses by university id' })
-  @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
-  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (default 20, max 50)' })
   async getPendingCoursesByUniversityId(
     @Param('universityId', new ParseUUIDPipe({ version: '4' })) universityId: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
   ) {
-    return this.dashboardService.getPendingCoursesByUniversityId(
-      universityId,
-      page ? Number(page) : 1,
-      limit ? Number(limit) : 20,
-    );
+    return this.dashboardService.getPendingCoursesByUniversityId(universityId);
   }
 
   @Get('universities/:universityId/pending-teachers')
@@ -74,18 +76,10 @@ export class AdminsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Get pending teachers by university id' })
-  @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
-  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (default 20, max 50)' })
   async getPendingTeachersByUniversityId(
     @Param('universityId', new ParseUUIDPipe({ version: '4' })) universityId: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
   ) {
-    return this.dashboardService.getPendingTeachersByUniversityId(
-      universityId,
-      page ? Number(page) : 1,
-      limit ? Number(limit) : 20,
-    );
+    return this.dashboardService.getPendingTeachersByUniversityId(universityId);
   }
 
   @Get('universities/:universityId/pending-notifications')
@@ -93,18 +87,10 @@ export class AdminsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Get pending notifications by university id' })
-  @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
-  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (default 20, max 50)' })
   async getPendingNotificationsByUniversityId(
     @Param('universityId', new ParseUUIDPipe({ version: '4' })) universityId: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
   ) {
-    return this.dashboardService.getPendingNotificationsByUniversityId(
-      universityId,
-      page ? Number(page) : 1,
-      limit ? Number(limit) : 20,
-    );
+    return this.dashboardService.getPendingNotificationsByUniversityId(universityId);
   }
 
   @Get('dashboard/courses/subjects')
@@ -119,8 +105,6 @@ export class AdminsController {
     return this.admins.getDashboardSubjectCourses(
       query.subjectId,
       query.universityId,
-      query.page,
-      query.limit,
     );
   }
 
@@ -136,8 +120,6 @@ export class AdminsController {
     return this.admins.getDashboardProgramCourses(
       query.programId,
       query.universityId,
-      query.page,
-      query.limit,
     );
   }
 
@@ -176,7 +158,18 @@ export class AdminsController {
   async searchPrograms(@Query('name') name?: string) {
     return this.admins.searchPrograms(name);
   }
-
+  @Get('search/students')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary: 'Search students by university number, name, or phone number',
+  })
+  @ApiQuery({ name: 'q', required: false, description: 'Search query (university number, name, or phone)' })
+  @ApiOkResponse({ description: 'Students search results' })
+  async searchStudents(@Query('q') query?: string) {
+    return this.admins.searchStudents(query);
+  }
   @Get('getSubjectsByCollageId')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -354,6 +347,21 @@ export class AdminsController {
     return this.admins.getStudentProfile(studentId);
   }
 
+  @Post('students/:studentId/reset-password')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary: 'Reset student password and return the new plain password',
+  })
+  @ApiOkResponse({ description: 'Student password reset successfully' })
+  async resetStudentPassword(
+    @Param('studentId') studentId: string,
+    @Body() body: ResetStudentPasswordDto,
+  ) {
+    return this.admins.resetStudentPassword(studentId, body?.password);
+  }
+
   @Get('teachers/:teacherId/profile')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -479,22 +487,16 @@ export class AdminsController {
     enum: ['active', 'expired', 'deleted', 'pending'],
     description: 'Select the tab/status you want to list',
   })
-  @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
-  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (default 20, max 100)' })
   @ApiOkResponse({ description: 'Classified courses search results' })
   async searchCourses(
     @Query('name') name?: string,
     @Query('relatedTo') relatedTo?: 'subject' | 'program',
     @Query('status') status?: 'active' | 'expired' | 'deleted' | 'pending',
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
   ) {
     return this.admins.searchCourses(
       name,
       relatedTo,
       status ?? 'active',
-      page ? Number(page) : 1,
-      limit ? Number(limit) : 20,
     );
   }
 
@@ -532,7 +534,7 @@ export class AdminsController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'List teachers or students with pagination and search' })
+  @ApiOperation({ summary: 'List teachers or students with search' })
   @ApiOkResponse({ description: 'Users directory results' })
   async getUsersDirectory(@Query() query: UsersDirectoryQueryDto) {
     return this.admins.getUsersDirectory(query);

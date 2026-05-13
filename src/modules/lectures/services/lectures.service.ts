@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { BunnyService } from '@/shared/bunny/bunny.service';
@@ -24,15 +24,29 @@ export class LecturesService {
 
   async createLecture(dto: CreateLectureDto, user?: { userId: string | number; type: string }) {
     await this.assertCourseOwnership(user, dto.courseId);
-    return this.prisma.lecture.create({
-      data: {
-        courseId: String(dto.courseId),
-        title: dto.title,
-        description: dto.description,
-        imageUrl: dto.imageUrl,
-        sortOrder: dto.sortOrder ?? null,
-      },
-    });
+    const sortOrder = dto.sortOrder ?? (await this.getNextLectureSortOrder(dto.courseId));
+
+    try {
+      return await this.prisma.lecture.create({
+        data: {
+          courseId: String(dto.courseId),
+          title: dto.title,
+          description: dto.description,
+          imageUrl: dto.imageUrl,
+          sortOrder,
+        },
+      });
+    } catch (error) {
+      if (!this.isMissingSortOrderColumn(error, 'Lecture.sortOrder')) throw error;
+      return this.prisma.lecture.create({
+        data: {
+          courseId: String(dto.courseId),
+          title: dto.title,
+          description: dto.description,
+          imageUrl: dto.imageUrl,
+        },
+      });
+    }
   }
 
   async listLectures(courseId: string, user?: { userId: string | number; type: string }) {
@@ -487,33 +501,51 @@ export class LecturesService {
     const ext = path.extname(file.originalname || '') || '.mp4';
     const fileName = `${randomUUID()}${ext}`;
     const storagePath = `lectures/${lectureId}/videos/${fileName}`;
-    const storageVideoUrl = await this.bunny.uploadImage(storagePath, file);
+    let storageVideoUrl: string | null = null;
+    let storageUploadError: string | null = null;
+    try {
+      storageVideoUrl = await this.bunny.uploadImage(storagePath, file);
+    } catch (error) {
+      storageUploadError = this.bunny.describeError(error, 'Bunny Storage upload');
+    }
 
     let streamPlayback = {
       streamVideoId: null as string | null,
       streamEmbedUrl: null as string | null,
       streamPlayUrl: null as string | null,
+      streamMasterPlaylistUrl: null as string | null,
       streamPlaylistUrl: null as string | null,
       streamFallbackUrl: null as string | null,
       availableResolutions: null as string[] | null,
+      playlistResolutions: null as Array<{ resolution: string; path: string }> | null,
       mp4Resolutions: null as Array<{ resolution: string; path: string }> | null,
       preferredResolution: (dto.preferredResolution ?? null) as string | null,
+      preferredPlaylistResolutionUrl: null as string | null,
       preferredResolutionUrl: null as string | null,
       isPlayable: null as boolean | null,
       isPlaylistPlayable: null as boolean | null,
     };
+    let streamUploadError: string | null = null;
+    let streamVideoId: string | null = null;
     try {
       const { guid } = await this.bunny.createStreamVideo(title);
+      streamVideoId = guid;
       await this.bunny.uploadStreamVideo(guid, file);
       streamPlayback = await this.bunny.getStreamPlaybackPayload(guid, dto.preferredResolution);
-    } catch {
+    } catch (error) {
+      streamUploadError = this.bunny.describeError(error, 'Bunny Stream upload');
       streamPlayback = {
         ...streamPlayback,
-        streamVideoId: null,
+        streamVideoId,
       };
     }
 
     const persistedVideoUrl = streamPlayback.streamPlayUrl ?? storageVideoUrl;
+    if (!persistedVideoUrl) {
+      throw new BadGatewayException(
+        [storageUploadError, streamUploadError].filter(Boolean).join(' | ') || 'Video upload failed',
+      );
+    }
     const sortOrder = dto.sortOrder ?? (await this.getNextVideoSortOrder(lectureId));
 
     const created = await this.prisma.video.create({
@@ -529,8 +561,10 @@ export class LecturesService {
 
     return {
       ...created,
-      downloadUrl: storageVideoUrl,
+      downloadUrl: storageVideoUrl ?? persistedVideoUrl,
       storageVideoUrl,
+      storageUploadError,
+      streamUploadError,
       ...streamPlayback,
     };
   }
@@ -665,6 +699,20 @@ export class LecturesService {
       return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
     } catch (error) {
       if (!this.isMissingSortOrderColumn(error, 'Video.sortOrder')) throw error;
+      return 1;
+    }
+  }
+
+  private async getNextLectureSortOrder(courseId: string) {
+    try {
+      const maxSortOrderResult = await this.prisma.lecture.aggregate({
+        where: { courseId: String(courseId) },
+        _max: { sortOrder: true },
+      });
+
+      return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
+    } catch (error) {
+      if (!this.isMissingSortOrderColumn(error, 'Lecture.sortOrder')) throw error;
       return 1;
     }
   }
@@ -937,6 +985,7 @@ export class LecturesService {
 
   private isAnySortOrderColumnMissing(error: unknown): boolean {
     return (
+      this.isMissingSortOrderColumn(error, 'Lecture.sortOrder') ||
       this.isMissingSortOrderColumn(error, 'LectureFile.sortOrder') ||
       this.isMissingSortOrderColumn(error, 'Video.sortOrder') ||
       this.isMissingSortOrderColumn(error, 'VideoSegment.sortOrder')
@@ -951,4 +1000,3 @@ export class LecturesService {
     return metaColumn.toLowerCase().endsWith(column.toLowerCase());
   }
 }
-

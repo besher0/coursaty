@@ -411,20 +411,13 @@ export class AdminDashboardService {
   }
 
   /**
-   * Get pending teachers with pagination
+   * Get pending teachers without pagination
    */
   async getPendingTeachers(
-    page: number = 1,
-    limit: number = 20,
     universityId?: string,
   ): Promise<{
     teachers: TeacherPendingDto[];
-    pagination: PaginationDto;
   }> {
-    const { page: normalizedPage, limit: normalizedLimit } =
-      this.normalizePagination(page, limit);
-    const skip = (normalizedPage - 1) * normalizedLimit;
-
     const teacherIdsFilter = universityId
       ? await this.getTeacherIdsByUniversity(universityId)
       : null;
@@ -432,37 +425,21 @@ export class AdminDashboardService {
     if (teacherIdsFilter && !teacherIdsFilter.length) {
       return {
         teachers: [],
-        pagination: {
-          page: normalizedPage,
-          limit: normalizedLimit,
-          total: 0,
-        },
       };
     }
 
-    const [pendingTeacherUsers, total] = await Promise.all([
-      this.prisma.user.findMany({
-        skip,
-        take: normalizedLimit,
-        where: {
-          userableType: 'TEACHER',
-          status: 'pending',
-          ...(teacherIdsFilter ? { userableId: { in: teacherIdsFilter } } : {}),
-        },
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          userableId: true,
-        },
-      }),
-      this.prisma.user.count({
-        where: {
-          userableType: 'TEACHER',
-          status: 'pending',
-          ...(teacherIdsFilter ? { userableId: { in: teacherIdsFilter } } : {}),
-        },
-      }),
-    ]);
+    const pendingTeacherUsers = await this.prisma.user.findMany({
+      where: {
+        userableType: 'TEACHER',
+        status: 'pending',
+        ...(teacherIdsFilter ? { userableId: { in: teacherIdsFilter } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        userableId: true,
+      },
+    });
 
     const teacherIds = pendingTeacherUsers.map((user) => user.userableId);
 
@@ -515,62 +492,38 @@ export class AdminDashboardService {
 
     return {
       teachers: teachersDisplay,
-      pagination: {
-        page: normalizedPage,
-        limit: normalizedLimit,
-        total,
-      },
     };
   }
 
   async getPendingTeachersByUniversityId(
     universityId: string,
-    page: number = 1,
-    limit: number = 20,
   ) {
-    return this.getPendingTeachers(page, limit, universityId);
+    return this.getPendingTeachers(universityId);
   }
 
   /**
-   * Get pending courses with pagination
+   * Get pending courses without pagination
    */
   async getPendingCourses(
-    page: number = 1,
-    limit: number = 20,
     universityId?: string,
   ): Promise<{
     courses: CoursePendingDto[];
-    pagination: PaginationDto;
   }> {
-    const { page: normalizedPage, limit: normalizedLimit } =
-      this.normalizePagination(page, limit);
-    const skip = (normalizedPage - 1) * normalizedLimit;
-
-    const [courses, total] = await Promise.all([
-      this.prisma.course.findMany({
-        where: {
-          status: 'PENDING',
-          ...(universityId ? { universityId } : {}),
+    const courses = await this.prisma.course.findMany({
+      where: {
+        status: 'PENDING',
+        ...(universityId ? { universityId } : {}),
+      },
+      include: {
+        teacher: {
+          select: { id: true, name: true },
         },
-        skip,
-        take: normalizedLimit,
-        include: {
-          teacher: {
-            select: { id: true, name: true },
-          },
-          subject: {
-            select: { subjectName: true },
-          },
+        subject: {
+          select: { subjectName: true },
         },
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.course.count({
-        where: {
-          status: 'PENDING',
-          ...(universityId ? { universityId } : {}),
-        },
-      }),
-    ]);
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
     const teacherIds = courses.map((course) => course.teacher.id);
     const teacherUsers = teacherIds.length
@@ -604,36 +557,23 @@ export class AdminDashboardService {
 
     return {
       courses: coursesDisplay,
-      pagination: {
-        page: normalizedPage,
-        limit: normalizedLimit,
-        total,
-      },
     };
   }
 
   async getPendingCoursesByUniversityId(
     universityId: string,
-    page: number = 1,
-    limit: number = 20,
   ) {
-    return this.getPendingCourses(page, limit, universityId);
+    return this.getPendingCourses(universityId);
   }
 
   /**
-   * Get pending notifications with pagination
+   * Get pending notifications without pagination
    */
   async getPendingNotifications(
-    page: number = 1,
-    limit: number = 20,
     universityId?: string,
   ): Promise<{
     notifications: NotificationPendingDto[];
-    pagination: PaginationDto;
   }> {
-    const { page: normalizedPage, limit: normalizedLimit } =
-      this.normalizePagination(page, limit);
-    const skip = (normalizedPage - 1) * normalizedLimit;
     const where = {
       status: 'PENDING' as const,
       ...(universityId
@@ -647,24 +587,19 @@ export class AdminDashboardService {
         : {}),
     };
 
-    const [notifications, total] = await Promise.all([
-      this.prisma.notification.findMany({
-        where,
-        skip,
-        take: normalizedLimit,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          createdBy: {
-            select: {
-              id: true,
-              userableId: true,
-              userableType: true,
-            },
+    const notifications = await this.prisma.notification.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            userableId: true,
+            userableType: true,
           },
         },
-      }),
-      this.prisma.notification.count({ where }),
-    ]);
+      },
+    });
 
     const teacherIds = Array.from(
       new Set(
@@ -722,20 +657,13 @@ export class AdminDashboardService {
 
     return {
       notifications: notificationsDisplay,
-      pagination: {
-        page: normalizedPage,
-        limit: normalizedLimit,
-        total,
-      },
     };
   }
 
   async getPendingNotificationsByUniversityId(
     universityId: string,
-    page: number = 1,
-    limit: number = 20,
   ) {
-    return this.getPendingNotifications(page, limit, universityId);
+    return this.getPendingNotifications(universityId);
   }
 
   /**
@@ -747,30 +675,23 @@ export class AdminDashboardService {
     const [
       metrics,
       // { codes, pagination: codesPagination },
-      { teachers: pendingTeachers, pagination: teachersPagination },
-      { courses: pendingCourses, pagination: coursesPagination },
-      { notifications, pagination: notificationsPagination },
+      { teachers: pendingTeachers },
+      { courses: pendingCourses },
+      { notifications },
     ] = await Promise.all([
       this.getDashboardMetrics(query.universityId),
       // this.getCodes(query.codesPage, query.codesLimit),
-      this.getPendingTeachers(query.teachersPage, query.teachersLimit, query.universityId),
-      this.getPendingCourses(query.coursesPage, query.coursesLimit, query.universityId),
-      this.getPendingNotifications(
-        query.notificationsPage,
-        query.notificationsLimit,
-        query.universityId,
-      ),
+      this.getPendingTeachers(query.universityId),
+      this.getPendingCourses(query.universityId),
+      this.getPendingNotifications(query.universityId),
     ]);
 
     return {
       metrics,
       // codesPagination,
       // codes,
-      pendingTeachersPagination: teachersPagination,
       pendingTeachers,
-      pendingCoursesPagination: coursesPagination,
       pendingCourses,
-      notificationsPagination,
       notifications,
     };
   }

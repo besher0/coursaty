@@ -199,30 +199,68 @@ export class BunnyService {
 
   async getStreamPlaybackPayload(videoId: string, preferredResolution?: string) {
     const [playData, resolutions] = await Promise.all([
-      this.getVideoPlayData(videoId).catch(() => null),
-      this.getVideoResolutions(videoId).catch(() => null),
+      this.getVideoPlayData(videoId).catch((): null => null),
+      this.getVideoResolutions(videoId).catch((): null => null),
     ]);
 
-    let preferredResolutionUrl: string | null = null;
-    if (preferredResolution && resolutions?.mp4Resolutions?.length) {
-      const normalized = preferredResolution.toLowerCase();
-      const match = resolutions.mp4Resolutions.find((item) => item.resolution.toLowerCase() === normalized);
-      preferredResolutionUrl = match?.path ?? null;
-    }
+    const streamMasterPlaylistUrl = playData?.playlistUrl ?? null;
+    const playlistResolutions = resolutions?.playlistResolutions ?? null;
+    const mp4Resolutions = resolutions?.mp4Resolutions ?? null;
+
+    const preferredPlaylistResolutionUrl = this.resolveResolutionPath(
+      preferredResolution,
+      playlistResolutions ?? [],
+    );
+    const preferredResolutionUrl = this.resolveResolutionPath(preferredResolution, mp4Resolutions ?? []);
 
     return {
       streamVideoId: videoId,
       streamEmbedUrl: this.getStreamEmbedUrl(videoId),
       streamPlayUrl: this.getStreamPlayUrl(videoId),
-      streamPlaylistUrl: playData?.playlistUrl ?? null,
+      streamMasterPlaylistUrl,
+      streamPlaylistUrl: preferredPlaylistResolutionUrl ?? streamMasterPlaylistUrl,
       streamFallbackUrl: playData?.fallbackUrl ?? null,
       availableResolutions: resolutions?.availableResolutions ?? null,
-      mp4Resolutions: resolutions?.mp4Resolutions ?? null,
+      playlistResolutions,
+      mp4Resolutions,
       preferredResolution: preferredResolution ?? null,
+      preferredPlaylistResolutionUrl,
       preferredResolutionUrl,
       isPlayable: playData?.isPlayable ?? null,
       isPlaylistPlayable: playData?.isPlaylistPlayable ?? null,
     };
+  }
+
+  private resolveResolutionPath(preferredResolution: string | undefined, resolutions: BunnyResolutionPath[]): string | null {
+    const normalizedPreferred = this.normalizeResolutionLabel(preferredResolution);
+    if (!normalizedPreferred || !resolutions.length) return null;
+
+    const match = resolutions.find(
+      (item: BunnyResolutionPath) => this.normalizeResolutionLabel(item.resolution) === normalizedPreferred,
+    );
+    return match?.path ?? null;
+  }
+
+  private normalizeResolutionLabel(resolution?: string | null): string | null {
+    if (!resolution) return null;
+    const normalized = String(resolution).trim().toLowerCase();
+    if (!normalized) return null;
+
+    const digits = normalized.match(/\d+/)?.[0];
+    return digits ? `${digits}p` : normalized;
+  }
+
+  describeError(error: any, operationLabel: string): string {
+    const status = error?.response?.status;
+    const code = error?.code ? ` (${error.code})` : '';
+    const responseData = error?.response?.data;
+    const responseMessage =
+      typeof responseData === 'string'
+        ? responseData
+        : responseData?.message || responseData?.error || responseData?.title;
+    const message = responseMessage || error?.message || 'Unknown error';
+
+    return `${operationLabel} failed${code}${status ? `/${status}` : ''}: ${message}`;
   }
 
   async uploadImage(path: string, file: any): Promise<string> {

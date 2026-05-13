@@ -156,6 +156,15 @@ export class TeachersController {
     return this.teachers.getTeacherCoursesRevenue(id);
   }
 
+  @Get(':id/revenue-by-period')
+  @ApiOperation({ summary: 'Get teacher revenue grouped by year and month (admin only)' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  getTeacherRevenueByPeriod(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.teachers.getTeacherRevenueByPeriod(id);
+  }
+
   @Get(':id/withdrawals')
   @ApiOperation({ summary: 'Get teacher withdrawals (admin only)' })
   @ApiBearerAuth()

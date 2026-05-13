@@ -2,9 +2,20 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsUUID, IsString, IsNotEmpty, IsOptional, IsUrl } from 'class-validator';
 
 export class CreateAdvertisementDto {
-  @ApiProperty({ format: 'uuid' })
+  @ApiPropertyOptional({ format: 'uuid', description: 'Target university (if not provided, ad is for all students)' })
+  @IsOptional()
   @IsUUID('4')
-  collegeId: string;
+  universityId?: string;
+
+  @ApiPropertyOptional({ format: 'uuid', description: 'Target college (overrides university filter)' })
+  @IsOptional()
+  @IsUUID('4')
+  collegeId?: string;
+
+  @ApiPropertyOptional({ format: 'uuid', description: 'Target department (most specific)' })
+  @IsOptional()
+  @IsUUID('4')
+  departmentId?: string;
 
   @ApiProperty()
   @IsString()

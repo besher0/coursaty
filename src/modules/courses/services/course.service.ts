@@ -1,4 +1,4 @@
-﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+﻿import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateCourseDto } from '../dtos/create-course.dto';
 import { BunnyService } from '../../../shared/bunny/bunny.service';
@@ -378,8 +378,8 @@ export class CourseService {
         isExpired,
         description: course.description,
         introVideoUrl: course.introVideoUrl,
-        discussionGroupUrl: course.discussionGroupUrl,
-        telegramUrl: course.discussionGroupUrl,
+        discussionGroupUrl: course.teacher.telegramUrl ?? null,
+        telegramUrl: course.teacher.telegramUrl ?? null,
         instagramUrl: course.teacher.instagramUrl ?? null,
         studentsCount: course._count.subscriptions,
         year: course.collegeYear?.academicYear
@@ -402,6 +402,7 @@ export class CourseService {
         title: lec.title,
         description: lec.description,
         imageUrl: lec.imageUrl,
+        sortOrder: lec.sortOrder ?? null,
         videosCount: lec._count?.videos ?? 0,
         filesCount: lec._count?.files ?? 0,
         questionsCount: lec._count?.questions ?? 0,
@@ -526,8 +527,8 @@ export class CourseService {
           : null,
         description: course.description,
         introVideoUrl: course.introVideoUrl,
-        discussionGroupUrl: course.discussionGroupUrl,
-        telegramUrl: course.discussionGroupUrl,
+        discussionGroupUrl: course.teacher.telegramUrl ?? null,
+        telegramUrl: course.teacher.telegramUrl ?? null,
         instagramUrl: course.teacher.instagramUrl ?? null,
         rating: {
           outOf: 5,
@@ -541,6 +542,7 @@ export class CourseService {
         title: lec.title,
         description: lec.description,
         imageUrl: lec.imageUrl,
+        sortOrder: lec.sortOrder ?? null,
         videosCount: lec._count?.videos ?? 0,
         filesCount: lec._count?.files ?? 0,
         questionsCount: lec._count?.questions ?? 0,
@@ -757,33 +759,51 @@ export class CourseService {
     const ext = path.extname(file.originalname || '') || '.mp4';
     const fileName = `${randomUUID()}${ext}`;
     const storagePath = `lectures/${lectureId}/videos/${fileName}`;
-    const storageVideoUrl = await this.bunny.uploadImage(storagePath, file);
+    let storageVideoUrl: string | null = null;
+    let storageUploadError: string | null = null;
+    try {
+      storageVideoUrl = await this.bunny.uploadImage(storagePath, file);
+    } catch (error) {
+      storageUploadError = this.bunny.describeError(error, 'Bunny Storage upload');
+    }
 
     let streamPlayback = {
       streamVideoId: null as string | null,
       streamEmbedUrl: null as string | null,
       streamPlayUrl: null as string | null,
+      streamMasterPlaylistUrl: null as string | null,
       streamPlaylistUrl: null as string | null,
       streamFallbackUrl: null as string | null,
       availableResolutions: null as string[] | null,
+      playlistResolutions: null as Array<{ resolution: string; path: string }> | null,
       mp4Resolutions: null as Array<{ resolution: string; path: string }> | null,
       preferredResolution: (options?.preferredResolution ?? null) as string | null,
+      preferredPlaylistResolutionUrl: null as string | null,
       preferredResolutionUrl: null as string | null,
       isPlayable: null as boolean | null,
       isPlaylistPlayable: null as boolean | null,
     };
+    let streamUploadError: string | null = null;
+    let streamVideoId: string | null = null;
     try {
       const createdStream = await this.bunny.createStreamVideo(title);
+      streamVideoId = createdStream.guid;
       await this.bunny.uploadStreamVideo(createdStream.guid, file);
       streamPlayback = await this.bunny.getStreamPlaybackPayload(createdStream.guid, options?.preferredResolution);
-    } catch {
+    } catch (error) {
+      streamUploadError = this.bunny.describeError(error, 'Bunny Stream upload');
       streamPlayback = {
         ...streamPlayback,
-        streamVideoId: null,
+        streamVideoId,
       };
     }
 
     const persistedVideoUrl = streamPlayback.streamPlayUrl ?? storageVideoUrl;
+    if (!persistedVideoUrl) {
+      throw new BadGatewayException(
+        [storageUploadError, streamUploadError].filter(Boolean).join(' | ') || 'Video upload failed',
+      );
+    }
     const sortOrder = options?.sortOrder ?? (await this.getNextLectureVideoSortOrder(lectureId));
 
     const created = await this.prisma.video.create({
@@ -800,8 +820,10 @@ export class CourseService {
 
     return {
       ...created,
-      downloadUrl: storageVideoUrl,
+      downloadUrl: storageVideoUrl ?? persistedVideoUrl,
       storageVideoUrl,
+      storageUploadError,
+      streamUploadError,
       ...streamPlayback,
     };
   }

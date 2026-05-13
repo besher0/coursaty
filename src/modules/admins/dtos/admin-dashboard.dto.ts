@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNumber, IsOptional, IsUUID, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
 
 export class PaginationDto {
   @ApiProperty({ example: 1, description: 'Page number' })
@@ -197,20 +196,11 @@ export class AdminDashboardDto {
   // @ApiProperty({ type: () => [CodeDisplayDto] })
   // codes: CodeDisplayDto[];
 
-  @ApiProperty({ type: () => PaginationDto })
-  pendingTeachersPagination: PaginationDto;
-
   @ApiProperty({ type: () => [TeacherPendingDto] })
   pendingTeachers: TeacherPendingDto[];
 
-  @ApiProperty({ type: () => PaginationDto })
-  pendingCoursesPagination: PaginationDto;
-
   @ApiProperty({ type: () => [CoursePendingDto] })
   pendingCourses: CoursePendingDto[];
-
-  @ApiProperty({ type: () => PaginationDto })
-  notificationsPagination: PaginationDto;
 
   @ApiProperty({ type: () => [NotificationPendingDto] })
   notifications: NotificationPendingDto[];
@@ -224,64 +214,4 @@ export class AdminDashboardQueryDto {
   @IsOptional()
   @IsUUID('4')
   universityId?: string;
-
-  @ApiPropertyOptional({ example: 1, description: 'Page number for codes' })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  codesPage?: number;
-
-  @ApiPropertyOptional({ example: 20, description: 'Items per page for codes' })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  codesLimit?: number;
-
-  @ApiPropertyOptional({
-    example: 1,
-    description: 'Page number for pending teachers',
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  teachersPage?: number;
-
-  @ApiPropertyOptional({
-    example: 10,
-    description: 'Items per page for pending teachers',
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  teachersLimit?: number;
-
-  @ApiPropertyOptional({ example: 1, description: 'Page number for courses' })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  coursesPage?: number;
-
-  @ApiPropertyOptional({ example: 10, description: 'Items per page for courses' })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  coursesLimit?: number;
-
-  @ApiPropertyOptional({
-    example: 1,
-    description: 'Page number for notifications',
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  notificationsPage?: number;
-
-  @ApiPropertyOptional({
-    example: 10,
-    description: 'Items per page for notifications',
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  notificationsLimit?: number;
 }

@@ -139,6 +139,7 @@ model University {
   teacherAffiliations TeacherAffiliation[]
   guestPreferences GuestPreference[]
   notifications Notification[]
+  advertisements Advertisement[]
 
   @@index([provinceId])
 }
@@ -193,16 +194,22 @@ model TeacherAffiliation {
 
 model Advertisement {
   id        String   @id @default(uuid())
-  collegeId String
+  universityId String?
+  collegeId String?
+  departmentId String?
   title     String
   imageUrl  String
   helperLink String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  college College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  university University? @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  college College? @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
 
+  @@index([universityId])
   @@index([collegeId])
+  @@index([departmentId])
 }
 
 model Notification {
@@ -245,6 +252,7 @@ model Department {
   teacherAffiliations TeacherAffiliation[]
   courses Course[]
   guestPreferences GuestPreference[]
+  advertisements Advertisement[]
 
   @@index([collegeId])
 }

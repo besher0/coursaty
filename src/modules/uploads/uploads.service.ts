@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { BunnyService } from '../../shared/bunny/bunny.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { randomUUID } from 'crypto';
@@ -31,41 +31,60 @@ export class UploadsService {
     const ext = path.extname(file.originalname || '') || '.mp4';
     const fileName = `${randomUUID()}${ext}`;
     const storagePath = `uploads/videos/${fileName}`;
-    const storageVideoUrl = await this.bunny.uploadImage(storagePath, file);
+    let storageVideoUrl: string | null = null;
+    let storageUploadError: string | null = null;
+    try {
+      storageVideoUrl = await this.bunny.uploadImage(storagePath, file);
+    } catch (error) {
+      storageUploadError = this.bunny.describeError(error, 'Bunny Storage upload');
+    }
     let streamUploadError: string | null = null;
+    let streamVideoId: string | null = null;
 
     let streamPlayback = {
       streamVideoId: null as string | null,
       streamEmbedUrl: null as string | null,
       streamPlayUrl: null as string | null,
+      streamMasterPlaylistUrl: null as string | null,
       streamPlaylistUrl: null as string | null,
       streamFallbackUrl: null as string | null,
       availableResolutions: null as string[] | null,
+      playlistResolutions: null as Array<{ resolution: string; path: string }> | null,
       mp4Resolutions: null as Array<{ resolution: string; path: string }> | null,
       preferredResolution: options?.preferredResolution ?? null,
+      preferredPlaylistResolutionUrl: null as string | null,
       preferredResolutionUrl: null as string | null,
       isPlayable: null as boolean | null,
       isPlaylistPlayable: null as boolean | null,
     };
     try {
       const streamVideo = await this.bunny.createStreamVideo(videoTitle);
+      streamVideoId = streamVideo.guid;
       await this.bunny.uploadStreamVideo(streamVideo.guid, file);
       streamPlayback = await this.bunny.getStreamPlaybackPayload(streamVideo.guid, options?.preferredResolution);
-    } catch {
-      streamUploadError = 'Bunny Stream upload failed. File is available in Bunny Storage only.';
+    } catch (error) {
+      streamUploadError = `${this.bunny.describeError(error, 'Bunny Stream upload')}. File is available in Bunny Storage only.`;
       streamPlayback = {
         ...streamPlayback,
-        streamVideoId: null,
+        streamVideoId,
       };
     }
 
+    const persistedVideoUrl = streamPlayback.streamPlayUrl ?? storageVideoUrl;
+    if (!persistedVideoUrl) {
+      throw new BadGatewayException(
+        [storageUploadError, streamUploadError].filter(Boolean).join(' | ') || 'Video upload failed',
+      );
+    }
+
     return {
-      guid: streamPlayback.streamVideoId,
+      guid: streamPlayback.streamVideoId ?? streamVideoId,
       title: videoTitle,
-      videoUrl: streamPlayback.streamPlayUrl ?? storageVideoUrl,
-      downloadUrl: storageVideoUrl,
+      videoUrl: persistedVideoUrl,
+      downloadUrl: storageVideoUrl ?? persistedVideoUrl,
       storageVideoUrl,
       storagePath,
+      storageUploadError,
       streamUploadSucceeded: Boolean(streamPlayback.streamVideoId),
       streamUploadError,
       embedUrl: streamPlayback.streamEmbedUrl,
@@ -186,13 +205,22 @@ export class UploadsService {
             mp4Resolutions: [],
           };
 
+    const playlistByResolution = Object.fromEntries(
+      (resolutions.playlistResolutions ?? [])
+        .filter((item) => item?.resolution && item?.path)
+        .map((item) => [item.resolution, item.path]),
+    );
+
     return {
       requestedVideoId: videoId,
       resolvedVideoId: streamVideoId,
       resolvedFrom: source,
       ...playData,
+      streamMasterPlaylistUrl: playData.playlistUrl,
+      streamPlaylistUrl: playData.playlistUrl,
       availableResolutions: resolutions.availableResolutions,
       playlistResolutions: resolutions.playlistResolutions,
+      playlistByResolution,
       mp4Resolutions: resolutions.mp4Resolutions,
     };
   }

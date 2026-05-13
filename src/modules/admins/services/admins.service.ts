@@ -3,20 +3,11 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { CreateAdminDto } from '../dtos/create-admin.dto';
 import { UsersDirectoryQueryDto, UsersDirectoryType } from '../dtos/users-directory-query.dto';
 import { AllowedUserStatus } from '../dtos/update-user-status.dto';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class AdminsService {
   constructor(private readonly prisma: PrismaService) {}
-
-  private normalizePagination(page?: number, limit?: number) {
-    const safePage = page && page > 0 ? Math.floor(page) : 1;
-    const safeLimit = limit && limit > 0 ? Math.min(Math.floor(limit), 100) : 20;
-    return {
-      page: safePage,
-      limit: safeLimit,
-      skip: (safePage - 1) * safeLimit,
-    };
-  }
 
   private buildCourseCardWithTeacher(course: any) {
     return {
@@ -100,9 +91,35 @@ export class AdminsService {
     return this.prisma.admin.findMany({ orderBy: { createdAt: 'desc' } });
   }
 
+  async getAdminProfile(userIdOrAdminId: string) {
+    const normalizedId = userIdOrAdminId?.trim();
+    if (!normalizedId) {
+      throw new BadRequestException('User id is required');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: normalizedId },
+      select: { userableType: true, userableId: true },
+    });
+
+    if (user) {
+      if (user.userableType !== 'ADMIN') {
+        throw new NotFoundException('Admin not found');
+      }
+
+      const adminByUser = await this.prisma.admin.findUnique({ where: { id: user.userableId } });
+      if (!adminByUser) throw new NotFoundException('Admin not found');
+      return adminByUser;
+    }
+
+    const admin = await this.prisma.admin.findUnique({ where: { id: normalizedId } });
+    if (!admin) throw new NotFoundException('Admin not found');
+    return admin;
+  }
+
   async updateUserStatus(userId: string, status: AllowedUserStatus) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    if (!user) throw new NotFoundException('ط§ظ„ظ…ط³طھط®ط¯ظ… ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
 
     return this.prisma.user.update({
       where: { id: userId },
@@ -118,7 +135,6 @@ export class AdminsService {
   }
 
   async getUsersDirectory(query: UsersDirectoryQueryDto) {
-    const { page, limit, skip } = this.normalizePagination(query.page, query.limit);
     const search = query.search?.trim();
 
     if (query.type === UsersDirectoryType.TEACHER) {
@@ -142,26 +158,21 @@ export class AdminsService {
           : {}),
       };
 
-      const [total, teachers] = await this.prisma.$transaction([
-        this.prisma.teacher.count({ where }),
-        this.prisma.teacher.findMany({
-          where,
-          orderBy: { createdAt: 'desc' },
-          skip,
-          take: limit,
-          select: {
-            id: true,
-            name: true,
-            image: true,
-            likesCount: true,
-            _count: {
-              select: {
-                courses: true,
-              },
+      const teachers = await this.prisma.teacher.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          image: true,
+          likesCount: true,
+          _count: {
+            select: {
+              courses: true,
             },
           },
-        }),
-      ]);
+        },
+      });
 
       const teacherIds = teachers.map((teacher) => teacher.id);
       const users = await this.prisma.user.findMany({
@@ -193,11 +204,6 @@ export class AdminsService {
 
       return {
         type: UsersDirectoryType.TEACHER,
-        pagination: {
-          page,
-          limit,
-          total,
-        },
         items: teachers.map((teacher) => ({
           id: teacher.id,
           name: teacher.name,
@@ -210,47 +216,76 @@ export class AdminsService {
       };
     }
 
-    const where = {
-      ...(search
-        ? {
-            name: {
+    const studentPhoneMatchedIds = search
+      ? await this.prisma.user.findMany({
+          where: {
+            userableType: 'STUDENT',
+            phone: {
               contains: search,
-              mode: 'insensitive' as const,
+              mode: 'insensitive',
             },
-          }
-        : {}),
+          },
+          select: {
+            userableId: true,
+          },
+        })
+      : [];
+
+    const where = {
       ...(query.universityId
         ? {
             universityId: query.universityId,
           }
         : {}),
+      ...(search
+        ? {
+            OR: [
+              {
+                name: {
+                  contains: search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                universityNumber: {
+                  contains: search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              ...(studentPhoneMatchedIds.length
+                ? [
+                    {
+                      id: {
+                        in: studentPhoneMatchedIds.map((item) => item.userableId),
+                      },
+                    },
+                  ]
+                : []),
+            ],
+          }
+        : {}),
     };
 
-    const [total, students] = await this.prisma.$transaction([
-      this.prisma.student.count({ where }),
-      this.prisma.student.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-        select: {
-          id: true,
-          name: true,
-          university: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-          department: {
-            select: {
-              id: true,
-              name: true,
-            },
+    const students = await this.prisma.student.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        university: {
+          select: {
+            id: true,
+            name: true,
           },
         },
-      }),
-    ]);
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
 
     const studentIds = students.map((student) => student.id);
     const users = await this.prisma.user.findMany({
@@ -268,11 +303,6 @@ export class AdminsService {
 
     return {
       type: UsersDirectoryType.STUDENT,
-      pagination: {
-        page,
-        limit,
-        total,
-      },
       items: students.map((student) => ({
         id: student.id,
         name: student.name,
@@ -359,6 +389,134 @@ export class AdminsService {
         subjectName: 'asc',
       },
     });
+  }
+
+  async searchStudents(query?: string) {
+    const searchQuery = query?.trim();
+    if (!searchQuery) {
+      return [];
+    }
+
+    const students = await this.prisma.student.findMany({
+      where: {
+        OR: [
+          {
+            universityNumber: {
+              contains: searchQuery,
+              mode: 'insensitive',
+            },
+          },
+          {
+            name: {
+              contains: searchQuery,
+              mode: 'insensitive',
+            },
+          },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        universityNumber: true,
+        university: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        college: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        collegeYear: {
+          select: {
+            id: true,
+            academicYear: {
+              select: {
+                id: true,
+                yearName: true,
+                yearNumber: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+
+    // Also search by phone in User table
+    const phoneUsers = await this.prisma.user.findMany({
+      where: {
+        userableType: 'STUDENT',
+        phone: {
+          contains: searchQuery,
+          mode: 'insensitive',
+        },
+      },
+      select: {
+        userableId: true,
+        phone: true,
+      },
+    });
+
+    const studentIdsFromPhone = new Set(phoneUsers.map((u) => u.userableId));
+    const phoneSearchResults = await this.prisma.student.findMany({
+      where: {
+        id: {
+          in: Array.from(studentIdsFromPhone),
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        universityNumber: true,
+        university: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        college: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        collegeYear: {
+          select: {
+            id: true,
+            academicYear: {
+              select: {
+                id: true,
+                yearName: true,
+                yearNumber: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Merge results and remove duplicates
+    const combined = [...students, ...phoneSearchResults];
+    const uniqueMap = new Map(combined.map((s) => [s.id, s]));
+    return Array.from(uniqueMap.values()).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   async getSubjectsByCollegeId(collegeId: string) {
@@ -515,7 +673,7 @@ export class AdminsService {
       },
     });
 
-    if (!subject) throw new NotFoundException('المادة/البرنامج غير موجود');
+    if (!subject) throw new NotFoundException('ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
 
     const permissions = await this.prisma.teacherSubjectPermission.findMany({
       where: { subjectId },
@@ -579,7 +737,7 @@ export class AdminsService {
       select: { id: true, collegeId: true, departmentId: true, isProgram: true },
     });
 
-    if (!subject) throw new NotFoundException('المادة/البرنامج غير موجود');
+    if (!subject) throw new NotFoundException('ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
 
     const assigned = await this.prisma.teacherSubjectPermission.findMany({
       where: { subjectId },
@@ -669,8 +827,8 @@ export class AdminsService {
       }),
     ]);
 
-    if (!subject) throw new NotFoundException('المادة/البرنامج غير موجود');
-    if (!teacher) throw new NotFoundException('الأستاذ غير موجود');
+    if (!subject) throw new NotFoundException('ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
+    if (!teacher) throw new NotFoundException('ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
 
     const existing = await this.prisma.teacherSubjectPermission.findUnique({
       where: {
@@ -689,7 +847,7 @@ export class AdminsService {
     if (existing) {
       return {
         assigned: false,
-        message: 'الأستاذ مرتبط مسبقاً بهذه المادة/البرنامج',
+        message: 'ط§ظ„ط£ط³طھط§ط° ظ…ط±طھط¨ط· ظ…ط³ط¨ظ‚ط§ظ‹ ط¨ظ‡ط°ظ‡ ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬',
         subject: {
           id: subject.id,
           name: subject.subjectName,
@@ -747,8 +905,8 @@ export class AdminsService {
       }),
     ]);
 
-    if (!subject) throw new NotFoundException('المادة/البرنامج غير موجود');
-    if (!teacher) throw new NotFoundException('الأستاذ غير موجود');
+    if (!subject) throw new NotFoundException('ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
+    if (!teacher) throw new NotFoundException('ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
 
     const removed = await this.prisma.teacherSubjectPermission.deleteMany({
       where: {
@@ -758,7 +916,7 @@ export class AdminsService {
     });
 
     if (!removed.count) {
-      throw new NotFoundException('الأستاذ غير مرتبط بهذه المادة/البرنامج');
+      throw new NotFoundException('ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ط±طھط¨ط· ط¨ظ‡ط°ظ‡ ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬');
     }
 
     return {
@@ -784,7 +942,7 @@ export class AdminsService {
       },
     });
 
-    if (!teacher) throw new NotFoundException('الأستاذ غير موجود');
+    if (!teacher) throw new NotFoundException('ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
 
     const permissions = await this.prisma.teacherSubjectPermission.findMany({
       where: { teacherId },
@@ -984,11 +1142,7 @@ export class AdminsService {
   async getDashboardSubjectCourses(
     subjectId?: string,
     universityId?: string,
-    page: number = 1,
-    limit: number = 10,
   ) {
-    const { page: safePage, limit: safeLimit, skip } = this.normalizePagination(page, limit);
-
     let subject: { id: string; name: string } | null = null;
     if (subjectId) {
       const foundSubject = await this.prisma.subject.findFirst({
@@ -1003,7 +1157,7 @@ export class AdminsService {
         },
       });
 
-      if (!foundSubject) throw new NotFoundException('المادة غير موجودة');
+      if (!foundSubject) throw new NotFoundException('ط§ظ„ظ…ط§ط¯ط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط©');
       subject = {
         id: foundSubject.id,
         name: foundSubject.subjectName,
@@ -1018,29 +1172,22 @@ export class AdminsService {
       },
     } as any;
 
-    const [total, courses] = await Promise.all([
-      this.prisma.course.count({ where }),
-      this.prisma.course.findMany({
-        where,
-        include: {
-          subject: {
-            select: {
-              id: true,
-              subjectName: true,
-            },
+    const courses = await this.prisma.course.findMany({
+      where,
+      include: {
+        subject: {
+          select: {
+            id: true,
+            subjectName: true,
           },
-          collegeYear: { include: { academicYear: true } },
-          season: true,
-          teacher: true,
-          _count: { select: { subscriptions: true } },
         },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: safeLimit,
-      }),
-    ]);
-
-    const totalPages = total ? Math.ceil(total / safeLimit) : 0;
+        collegeYear: { include: { academicYear: true } },
+        season: true,
+        teacher: true,
+        _count: { select: { subscriptions: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
     return {
       subject,
@@ -1054,14 +1201,6 @@ export class AdminsService {
               }
             : null,
         })),
-        pagination: {
-          page: safePage,
-          limit: safeLimit,
-          total,
-          totalPages,
-          hasNextPage: safePage < totalPages,
-          hasPreviousPage: safePage > 1,
-        },
       },
     };
   }
@@ -1069,11 +1208,7 @@ export class AdminsService {
   async getDashboardProgramCourses(
     programId?: string,
     universityId?: string,
-    page: number = 1,
-    limit: number = 10,
   ) {
-    const { page: safePage, limit: safeLimit, skip } = this.normalizePagination(page, limit);
-
     let program: { id: string; name: string } | null = null;
     if (programId) {
       const foundProgram = await this.prisma.subject.findFirst({
@@ -1088,7 +1223,7 @@ export class AdminsService {
         },
       });
 
-      if (!foundProgram) throw new NotFoundException('البرنامج غير موجود');
+      if (!foundProgram) throw new NotFoundException('ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
       program = {
         id: foundProgram.id,
         name: foundProgram.subjectName,
@@ -1103,29 +1238,22 @@ export class AdminsService {
       },
     } as any;
 
-    const [total, courses] = await Promise.all([
-      this.prisma.course.count({ where }),
-      this.prisma.course.findMany({
-        where,
-        include: {
-          subject: {
-            select: {
-              id: true,
-              subjectName: true,
-            },
+    const courses = await this.prisma.course.findMany({
+      where,
+      include: {
+        subject: {
+          select: {
+            id: true,
+            subjectName: true,
           },
-          collegeYear: { include: { academicYear: true } },
-          season: true,
-          teacher: true,
-          _count: { select: { subscriptions: true } },
         },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: safeLimit,
-      }),
-    ]);
-
-    const totalPages = total ? Math.ceil(total / safeLimit) : 0;
+        collegeYear: { include: { academicYear: true } },
+        season: true,
+        teacher: true,
+        _count: { select: { subscriptions: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
     return {
       program,
@@ -1139,14 +1267,6 @@ export class AdminsService {
               }
             : null,
         })),
-        pagination: {
-          page: safePage,
-          limit: safeLimit,
-          total,
-          totalPages,
-          hasNextPage: safePage < totalPages,
-          hasPreviousPage: safePage > 1,
-        },
       },
     };
   }
@@ -1156,7 +1276,7 @@ export class AdminsService {
       where: { id: subjectId },
       select: { id: true, subjectName: true, isProgram: true },
     });
-    if (!subject) throw new NotFoundException('المادة/البرنامج غير موجود');
+    if (!subject) throw new NotFoundException('ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
 
     const courses = await this.prisma.course.findMany({
       where: { subjectId },
@@ -1185,7 +1305,7 @@ export class AdminsService {
       where: { id: programId },
       select: { id: true, subjectName: true, isProgram: true },
     });
-    if (!program) throw new NotFoundException('البرنامج غير موجود');
+    if (!program) throw new NotFoundException('ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
 
     const courses = await this.prisma.course.findMany({
       where: { subjectId: programId },
@@ -1213,7 +1333,7 @@ export class AdminsService {
       where: { id: teacherId },
       select: { id: true, name: true },
     });
-    if (!teacher) throw new NotFoundException('الأستاذ غير موجود');
+    if (!teacher) throw new NotFoundException('ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
 
     const courses = await this.prisma.course.findMany({
       where: { teacherId },
@@ -1241,7 +1361,7 @@ export class AdminsService {
       where: { id: studentId },
       select: { id: true, name: true, universityNumber: true, college: { select: { id: true, name: true } } },
     });
-    if (!student) throw new NotFoundException('الطالب غير موجود');
+    if (!student) throw new NotFoundException('ط§ظ„ط·ط§ظ„ط¨ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
 
     const subs = await this.prisma.studentSubscription.findMany({
       where: { studentId },
@@ -1275,12 +1395,8 @@ export class AdminsService {
     name?: string,
     relatedTo?: 'subject' | 'program',
     status: 'active' | 'expired' | 'deleted' | 'pending' = 'pending',
-    page: number = 1,
-    limit: number = 20,
   ) {
     const now = new Date();
-    const normalizedPage = Math.max(1, page || 1);
-    const normalizedLimit = Math.min(100, Math.max(1, limit || 20));
 
     const courses = await this.prisma.course.findMany({
       where: {
@@ -1384,10 +1500,7 @@ export class AdminsService {
       pending: pendingCourses,
     };
 
-    const selected = statusMap[status] ?? activeCourses;
-    const total = selected.length;
-    const skip = (normalizedPage - 1) * normalizedLimit;
-    const items = selected.slice(skip, skip + normalizedLimit);
+    const items = statusMap[status] ?? activeCourses;
 
     return {
       tabs: {
@@ -1400,11 +1513,6 @@ export class AdminsService {
         name: name ?? null,
         relatedTo: relatedTo ?? null,
         status,
-      },
-      pagination: {
-        page: normalizedPage,
-        limit: normalizedLimit,
-        total,
       },
       items,
     };
@@ -1424,17 +1532,17 @@ export class AdminsService {
       const parsedTo = dateTo ? new Date(dateTo) : null;
 
       if (dateFrom && Number.isNaN(parsedFrom?.getTime())) {
-        throw new BadRequestException('dateFrom غير صالح');
+        throw new BadRequestException('dateFrom ط؛ظٹط± طµط§ظ„ط­');
       }
       if (dateTo && Number.isNaN(parsedTo?.getTime())) {
-        throw new BadRequestException('dateTo غير صالح');
+        throw new BadRequestException('dateTo ط؛ظٹط± طµط§ظ„ط­');
       }
 
       if (!parsedFrom || !parsedTo) {
-        throw new BadRequestException('عند استخدام الفترة الزمنية يجب إرسال dateFrom و dateTo معاً');
+        throw new BadRequestException('ط¹ظ†ط¯ ط§ط³طھط®ط¯ط§ظ… ط§ظ„ظپطھط±ط© ط§ظ„ط²ظ…ظ†ظٹط© ظٹط¬ط¨ ط¥ط±ط³ط§ظ„ dateFrom ظˆ dateTo ظ…ط¹ط§ظ‹');
       }
       if (parsedFrom > parsedTo) {
-        throw new BadRequestException('dateFrom يجب أن يكون قبل أو يساوي dateTo');
+        throw new BadRequestException('dateFrom ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ظ‚ط¨ظ„ ط£ظˆ ظٹط³ط§ظˆظٹ dateTo');
       }
 
       const endInclusive = new Date(parsedTo);
@@ -1460,6 +1568,7 @@ export class AdminsService {
         course: courseFilter,
       },
       select: {
+        createdAt: true,
         finalPrice: true,
         course: {
           select: {
@@ -1480,6 +1589,62 @@ export class AdminsService {
     });
 
     const round = (n: number) => Math.round(n * 100) / 100;
+    const periodYearsMap = new Map<
+      number,
+      Map<
+        number,
+        {
+          subscribersCount: number;
+          totalRevenue: number;
+          platformRevenue: number;
+          teacherRevenue: number;
+        }
+      >
+    >();
+
+    for (const sub of subscriptions) {
+      const yearKey = sub.createdAt.getFullYear();
+      const monthKey = sub.createdAt.getMonth() + 1;
+      const price = Number(sub.finalPrice);
+      const teacherPct = Number(sub.course.teacherPercentage ?? 0);
+      const teacherShare = (price * teacherPct) / 100;
+      const platformShare = price - teacherShare;
+
+      if (!periodYearsMap.has(yearKey)) {
+        periodYearsMap.set(yearKey, new Map());
+      }
+
+      const monthMap = periodYearsMap.get(yearKey)!;
+      if (!monthMap.has(monthKey)) {
+        monthMap.set(monthKey, {
+          subscribersCount: 0,
+          totalRevenue: 0,
+          platformRevenue: 0,
+          teacherRevenue: 0,
+        });
+      }
+
+      const monthSummary = monthMap.get(monthKey)!;
+      monthSummary.subscribersCount += 1;
+      monthSummary.totalRevenue += price;
+      monthSummary.platformRevenue += platformShare;
+      monthSummary.teacherRevenue += teacherShare;
+    }
+
+    const years = Array.from(periodYearsMap.entries())
+      .sort((a, b) => b[0] - a[0])
+      .map(([periodYear, monthsMap]) => ({
+        year: periodYear,
+        months: Array.from(monthsMap.entries())
+          .sort((a, b) => a[0] - b[0])
+          .map(([periodMonth, monthSummary]) => ({
+            month: periodMonth,
+            subscribersCount: monthSummary.subscribersCount,
+            totalRevenue: round(monthSummary.totalRevenue),
+            platformRevenue: round(monthSummary.platformRevenue),
+            teacherRevenue: round(monthSummary.teacherRevenue),
+          })),
+      }));
 
     if (collegeId) {
       let totalRevenue = 0;
@@ -1513,6 +1678,7 @@ export class AdminsService {
         totalRevenue: round(totalRevenue),
         platformRevenue: round(platformRevenue),
         teacherRevenue: round(teacherRevenue),
+        years,
       };
     }
 
@@ -1588,6 +1754,7 @@ export class AdminsService {
           platformRevenue: round(grandPlatform),
           teacherRevenue: round(grandTeacher),
         },
+        years,
         colleges,
       };
     }
@@ -1660,6 +1827,7 @@ export class AdminsService {
         platformRevenue: round(grandPlatform),
         teacherRevenue: round(grandTeacher),
       },
+      years,
       universities,
     };
   }
@@ -1760,6 +1928,7 @@ export class AdminsService {
         id: true,
         createdAt: true,
         phone: true,
+        password: true,
         status: true,
       },
     });
@@ -1819,6 +1988,8 @@ export class AdminsService {
         department: student.department,
         universityNumber: student.universityNumber ?? null,
         phone: studentUser?.phone ?? null,
+        password: null,
+        passwordHash: studentUser?.password ?? null,
         status: studentUser?.status ?? 'active',
         hasUserAccount: !!studentUser,
         academicYear: studentYear,
@@ -1841,6 +2012,65 @@ export class AdminsService {
         ),
       },
     };
+  }
+
+  async resetStudentPassword(
+    studentIdOrUniversityNumber: string,
+    newPassword?: string,
+  ) {
+    const student = await this.prisma.student.findFirst({
+      where: {
+        OR: [{ id: studentIdOrUniversityNumber }, { universityNumber: studentIdOrUniversityNumber }],
+      },
+      select: {
+        id: true,
+        universityNumber: true,
+      },
+    });
+
+    if (!student) throw new NotFoundException('Student not found');
+
+    const studentUser = await this.prisma.user.findFirst({
+      where: {
+        userableType: 'STUDENT',
+        userableId: student.id,
+      },
+      select: {
+        id: true,
+        phone: true,
+      },
+    });
+
+    if (!studentUser) throw new NotFoundException('Student account not found');
+
+    const resolvedPassword = (newPassword?.trim() || this.generateTemporaryPassword()).trim();
+    if (resolvedPassword.length < 6) {
+      throw new BadRequestException('Password must be at least 6 characters');
+    }
+
+    const hashedPassword = await bcrypt.hash(resolvedPassword, 10);
+
+    await this.prisma.user.update({
+      where: { id: studentUser.id },
+      data: { password: hashedPassword },
+    });
+
+    return {
+      studentId: student.id,
+      universityNumber: student.universityNumber ?? null,
+      userId: studentUser.id,
+      phone: studentUser.phone ?? null,
+      password: resolvedPassword,
+    };
+  }
+
+  private generateTemporaryPassword(length: number = 8) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    let result = '';
+    for (let i = 0; i < length; i += 1) {
+      result += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return result;
   }
 
   async getTeacherProfile(teacherId: string) {
@@ -1879,6 +2109,18 @@ export class AdminsService {
                   id: true,
                   seasonName: true,
                   seasonNumber: true,
+                },
+              },
+              college: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+              department: {
+                select: {
+                  id: true,
+                  name: true,
                 },
               },
               collegeYear: {
@@ -1980,12 +2222,24 @@ export class AdminsService {
       .filter((course) => course.status === 'APPROVED')
       .map((course) => ({
         id: course.id,
-        courseName: course.name,
+        name: course.name,
         year: course.collegeYear?.academicYear
           ? {
               id: course.collegeYear.academicYear.id,
               name: course.collegeYear.academicYear.yearName,
               number: course.collegeYear.academicYear.yearNumber,
+            }
+          : null,
+        college: course.college
+          ? {
+              id: course.college.id,
+              name: course.college.name,
+            }
+          : null,
+        department: course.department
+          ? {
+              id: course.department.id,
+              name: course.department.name,
             }
           : null,
         rating: ratingMap.get(course.id) ?? 0,
@@ -2038,3 +2292,4 @@ function courseHasEnded(
 ) {
   return !!course.expiresAt && course.expiresAt <= now;
 }
+
