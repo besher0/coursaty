@@ -561,16 +561,29 @@ export class CourseService {
             batchName: group.batchName,
             discountPercentage: groupDiscountPct,
             codePrice,
-            codes: group.codes.map((code) => ({
-              id: code.id,
-              codeValue: code.codeValue,
-              status: code.status,
-              validUntil: code.validUntil,
-              isExpired: !!code.validUntil && code.validUntil.getTime() < now.getTime(),
-              usageLimit: code.usageLimit,
-              usageCount: code.usageCount,
-              usedAt: code.usedAt,
-            })),
+            codes: group.codes.map((code) => {
+              const baseExpiresAt = new Date(code.createdAt);
+              baseExpiresAt.setMonth(baseExpiresAt.getMonth() + 6);
+              const redeemExpiresAt = code.validForDays && code.validForDays > 0
+                ? baseExpiresAt
+                : code.validUntil
+                ? new Date(Math.min(baseExpiresAt.getTime(), code.validUntil.getTime()))
+                : baseExpiresAt;
+
+              return {
+                id: code.id,
+                codeValue: code.codeValue,
+                status: code.status,
+                validForDays: code.validForDays ?? null,
+                validUntil: code.validUntil,
+                maxValidUntil: baseExpiresAt,
+                redeemExpiresAt,
+                isExpired: redeemExpiresAt.getTime() <= now.getTime(),
+                usageLimit: code.usageLimit,
+                usageCount: code.usageCount,
+                usedAt: code.usedAt,
+              };
+            }),
           };
         }),
       },

@@ -29,13 +29,13 @@ export class CreateBulkCodesDto {
   @Min(1)
   usageLimit?: number;
 
-  @ApiPropertyOptional({ description: 'Valid for N days starting from code creation date' })
+  @ApiPropertyOptional({ description: 'Valid for N days starting from code activation/use date (capped by 6 months from creation)' })
   @IsOptional()
   @IsInt()
   @Min(1)
   validForDays?: number;
 
-  @ApiPropertyOptional({ description: 'Absolute expiry date (ISO)' })
+  @ApiPropertyOptional({ description: 'Absolute expiry date (ISO), and still capped by 6 months from creation' })
   @IsOptional()
   @IsISO8601()
   validUntil?: string;

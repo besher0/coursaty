@@ -99,7 +99,15 @@ export class AdminsService {
 
     const user = await this.prisma.user.findUnique({
       where: { id: normalizedId },
-      select: { userableType: true, userableId: true },
+      select: {
+        id: true,
+        phone: true,
+        gender: true,
+        userableType: true,
+        userableId: true,
+        status: true,
+        createdAt: true,
+      },
     });
 
     if (user) {
@@ -109,12 +117,35 @@ export class AdminsService {
 
       const adminByUser = await this.prisma.admin.findUnique({ where: { id: user.userableId } });
       if (!adminByUser) throw new NotFoundException('Admin not found');
-      return adminByUser;
+      return {
+        ...adminByUser,
+        user,
+      };
     }
 
     const admin = await this.prisma.admin.findUnique({ where: { id: normalizedId } });
     if (!admin) throw new NotFoundException('Admin not found');
-    return admin;
+
+    const userByAdmin = await this.prisma.user.findFirst({
+      where: {
+        userableType: 'ADMIN',
+        userableId: admin.id,
+      },
+      select: {
+        id: true,
+        phone: true,
+        gender: true,
+        userableType: true,
+        userableId: true,
+        status: true,
+        createdAt: true,
+      },
+    });
+
+    return {
+      ...admin,
+      user: userByAdmin,
+    };
   }
 
   async updateUserStatus(userId: string, status: AllowedUserStatus) {

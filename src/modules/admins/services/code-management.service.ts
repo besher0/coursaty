@@ -85,20 +85,13 @@ export class CodeManagementService {
     let codeValue = this.generateRandomCode();
     codeValue = await this.ensureUniqueCode(codeValue);
 
-    // Calculate expiry date
-    let validUntil: Date | null = null;
-    if (dto.validForDays) {
-      validUntil = new Date();
-      validUntil.setDate(validUntil.getDate() + dto.validForDays);
-    }
-
     const code = await this.prisma.code.create({
       data: {
         codeGroupId: dto.codeGroupId,
         codeValue,
         status: 'ACTIVE',
         usageLimit: dto.usageLimit || null,
-        validUntil,
+        validUntil: null,
         allowedUniversityNumber: dto.allowedUniversityNumber || null,
         validForDays: dto.validForDays || null,
       },
@@ -131,13 +124,6 @@ export class CodeManagementService {
     const prefix = dto.prefix || 'CODE';
     const codes: CodeGeneratedDto[] = [];
 
-    // Calculate expiry date
-    let validUntil: Date | null = null;
-    if (dto.validForDays) {
-      validUntil = new Date();
-      validUntil.setDate(validUntil.getDate() + dto.validForDays);
-    }
-
     // Generate codes
     for (let i = 0; i < dto.quantity; i++) {
       let codeValue = this.generateRandomCode(prefix);
@@ -149,7 +135,7 @@ export class CodeManagementService {
           codeValue,
           status: 'ACTIVE',
           usageLimit: dto.usageLimit || null,
-          validUntil,
+          validUntil: null,
           validForDays: dto.validForDays || null,
         },
       });

@@ -10,6 +10,7 @@ import { randomInt } from 'crypto';
 export class FinancialsService {
   private static readonly FIXED_CODE_LENGTH = 8;
   private static readonly CODE_PATTERN = /^[a-z0-9]{8}$/;
+  private static readonly CODE_MAX_LIFETIME_MONTHS = 6;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -326,13 +327,18 @@ export class FinancialsService {
   async subscribeWithCodeValue(user: { userId: string | number; type: string } | undefined, codeValue: string) {
     if (!codeValue) throw new BadRequestException('حقل codeValue مطلوب');
     const { studentId, student } = await this.resolveStudentContext(user);
+    const now = new Date();
 
     const code = await this.prisma.code.findUnique({ where: { codeValue } });
     if (!code) throw new BadRequestException('الكود غير صالح');
     if (code.status !== 'ACTIVE') throw new BadRequestException('الكود غير فعال');
 
-    const codeExpiry = this.getCodeExpiry(code.createdAt, code.validForDays, code.validUntil);
-    if (codeExpiry && codeExpiry.getTime() < Date.now()) {
+    const redemptionExpiry = this.getCodeRedemptionExpiry(
+      code.createdAt,
+      code.validForDays,
+      code.validUntil,
+    );
+    if (redemptionExpiry.getTime() <= now.getTime()) {
       throw new BadRequestException('انتهت صلاحية الكود');
     }
 
@@ -370,7 +376,7 @@ export class FinancialsService {
     const codeDiscountAmount = Number(((priceAfterCourseDiscount * codeDiscountPct) / 100).toFixed(2));
     const finalPrice = Number((priceAfterCourseDiscount - codeDiscountAmount).toFixed(2));
 
-    expiresAt = codeExpiry;
+    expiresAt = this.getSubscriptionExpiryFromCode(code.createdAt, now, code.validForDays, code.validUntil);
 
     await this.prisma.$transaction(async (tx) => {
       if (code.usageLimit !== null && code.usageLimit !== undefined) {
@@ -493,16 +499,54 @@ export class FinancialsService {
     return date;
   }
 
-  private getCodeExpiry(createdAt: Date, validForDays?: number | null, validUntil?: Date | null) {
-    if (validForDays) {
-      const expiry = new Date(createdAt);
-      expiry.setDate(expiry.getDate() + validForDays);
-      return expiry;
+  /**
+   * الكود لا يمكن أن يعمل أكثر من 6 أشهر من تاريخ إنشائه.
+   */
+  private getCodeBaseExpiry(createdAt: Date) {
+    const baseExpiry = new Date(createdAt);
+    baseExpiry.setMonth(baseExpiry.getMonth() + FinancialsService.CODE_MAX_LIFETIME_MONTHS);
+    return baseExpiry;
+  }
+
+  /**
+   * آخر وقت مسموح فيه استخدام الكود لعمل اشتراك جديد.
+   * = الحد الأساسي (6 أشهر) مع أخذ validUntil بالاعتبار إن وجد.
+   */
+  private getCodeRedemptionExpiry(
+    createdAt: Date,
+    validForDays?: number | null,
+    validUntil?: Date | null,
+  ) {
+    const baseExpiry = this.getCodeBaseExpiry(createdAt);
+    // When relative validity exists, redemption window is controlled by base lifetime only.
+    if (validForDays && validForDays > 0) return baseExpiry;
+    if (!validUntil) return baseExpiry;
+    return new Date(Math.min(baseExpiry.getTime(), new Date(validUntil).getTime()));
+  }
+
+  /**
+   * انتهاء الاشتراك الناتج من الكود:
+   * - صلاحية الأدمن (validForDays) تُحسب من وقت التفعيل.
+   * - validUntil (إن وجد) سقف إضافي.
+   * - لا يمكن تجاوز الحد الأساسي (6 أشهر من إنشاء الكود).
+   */
+  private getSubscriptionExpiryFromCode(
+    codeCreatedAt: Date,
+    activatedAt: Date,
+    validForDays?: number | null,
+    validUntil?: Date | null,
+  ) {
+    const candidates: number[] = [this.getCodeBaseExpiry(codeCreatedAt).getTime()];
+
+    if (validForDays && validForDays > 0) {
+      const relativeExpiry = new Date(activatedAt);
+      relativeExpiry.setDate(relativeExpiry.getDate() + validForDays);
+      candidates.push(relativeExpiry.getTime());
+    } else if (validUntil) {
+      candidates.push(new Date(validUntil).getTime());
     }
 
-    if (validUntil) return new Date(validUntil);
-
-    return null;
+    return new Date(Math.min(...candidates));
   }
 
   async getActiveCoursesByUser(user?: { userId: string | number; type: string }) {

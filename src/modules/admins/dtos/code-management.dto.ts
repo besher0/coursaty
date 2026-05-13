@@ -28,7 +28,10 @@ export class GenerateCodesDto {
   @Max(1000)
   quantity: number;
 
-  @ApiPropertyOptional({ example: 30, description: 'Days until code expires' })
+  @ApiPropertyOptional({
+    example: 30,
+    description: 'Days of subscription validity starting from activation (capped by 6 months from code creation)',
+  })
   @IsOptional()
   @IsNumber()
   validForDays?: number;
@@ -65,7 +68,10 @@ export class BulkGenerateCodesDto {
   @Max(5000)
   quantity: number;
 
-  @ApiPropertyOptional({ example: 30, description: 'Days until code expires' })
+  @ApiPropertyOptional({
+    example: 30,
+    description: 'Days of subscription validity starting from activation (capped by 6 months from code creation)',
+  })
   @IsOptional()
   @IsNumber()
   validForDays?: number;
