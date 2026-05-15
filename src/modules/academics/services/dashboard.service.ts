@@ -1577,6 +1577,7 @@ export class DashboardService {
     page: number = 1,
     limit: number = 10,
     guestFilter?: DashboardGuestFilter,
+    isFree?: boolean,
   ) {
     const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
     const activeSeasonId = await this.getActiveHomeSeasonId();
@@ -1603,6 +1604,7 @@ export class DashboardService {
               collegeYearId: year.id,
               categoryId: category.id,
               ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
+              ...(typeof isFree === 'boolean' ? { isFree } : {}),
             } as any;
 
             const total = await this.prisma.course.count({ where });
@@ -1661,6 +1663,7 @@ export class DashboardService {
     page: number = 1,
     limit: number = 10,
     guestFilter?: DashboardGuestFilter,
+    isFree?: boolean,
   ) {
     const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
     const activeSeasonId = await this.getActiveHomeSeasonId();
@@ -1680,6 +1683,7 @@ export class DashboardService {
           collegeId,
           collegeYearId: year.id,
           ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
+          ...(typeof isFree === 'boolean' ? { isFree } : {}),
         } as any;
         const total = await this.prisma.course.count({ where });
         const courses = await this.prisma.course.findMany({
@@ -1727,6 +1731,7 @@ export class DashboardService {
     page: number = 1,
     limit: number = 10,
     guestFilter?: DashboardGuestFilter,
+    isFree?: boolean,
   ) {
     const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
     const activeSeasonId = await this.getActiveHomeSeasonId();
@@ -1746,6 +1751,7 @@ export class DashboardService {
           collegeId,
           collegeYearId: year.id,
           ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
+          ...(typeof isFree === 'boolean' ? { isFree } : {}),
         } as any;
         const total = await this.prisma.course.count({ where });
         const courses = await this.prisma.course.findMany({
@@ -1796,12 +1802,15 @@ export class DashboardService {
     limit: number = 10,
     guestFilter?: DashboardGuestFilter,
   ) {
-    if (filter === 'popular') {
-      return this.getCoursesByPopular(user, page, limit, guestFilter);
+    const normalizedFilter = (filter || 'all').trim().toLowerCase();
+    const isFree = normalizedFilter === 'free' ? true : undefined;
+
+    if (normalizedFilter === 'popular') {
+      return this.getCoursesByPopular(user, page, limit, guestFilter, isFree);
     }
 
     if (categoryId) {
-      const result = await this.getCoursesByCategory(user, page, limit, guestFilter);
+      const result = await this.getCoursesByCategory(user, page, limit, guestFilter, isFree);
       const matched = result.categories.find((c) => c.category.id === categoryId);
       return {
         college: result.college,
@@ -1811,6 +1820,6 @@ export class DashboardService {
       };
     }
 
-    return this.getCoursesByYear(user, page, limit, guestFilter);
+    return this.getCoursesByYear(user, page, limit, guestFilter, isFree);
   }
 }

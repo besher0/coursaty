@@ -309,8 +309,8 @@ export class DashboardController {
   }
 
   @Get('courses')
-  @ApiOperation({ summary: 'Unified courses endpoint: category/all/popular' })
-  @ApiQuery({ name: 'filter', required: false, description: 'all | popular' })
+  @ApiOperation({ summary: 'Unified courses endpoint: category/all/popular/free' })
+  @ApiQuery({ name: 'filter', required: false, description: 'all | popular | free' })
   @ApiQuery({ name: 'categoryId', required: false, description: 'Filter by category id' })
   @ApiQuery({ name: 'page', required: false, description: 'Optional page number, default is 1' })
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items per page, default is 10' })
