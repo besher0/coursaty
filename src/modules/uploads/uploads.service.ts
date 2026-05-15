@@ -164,7 +164,7 @@ export class UploadsService {
   }
 
   async getBunnyVideoResolutions(videoId: string) {
-    const { streamVideoId, source } = await this.resolveStreamVideoId(videoId);
+    const { streamVideoId } = await this.resolveStreamVideoIdFromDbVideo(videoId);
 
     const [playDataResult, resolutionsResult] = await Promise.allSettled([
       this.bunny.getVideoPlayData(streamVideoId),
@@ -214,7 +214,7 @@ export class UploadsService {
     return {
       requestedVideoId: videoId,
       resolvedVideoId: streamVideoId,
-      resolvedFrom: source,
+      resolvedFrom: 'db_video_id',
       ...playData,
       streamMasterPlaylistUrl: playData.playlistUrl,
       streamPlaylistUrl: playData.playlistUrl,
@@ -225,8 +225,8 @@ export class UploadsService {
     };
   }
 
-  private async resolveStreamVideoId(videoIdOrGuid: string): Promise<{ streamVideoId: string; source: 'stream_guid' | 'db_video_id' }> {
-    const input = String(videoIdOrGuid || '').trim();
+  private async resolveStreamVideoIdFromDbVideo(videoId: string): Promise<{ streamVideoId: string }> {
+    const input = String(videoId || '').trim();
     if (!input) {
       throw new BadRequestException('videoId مطلوب');
     }
@@ -236,16 +236,14 @@ export class UploadsService {
       select: { videoUrl: true },
     });
 
-    if (!dbVideo) {
-      return { streamVideoId: input, source: 'stream_guid' };
-    }
+    if (!dbVideo) throw new NotFoundException('الفيديو غير موجود');
 
     const streamVideoId = this.extractBunnyGuidFromUrl(dbVideo.videoUrl);
     if (!streamVideoId) {
       throw new BadRequestException('هذا الفيديو لا يحتوي على معرف Bunny Stream صالح');
     }
 
-    return { streamVideoId, source: 'db_video_id' };
+    return { streamVideoId };
   }
 
   private extractBunnyGuidFromUrl(url?: string | null): string | null {
@@ -256,6 +254,22 @@ export class UploadsService {
 
     const embedMatch = url.match(/\/embed\/[^/]+\/([0-9a-fA-F-]{36})(?:[/?#]|$)/);
     if (embedMatch?.[1]) return embedMatch[1];
+
+    const uuidPattern = /([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/;
+
+    try {
+      const pathname = new URL(url).pathname;
+      const segments = pathname.split('/').filter(Boolean);
+      for (const segment of segments) {
+        const segmentMatch = segment.match(uuidPattern);
+        if (segmentMatch?.[1]) return segmentMatch[1];
+      }
+    } catch {
+      // Non-URL inputs are handled by the generic regex fallback below.
+    }
+
+    const genericMatch = url.match(uuidPattern);
+    if (genericMatch?.[1]) return genericMatch[1];
 
     return null;
   }
