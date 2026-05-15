@@ -91,8 +91,19 @@ export class UsersService {
         });
       }
     } else if (user.userableType === 'TEACHER') {
-      // For teachers, could add more fields if needed
-      // e.g., description, image, etc.
+      const teacherUpdateData: any = {};
+      if (dto.name !== undefined) teacherUpdateData.name = dto.name;
+      if (dto.description !== undefined) teacherUpdateData.description = dto.description;
+      if (dto.image !== undefined) teacherUpdateData.image = dto.image;
+      if (dto.telegramUrl !== undefined) teacherUpdateData.telegramUrl = dto.telegramUrl;
+      if (dto.instagramUrl !== undefined) teacherUpdateData.instagramUrl = dto.instagramUrl;
+
+      if (Object.keys(teacherUpdateData).length > 0) {
+        await this.prisma.teacher.update({
+          where: { id: user.userableId },
+          data: teacherUpdateData,
+        });
+      }
     }
 
     // Return updated profile

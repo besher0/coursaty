@@ -57,13 +57,13 @@ export class LecturesService {
         where: { courseId: String(courseId) },
         include: {
           videos: {
-            orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+            orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
           },
           files: {
-            orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+            orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
           },
         },
-        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
       });
     } catch (error) {
       if (!this.isAnySortOrderColumnMissing(error)) throw error;
@@ -82,33 +82,27 @@ export class LecturesService {
       });
     }
 
+    const mapLecture = (lecture: any, hideLockedMedia: boolean) => ({
+      ...lecture,
+      hasVideosSortOrder: lecture.videos.some((video: any) => video.sortOrder !== null && video.sortOrder !== undefined),
+      hasFilesSortOrder: lecture.files.some((file: any) => file.sortOrder !== null && file.sortOrder !== undefined),
+      videos: lecture.videos.map((video: any) => ({
+        ...video,
+        videoUrl: hideLockedMedia && !video.isFree ? null : video.videoUrl,
+        locked: hideLockedMedia ? !video.isFree : false,
+      })),
+      files: lecture.files.map((file: any) => ({
+        ...file,
+        fileUrl: hideLockedMedia && !file.isFree ? null : file.fileUrl,
+        locked: hideLockedMedia ? !file.isFree : false,
+      })),
+    });
+
     if (!isOwnerOrAdmin && isStudent && !hasAccess) {
-      return lectures.map((lecture) => ({
-        ...lecture,
-        videos: lecture.videos.map((video) => ({
-          ...video,
-          videoUrl: video.isFree ? video.videoUrl : null,
-          locked: !video.isFree,
-        })),
-        files: lecture.files.map((file) => ({
-          ...file,
-          fileUrl: file.isFree ? file.fileUrl : null,
-          locked: !file.isFree,
-        })),
-      }));
+      return lectures.map((lecture) => mapLecture(lecture, true));
     }
 
-    return lectures.map((lecture) => ({
-      ...lecture,
-      videos: lecture.videos.map((video) => ({
-        ...video,
-        locked: false,
-      })),
-      files: lecture.files.map((file) => ({
-        ...file,
-        locked: false,
-      })),
-    }));
+    return lectures.map((lecture) => mapLecture(lecture, false));
   }
 
   async updateLecture(id: string, data: UpdateLectureDto, user?: { userId: string | number; type: string }) {
@@ -346,13 +340,13 @@ export class LecturesService {
             },
           },
           files: {
-            orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+            orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
           },
           videos: {
-            orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+            orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
             include: {
               segments: {
-                orderBy: [{ sortOrder: 'asc' }, { startSeconds: 'asc' }],
+                orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { startSeconds: 'asc' }],
               },
             },
           },
@@ -416,6 +410,8 @@ export class LecturesService {
       : null;
 
     const { hasAccess, isOwnerOrAdmin, isStudent } = await this.getCourseAccess(user, lecture.course.id);
+    const hasVideosSortOrder = lecture.videos.some((video: any) => video.sortOrder !== null && video.sortOrder !== undefined);
+    const hasFilesSortOrder = lecture.files.some((file: any) => file.sortOrder !== null && file.sortOrder !== undefined);
 
     if (!isOwnerOrAdmin && isStudent && !hasAccess) {
       return {
@@ -426,6 +422,8 @@ export class LecturesService {
           imageUrl: lecture.imageUrl,
         },
         teacher,
+        hasVideosSortOrder,
+        hasFilesSortOrder,
         files: lecture.files.map((file) => ({
           ...file,
           fileUrl: file.isFree ? file.fileUrl : null,
@@ -448,6 +446,8 @@ export class LecturesService {
         imageUrl: lecture.imageUrl,
       },
       teacher,
+      hasVideosSortOrder,
+      hasFilesSortOrder,
       files: lecture.files.map((file) => ({
         ...file,
         locked: false,
@@ -691,12 +691,17 @@ export class LecturesService {
 
   private async getNextVideoSortOrder(lectureId: string) {
     try {
-      const maxSortOrderResult = await this.prisma.video.aggregate({
-        where: { lectureId: String(lectureId) },
-        _max: { sortOrder: true },
-      });
+      const [maxSortOrderResult, totalCount] = await this.prisma.$transaction([
+        this.prisma.video.aggregate({
+          where: { lectureId: String(lectureId) },
+          _max: { sortOrder: true },
+        }),
+        this.prisma.video.count({
+          where: { lectureId: String(lectureId) },
+        }),
+      ]);
 
-      return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
+      return this.getNextSortOrderValue(maxSortOrderResult._max.sortOrder, totalCount);
     } catch (error) {
       if (!this.isMissingSortOrderColumn(error, 'Video.sortOrder')) throw error;
       return 1;
@@ -705,12 +710,17 @@ export class LecturesService {
 
   private async getNextLectureSortOrder(courseId: string) {
     try {
-      const maxSortOrderResult = await this.prisma.lecture.aggregate({
-        where: { courseId: String(courseId) },
-        _max: { sortOrder: true },
-      });
+      const [maxSortOrderResult, totalCount] = await this.prisma.$transaction([
+        this.prisma.lecture.aggregate({
+          where: { courseId: String(courseId) },
+          _max: { sortOrder: true },
+        }),
+        this.prisma.lecture.count({
+          where: { courseId: String(courseId) },
+        }),
+      ]);
 
-      return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
+      return this.getNextSortOrderValue(maxSortOrderResult._max.sortOrder, totalCount);
     } catch (error) {
       if (!this.isMissingSortOrderColumn(error, 'Lecture.sortOrder')) throw error;
       return 1;
@@ -719,16 +729,25 @@ export class LecturesService {
 
   private async getNextLectureFileSortOrder(lectureId: string) {
     try {
-      const maxSortOrderResult = await this.prisma.lectureFile.aggregate({
-        where: { lectureId: String(lectureId) },
-        _max: { sortOrder: true },
-      });
+      const [maxSortOrderResult, totalCount] = await this.prisma.$transaction([
+        this.prisma.lectureFile.aggregate({
+          where: { lectureId: String(lectureId) },
+          _max: { sortOrder: true },
+        }),
+        this.prisma.lectureFile.count({
+          where: { lectureId: String(lectureId) },
+        }),
+      ]);
 
-      return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
+      return this.getNextSortOrderValue(maxSortOrderResult._max.sortOrder, totalCount);
     } catch (error) {
       if (!this.isMissingSortOrderColumn(error, 'LectureFile.sortOrder')) throw error;
       return 1;
     }
+  }
+
+  private getNextSortOrderValue(maxSortOrder: number | null | undefined, totalCount: number) {
+    return Math.max(maxSortOrder ?? 0, totalCount) + 1;
   }
 
   async deleteVideo(id: string, user?: { userId: string | number; type: string }) {
@@ -786,7 +805,7 @@ export class LecturesService {
 
     return this.prisma.videoSegment.findMany({
       where: { videoId: String(videoId) },
-      orderBy: [{ sortOrder: 'asc' }, { startSeconds: 'asc' }],
+      orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { startSeconds: 'asc' }],
     });
   }
 
@@ -913,7 +932,7 @@ export class LecturesService {
     return this.prisma.question.findMany({
       where: { lectureId: String(lectureId) },
       include: { options: true },
-      orderBy: { sortOrder: 'asc' },
+      orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
     });
   }
 

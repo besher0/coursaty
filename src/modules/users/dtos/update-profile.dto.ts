@@ -29,4 +29,25 @@ export class UpdateProfileDto {
   @IsOptional()
   name?: string;
 
+  // Teacher fields (optional, only for teachers)
+  @ApiPropertyOptional({ description: 'Teacher description' })
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @ApiPropertyOptional({ description: 'Teacher image URL' })
+  @IsString()
+  @IsOptional()
+  image?: string;
+
+  @ApiPropertyOptional({ description: 'Teacher Telegram URL' })
+  @IsString()
+  @IsOptional()
+  telegramUrl?: string;
+
+  @ApiPropertyOptional({ description: 'Teacher Instagram URL' })
+  @IsString()
+  @IsOptional()
+  instagramUrl?: string;
+
 }
