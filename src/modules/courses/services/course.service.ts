@@ -761,7 +761,7 @@ export class CourseService {
       description?: string;
       isFree?: boolean;
       sortOrder?: number;
-      size?: number;
+      size?: string | number;
       preferredResolution?: string;
     },
   ) {
