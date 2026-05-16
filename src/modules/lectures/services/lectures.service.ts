@@ -1044,10 +1044,14 @@ export class LecturesService {
   }
 
   private resolveMediaSize(providedSize?: string | number, uploadedSize?: number): string | null {
-    const rawSize = providedSize ?? uploadedSize;
-    if (rawSize === undefined || rawSize === null) return null;
+    if (providedSize === undefined || providedSize === null) {
+      if (uploadedSize === undefined || uploadedSize === null) return null;
+      return String(Math.round(Number(uploadedSize)));
+    }
 
-    const sizeNum = Number(rawSize);
+    if (typeof providedSize === 'string') return providedSize;
+
+    const sizeNum = Number(providedSize);
     if (!Number.isFinite(sizeNum) || sizeNum < 0) {
       throw new BadRequestException('حجم الملف/الفيديو يجب أن يكون رقماً موجباً أو صفراً');
     }

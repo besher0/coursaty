@@ -770,7 +770,6 @@ export class CourseService {
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
 
     const title = options?.videoName || file.originalname || 'video';
-    const size = this.resolveMediaSize(options?.size, file?.size);
     const ext = path.extname(file.originalname || '') || '.mp4';
     const fileName = `${randomUUID()}${ext}`;
     const storagePath = `lectures/${lectureId}/videos/${fileName}`;
@@ -820,6 +819,7 @@ export class CourseService {
       );
     }
     const sortOrder = options?.sortOrder ?? (await this.getNextLectureVideoSortOrder(lectureId));
+    const size = this.resolveMediaSize(options?.size, file?.size);
 
     const created = await this.prisma.video.create({
       data: {
@@ -1050,6 +1050,22 @@ export class CourseService {
     return this.assertCourseOwnership(user, courseId);
   }
 
+  private resolveMediaSize(providedSize?: string | number, uploadedSize?: number): string | null {
+    if (providedSize === undefined || providedSize === null) {
+      if (uploadedSize === undefined || uploadedSize === null) return null;
+      return String(Math.round(Number(uploadedSize)));
+    }
+
+    if (typeof providedSize === 'string') return providedSize;
+
+    const sizeNum = Number(providedSize);
+    if (!Number.isFinite(sizeNum) || sizeNum < 0) {
+      throw new BadRequestException('حجم الملف/الفيديو يجب أن يكون رقماً موجباً أو صفراً');
+    }
+
+    return String(Math.round(sizeNum));
+  }
+
   private async ensureTeacherAffiliation(
     teacherId: string,
     universityId: string,
@@ -1085,16 +1101,6 @@ export class CourseService {
     if (!affiliation) throw new BadRequestException('المدرس غير منتسب للنطاق المحدد');
   }
 
-  private resolveMediaSize(providedSize?: string | number, uploadedSize?: number): string | null {
-    const rawSize = providedSize ?? uploadedSize;
-    if (rawSize === undefined || rawSize === null) return null;
 
-    const sizeNum = Number(rawSize);
-    if (!Number.isFinite(sizeNum) || sizeNum < 0) {
-      throw new BadRequestException('حجم الملف/الفيديو يجب أن يكون رقماً موجباً أو صفراً');
-    }
-
-    return String(Math.round(sizeNum));
-  }
 }
 

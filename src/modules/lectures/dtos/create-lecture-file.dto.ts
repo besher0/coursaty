@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsNumber, IsNumberString, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateLectureFileDto {
   @ApiProperty({ format: 'uuid' })
@@ -32,6 +32,6 @@ export class CreateLectureFileDto {
 
   @ApiPropertyOptional({ description: 'File size in bytes (as string)' })
   @IsOptional()
-  @IsNumberString()
+  @IsString()
   size?: string;
 }

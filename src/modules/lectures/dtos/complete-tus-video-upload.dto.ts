@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 import { BUNNY_STREAM_RESOLUTIONS, BunnyStreamResolution } from '@/shared/bunny/bunny-resolution.constants';
 
 export class CompleteTusVideoUploadDto {
@@ -35,9 +35,8 @@ export class CompleteTusVideoUploadDto {
   @IsNumber()
   sortOrder?: number;
 
-  @ApiPropertyOptional({ description: 'Video size in bytes' })
+  @ApiPropertyOptional({ description: 'Video size in bytes (as string)' })
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  size?: number;
+  @IsString()
+  size?: string;
 }

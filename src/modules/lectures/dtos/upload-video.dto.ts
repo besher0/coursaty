@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, Min, IsNumberString } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
+import { IsNumber } from 'class-validator';
 import { BUNNY_STREAM_RESOLUTIONS, BunnyStreamResolution } from '@/shared/bunny/bunny-resolution.constants';
 
 export class UploadVideoDto {
@@ -33,7 +34,7 @@ export class UploadVideoDto {
 
   @ApiPropertyOptional({ description: 'Video size in bytes (as string)' })
   @IsOptional()
-  @IsNumberString()
+  @IsString()
   size?: string;
 
 }
