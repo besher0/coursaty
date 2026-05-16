@@ -1043,15 +1043,15 @@ export class LecturesService {
     return metaColumn.toLowerCase().endsWith(column.toLowerCase());
   }
 
-  private resolveMediaSize(providedSize?: number, uploadedSize?: number): number | null {
+  private resolveMediaSize(providedSize?: string | number, uploadedSize?: number): string | null {
     const rawSize = providedSize ?? uploadedSize;
     if (rawSize === undefined || rawSize === null) return null;
 
-    const size = Number(rawSize);
-    if (!Number.isFinite(size) || size < 0) {
+    const sizeNum = Number(rawSize);
+    if (!Number.isFinite(sizeNum) || sizeNum < 0) {
       throw new BadRequestException('حجم الملف/الفيديو يجب أن يكون رقماً موجباً أو صفراً');
     }
 
-    return Math.round(size);
+    return String(Math.round(sizeNum));
   }
 }

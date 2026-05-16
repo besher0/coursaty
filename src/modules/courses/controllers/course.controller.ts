@@ -172,7 +172,7 @@ export class CourseController {
         description: { type: 'string' },
         isFree: { type: 'boolean' },
         sortOrder: { type: 'number' },
-        size: { type: 'number' },
+        size: { type: 'string' },
         preferredResolution: { type: 'string', enum: [...BUNNY_STREAM_RESOLUTIONS] },
       },
     },

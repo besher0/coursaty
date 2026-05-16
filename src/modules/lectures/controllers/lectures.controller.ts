@@ -76,7 +76,7 @@ export class LecturesController {
       type: 'object',
       properties: {
         file: { type: 'string', format: 'binary' },
-        size: { type: 'number' },
+        size: { type: 'string' },
       },
     },
   })
@@ -137,7 +137,7 @@ export class LecturesController {
         description: { type: 'string' },
         isFree: { type: 'boolean' },
         sortOrder: { type: 'number' },
-        size: { type: 'number' },
+        size: { type: 'string' },
         preferredResolution: { type: 'string', enum: [...BUNNY_STREAM_RESOLUTIONS] },
       },
     },

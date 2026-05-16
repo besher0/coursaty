@@ -440,7 +440,7 @@ model Video {
   videoName       String
   description     String?
   videoUrl        String
-  size            Int?
+  size            String?
   durationSeconds Int?
   viewsCount      Int      @default(0)
   isFree          Boolean  @default(false)
@@ -515,7 +515,7 @@ model LectureFile {
   lectureId String
   fileName  String
   fileUrl   String
-  size      Int?
+  size      String?
   fileType  String?
   isFree    Boolean  @default(false)
   sortOrder Int?
