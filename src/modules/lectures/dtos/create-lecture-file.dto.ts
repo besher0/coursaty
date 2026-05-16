@@ -32,7 +32,7 @@ export class CreateLectureFileDto {
 
   @ApiPropertyOptional({ description: 'File size in bytes' })
   @IsOptional()
-  @IsNumber()
+  @IsString()
   @Min(0)
-  size?: number;
+  size?: string;
 }

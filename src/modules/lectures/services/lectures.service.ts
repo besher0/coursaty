@@ -481,7 +481,7 @@ export class LecturesService {
       durationSeconds?: number;
       isFree?: boolean;
       sortOrder?: number;
-      size?: number;
+      size?: string ;
     },
     user?: { userId: string | number; type: string },
   ) {

@@ -33,8 +33,7 @@ export class CreateVideoDto {
 
   @ApiPropertyOptional({ description: 'Video size in bytes' })
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  size?: number;
+  @IsString()
+  size?: string;
 
 }
