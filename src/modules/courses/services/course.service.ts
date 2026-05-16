@@ -761,6 +761,7 @@ export class CourseService {
       description?: string;
       isFree?: boolean;
       sortOrder?: number;
+      size?: number;
       preferredResolution?: string;
     },
   ) {
@@ -769,6 +770,7 @@ export class CourseService {
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
 
     const title = options?.videoName || file.originalname || 'video';
+    const size = this.resolveMediaSize(options?.size, file?.size);
     const ext = path.extname(file.originalname || '') || '.mp4';
     const fileName = `${randomUUID()}${ext}`;
     const storagePath = `lectures/${lectureId}/videos/${fileName}`;
@@ -827,6 +829,7 @@ export class CourseService {
         videoUrl: persistedVideoUrl,
         durationSeconds: null,
         isFree: options?.isFree ?? false,
+        size,
         sortOrder,
       },
     });
@@ -887,10 +890,16 @@ export class CourseService {
 
     const streamPlayback = await this.bunny.getStreamPlaybackPayload(dto.videoId, dto.preferredResolution);
     if (existing) {
-      if (dto.sortOrder !== undefined && existing.sortOrder !== dto.sortOrder) {
+      const updateData: any = {};
+      if (dto.sortOrder !== undefined && existing.sortOrder !== dto.sortOrder) updateData.sortOrder = dto.sortOrder;
+      if (dto.size !== undefined && existing.size !== this.resolveMediaSize(dto.size)) {
+        updateData.size = this.resolveMediaSize(dto.size);
+      }
+
+      if (Object.keys(updateData).length) {
         const updated = await this.prisma.video.update({
           where: { id: existing.id },
-          data: { sortOrder: dto.sortOrder },
+          data: updateData,
         });
         return {
           ...updated,
@@ -913,6 +922,7 @@ export class CourseService {
         description: dto.description,
         videoUrl: streamPlayUrl,
         isFree: dto.isFree ?? false,
+        size: this.resolveMediaSize(dto.size),
         sortOrder,
       },
     });
@@ -1073,6 +1083,18 @@ export class CourseService {
     });
 
     if (!affiliation) throw new BadRequestException('المدرس غير منتسب للنطاق المحدد');
+  }
+
+  private resolveMediaSize(providedSize?: number, uploadedSize?: number): number | null {
+    const rawSize = providedSize ?? uploadedSize;
+    if (rawSize === undefined || rawSize === null) return null;
+
+    const size = Number(rawSize);
+    if (!Number.isFinite(size) || size < 0) {
+      throw new BadRequestException('حجم الملف/الفيديو يجب أن يكون رقماً موجباً أو صفراً');
+    }
+
+    return Math.round(size);
   }
 }
 

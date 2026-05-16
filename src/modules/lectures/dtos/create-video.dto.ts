@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class CreateVideoDto {
   @ApiProperty({ format: 'uuid' })
@@ -30,5 +30,11 @@ export class CreateVideoDto {
   @IsOptional()
   @IsNumber()
   sortOrder?: number;
+
+  @ApiPropertyOptional({ description: 'Video size in bytes' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  size?: number;
 
 }

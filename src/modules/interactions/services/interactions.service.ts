@@ -170,7 +170,8 @@ export class InteractionsService {
   }
 
   async getVideoLikes(videoId: string, user: { userId: string | number; type: string } | undefined) {
-    const { dbUser } = await this.ensureVideoAccess(videoId, user);
+    await this.ensureVideoExists(videoId);
+    const { dbUser } = await this.ensureStudentContext(user);
 
     const [likesCount, myLike] = await Promise.all([
       this.prisma.videoInteraction.count({
@@ -261,7 +262,7 @@ export class InteractionsService {
   private async ensureVideoAccess(videoId: string, user: { userId: string | number; type: string } | undefined) {
     const video = await this.prisma.video.findUnique({
       where: { id: videoId },
-      include: { lecture: { select: { courseId: true, course: { select: { expiresAt: true } } } } },
+      include: { lecture: { select: { courseId: true, course: { select: { isFree: true, expiresAt: true } } } } },
     });
     if (!video) throw new NotFoundException('الفيديو غير موجود');
 
@@ -284,6 +285,10 @@ export class InteractionsService {
       throw new ForbiddenException('انتهت صلاحية الوصول للكورس');
     }
 
+    if (video.lecture.course?.isFree) {
+      return { video, dbUser };
+    }
+
     const subscription = await this.prisma.studentSubscription.findUnique({
       where: {
         studentId_courseId: { studentId: dbUser.userableId, courseId: video.lecture.courseId },
@@ -295,6 +300,15 @@ export class InteractionsService {
       throw new ForbiddenException('انتهت صلاحية الاشتراك على هذا الكورس');
     }
     return { video, dbUser };
+  }
+
+  private async ensureVideoExists(videoId: string) {
+    const video = await this.prisma.video.findUnique({
+      where: { id: videoId },
+      select: { id: true },
+    });
+    if (!video) throw new NotFoundException('الفيديو غير موجود');
+    return video;
   }
 
   private async syncTeacherLikesCount(teacherId: string) {

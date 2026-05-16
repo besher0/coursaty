@@ -19,6 +19,7 @@ import { UpdateVideoSegmentDto } from '../dtos/update-video-segment.dto';
 import { InitTusVideoUploadDto } from '../dtos/init-tus-video-upload.dto';
 import { CompleteTusVideoUploadDto } from '../dtos/complete-tus-video-upload.dto';
 import { RefreshTusVideoUploadDto } from '../dtos/refresh-tus-video-upload.dto';
+import { UploadLectureFileDto } from '../dtos/upload-lecture-file.dto';
 import { BUNNY_STREAM_RESOLUTIONS } from '@/shared/bunny/bunny-resolution.constants';
 
 @ApiTags('lectures')
@@ -75,14 +76,20 @@ export class LecturesController {
       type: 'object',
       properties: {
         file: { type: 'string', format: 'binary' },
+        size: { type: 'number' },
       },
     },
   })
   @UseInterceptors(FileInterceptor('file'))
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  uploadFile(@Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string, @UploadedFile() file: any, @Req() req: any) {
-    return this.lectures.uploadLectureFile(lectureId, file, req.user);
+  uploadFile(
+    @Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string,
+    @UploadedFile() file: any,
+    @Body() body: UploadLectureFileDto,
+    @Req() req: any,
+  ) {
+    return this.lectures.uploadLectureFile(lectureId, file, body, req.user);
   }
 
   @Post('files')
@@ -130,6 +137,7 @@ export class LecturesController {
         description: { type: 'string' },
         isFree: { type: 'boolean' },
         sortOrder: { type: 'number' },
+        size: { type: 'number' },
         preferredResolution: { type: 'string', enum: [...BUNNY_STREAM_RESOLUTIONS] },
       },
     },

@@ -15,6 +15,7 @@ import { UpdateVideoSegmentDto } from '../dtos/update-video-segment.dto';
 import { InitTusVideoUploadDto } from '../dtos/init-tus-video-upload.dto';
 import { CompleteTusVideoUploadDto } from '../dtos/complete-tus-video-upload.dto';
 import { RefreshTusVideoUploadDto } from '../dtos/refresh-tus-video-upload.dto';
+import { UploadLectureFileDto } from '../dtos/upload-lecture-file.dto';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 
@@ -124,13 +125,19 @@ export class LecturesService {
     return this.prisma.lecture.delete({ where: { id: String(id) } });
   }
 
-  async uploadLectureFile(lectureId: string, file: any, user?: { userId: string | number; type: string }) {
+  async uploadLectureFile(
+    lectureId: string,
+    file: any,
+    dto?: UploadLectureFileDto,
+    user?: { userId: string | number; type: string },
+  ) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
     if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
     await this.assertCourseOwnership(user, lecture.courseId);
 
     const path = `lectures/${lectureId}/${file.originalname}`;
     const url = await this.bunny.uploadImage(path, file);
+    const size = this.resolveMediaSize(dto?.size, file?.size);
 
     const sortOrder = await this.getNextLectureFileSortOrder(lectureId);
 
@@ -141,6 +148,7 @@ export class LecturesService {
           fileName: file.originalname,
           fileUrl: url,
           fileType: file.mimetype || 'file',
+          size,
           sortOrder,
         },
       });
@@ -152,6 +160,7 @@ export class LecturesService {
           fileName: file.originalname,
           fileUrl: url,
           fileType: file.mimetype || 'file',
+          size,
         },
       });
     }
@@ -169,6 +178,7 @@ export class LecturesService {
           fileUrl: dto.fileUrl,
           fileType: dto.fileType,
           isFree: dto.isFree ?? false,
+          size: this.resolveMediaSize(dto.size),
           sortOrder,
         },
       });
@@ -181,6 +191,7 @@ export class LecturesService {
           fileUrl: dto.fileUrl,
           fileType: dto.fileType,
           isFree: dto.isFree ?? false,
+          size: this.resolveMediaSize(dto.size),
         },
       });
     }
@@ -194,6 +205,7 @@ export class LecturesService {
     const data: any = {};
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
     if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
+    if (dto.size !== undefined) data.size = this.resolveMediaSize(dto.size);
 
     if (!Object.keys(data).length) return file;
 
@@ -469,6 +481,7 @@ export class LecturesService {
       durationSeconds?: number;
       isFree?: boolean;
       sortOrder?: number;
+      size?: number;
     },
     user?: { userId: string | number; type: string },
   ) {
@@ -482,6 +495,7 @@ export class LecturesService {
         description: dto.description,
         videoUrl: dto.videoUrl,
         isFree: dto.isFree ?? false,
+        size: this.resolveMediaSize(dto.size),
         sortOrder,
       },
     });
@@ -498,6 +512,7 @@ export class LecturesService {
     await this.assertCourseOwnership(user, lecture.courseId);
 
     const title = dto.videoName || file.originalname || 'video';
+    const size = this.resolveMediaSize(dto.size, file?.size);
     const ext = path.extname(file.originalname || '') || '.mp4';
     const fileName = `${randomUUID()}${ext}`;
     const storagePath = `lectures/${lectureId}/videos/${fileName}`;
@@ -555,6 +570,7 @@ export class LecturesService {
         description: dto.description,
         videoUrl: persistedVideoUrl,
         isFree: dto.isFree ?? false,
+        size,
         sortOrder,
       },
     });
@@ -613,10 +629,16 @@ export class LecturesService {
 
     const streamPlayback = await this.bunny.getStreamPlaybackPayload(dto.videoId, dto.preferredResolution);
     if (existing) {
-      if (dto.sortOrder !== undefined && existing.sortOrder !== dto.sortOrder) {
+      const updateData: any = {};
+      if (dto.sortOrder !== undefined && existing.sortOrder !== dto.sortOrder) updateData.sortOrder = dto.sortOrder;
+      if (dto.size !== undefined && existing.size !== this.resolveMediaSize(dto.size)) {
+        updateData.size = this.resolveMediaSize(dto.size);
+      }
+
+      if (Object.keys(updateData).length) {
         const updated = await this.prisma.video.update({
           where: { id: existing.id },
-          data: { sortOrder: dto.sortOrder },
+          data: updateData,
         });
         return {
           ...updated,
@@ -639,6 +661,7 @@ export class LecturesService {
         description: dto.description,
         videoUrl: streamPlayUrl,
         isFree: dto.isFree ?? false,
+        size: this.resolveMediaSize(dto.size),
         sortOrder,
       },
     });
@@ -685,6 +708,7 @@ export class LecturesService {
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
     if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
+    if (dto.size !== undefined) data.size = this.resolveMediaSize(dto.size);
 
     return this.prisma.video.update({ where: { id: String(id) }, data });
   }
@@ -1017,5 +1041,17 @@ export class LecturesService {
 
     const metaColumn = String((error.meta as Record<string, unknown> | undefined)?.column ?? '');
     return metaColumn.toLowerCase().endsWith(column.toLowerCase());
+  }
+
+  private resolveMediaSize(providedSize?: number, uploadedSize?: number): number | null {
+    const rawSize = providedSize ?? uploadedSize;
+    if (rawSize === undefined || rawSize === null) return null;
+
+    const size = Number(rawSize);
+    if (!Number.isFinite(size) || size < 0) {
+      throw new BadRequestException('حجم الملف/الفيديو يجب أن يكون رقماً موجباً أو صفراً');
+    }
+
+    return Math.round(size);
   }
 }
