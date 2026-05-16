@@ -89,6 +89,7 @@ export class LecturesController {
     @Body() body: UploadLectureFileDto,
     @Req() req: any,
   ) {
+    if (body && body.size !== undefined && body.size !== null) body.size = String(body.size);
     return this.lectures.uploadLectureFile(lectureId, file, body, req.user);
   }
 
@@ -151,6 +152,7 @@ export class LecturesController {
     @Body() body: UploadVideoDto,
     @Req() req: any,
   ) {
+    if (body && body.size !== undefined && body.size !== null) body.size = String(body.size);
     return this.lectures.uploadLectureVideo(lectureId, file, body, req.user);
   }
 

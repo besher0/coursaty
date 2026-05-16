@@ -186,6 +186,7 @@ export class CourseController {
     @Body() body: UploadVideoDto,
     @Req() req: any,
   ) {
+    if (body && body.size !== undefined && body.size !== null) body.size = String(body.size);
     return this.courseService.uploadLectureVideo(lectureId, file, req.user, body);
   }
 

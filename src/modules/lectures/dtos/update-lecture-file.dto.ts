@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsBoolean, IsNumber, IsNumberString, IsOptional } from 'class-validator';
 
 export class UpdateLectureFileDto {
   @ApiPropertyOptional()
@@ -14,7 +14,6 @@ export class UpdateLectureFileDto {
 
   @ApiPropertyOptional({ description: 'File size in bytes' })
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  size?: number;
+  @IsNumberString()
+  size?: string;
 }
