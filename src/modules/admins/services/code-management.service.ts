@@ -61,6 +61,7 @@ export class CodeManagementService {
         courseId: dto.courseId,
         batchName: dto.batchName,
         discountPercentage: dto.discountPercentage,
+        isForPrinting: dto.isForPrinting,
       },
       include: {
         course: { select: { id: true, name: true } },
@@ -105,6 +106,7 @@ export class CodeManagementService {
       usageLimit: code.usageLimit,
       validUntil: code.validUntil,
       createdAt: code.createdAt,
+      isForPrinting: codeGroup.isForPrinting,
     };
   }
 
@@ -148,6 +150,7 @@ export class CodeManagementService {
         usageLimit: code.usageLimit,
         validUntil: code.validUntil,
         createdAt: code.createdAt,
+        isForPrinting: codeGroup.isForPrinting,
       });
     }
 
@@ -181,7 +184,7 @@ export class CodeManagementService {
 
     const newStatus = (dto.status as any) || code.status;
 
-    return this.prisma.code.update({
+    const updatedCode = await this.prisma.code.update({
       where: { id: codeId },
       data: {
         status: newStatus,
@@ -189,10 +192,21 @@ export class CodeManagementService {
       },
       include: {
         codeGroup: {
-          select: { id: true, batchName: true },
+          select: { id: true, batchName: true, isForPrinting: true },
         },
       },
     });
+    const { codeGroup, ...rest } = updatedCode;
+    return {
+      ...rest,
+      codeGroup: codeGroup
+        ? {
+            id: codeGroup.id,
+            batchName: codeGroup.batchName,
+          }
+        : null,
+      isForPrinting: Boolean(codeGroup?.isForPrinting),
+    };
   }
 
   /**
@@ -284,15 +298,21 @@ export class CodeManagementService {
       throw new BadRequestException('مجموعة الأكواد غير موجودة');
     }
 
+    const codesWithPrintingFlag = codeGroup.codes.map((code) => ({
+      ...code,
+      isForPrinting: codeGroup.isForPrinting,
+    }));
+
     // Calculate statistics
-    const totalCodes = codeGroup.codes.length;
-    const activeCodes = codeGroup.codes.filter((c) => c.status === 'ACTIVE').length;
-    const usedCodes = codeGroup.codes.filter((c) => c.status === 'USED').length;
-    const inactiveCodes = codeGroup.codes.filter((c) => c.status === 'INACTIVE').length;
-    const totalUsage = codeGroup.codes.reduce((sum, c) => sum + c.usageCount, 0);
+    const totalCodes = codesWithPrintingFlag.length;
+    const activeCodes = codesWithPrintingFlag.filter((c) => c.status === 'ACTIVE').length;
+    const usedCodes = codesWithPrintingFlag.filter((c) => c.status === 'USED').length;
+    const inactiveCodes = codesWithPrintingFlag.filter((c) => c.status === 'INACTIVE').length;
+    const totalUsage = codesWithPrintingFlag.reduce((sum, c) => sum + c.usageCount, 0);
 
     return {
       ...codeGroup,
+      codes: codesWithPrintingFlag,
       statistics: {
         totalCodes,
         activeCodes,

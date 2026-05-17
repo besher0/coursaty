@@ -19,7 +19,12 @@ export class CodeGroupsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   create(@Body() body: CreateCodeGroupDto) {
-    return this.financials.createCodeGroup(body.courseId, body.batchName, body.discountPercentage);
+    return this.financials.createCodeGroup(
+      body.courseId,
+      body.batchName,
+      body.discountPercentage,
+      body.isForPrinting,
+    );
   }
 
   @Get()

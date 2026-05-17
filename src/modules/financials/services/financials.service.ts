@@ -168,12 +168,18 @@ export class FinancialsService {
   }
 
   // CodeGroups
-  createCodeGroup(courseId: string, batchName: string, discountPercentage: number) {
+  createCodeGroup(
+    courseId: string,
+    batchName: string,
+    discountPercentage: number,
+    isForPrinting: boolean,
+  ) {
     return this.prisma.codeGroup.create({
       data: {
         courseId,
         batchName,
         discountPercentage: discountPercentage as any,
+        isForPrinting,
       },
     });
   }
@@ -185,6 +191,7 @@ export class FinancialsService {
     const data: any = {};
     if (dto.batchName !== undefined) data.batchName = dto.batchName;
     if (dto.discountPercentage !== undefined) data.discountPercentage = dto.discountPercentage as any;
+    if (dto.isForPrinting !== undefined) data.isForPrinting = dto.isForPrinting;
 
     return this.prisma.codeGroup.update({
       where: { id },
@@ -216,8 +223,8 @@ export class FinancialsService {
       throw new BadRequestException('الكود يجب أن يتكون من 8 خانات (أرقام + أحرف صغيرة فقط)');
     }
 
-    const createWithValue = async (value: string) =>
-      this.prisma.code.create({
+    const createWithValue = async (value: string) => {
+      const code = await this.prisma.code.create({
         data: {
           codeGroupId,
           codeValue: value,
@@ -226,7 +233,16 @@ export class FinancialsService {
           validForDays,
           validUntil: validUntilDate,
         },
+        include: {
+          codeGroup: {
+            select: {
+              isForPrinting: true,
+            },
+          },
+        },
       });
+      return this.mapCodeWithPrinting(code);
+    };
 
     if (normalizedCodeValue) {
       try {
@@ -241,8 +257,18 @@ export class FinancialsService {
 
     return this.createWithGeneratedCode(createWithValue);
   }
-  listCodes(codeGroupId?: string) {
-    return this.prisma.code.findMany({ where: codeGroupId ? { codeGroupId } : undefined });
+  async listCodes(codeGroupId?: string) {
+    const codes = await this.prisma.code.findMany({
+      where: codeGroupId ? { codeGroupId } : undefined,
+      include: {
+        codeGroup: {
+          select: {
+            isForPrinting: true,
+          },
+        },
+      },
+    });
+    return codes.map((code) => this.mapCodeWithPrinting(code));
   }
 
   async createBulkCodes(dto: CreateBulkCodesDto) {
@@ -294,21 +320,29 @@ export class FinancialsService {
     return { createdCount: created };
   }
 
-  updateCode(id: string, dto: UpdateCodeDto) {
+  async updateCode(id: string, dto: UpdateCodeDto) {
     this.ensureValidCodeExpiry(dto.validForDays, dto.validUntil);
     const validUntilDate = this.parseValidUntil(dto.validUntil);
 
     const status = dto.status as $Enums.CodeStatus | undefined;
     const allowed: $Enums.CodeStatus[] = ['ACTIVE', 'USED', 'INACTIVE'];
     if (status && !allowed.includes(status)) throw new BadRequestException('حالة غير صالحة');
-    return this.prisma.code.update({
+    const code = await this.prisma.code.update({
       where: { id },
       data: {
         status,
         validForDays: dto.validForDays,
         validUntil: validUntilDate,
       },
+      include: {
+        codeGroup: {
+          select: {
+            isForPrinting: true,
+          },
+        },
+      },
     });
+    return this.mapCodeWithPrinting(code);
   }
 
   deleteCode(id: string) {
@@ -321,6 +355,16 @@ export class FinancialsService {
 
   deactivateCode(id: string) {
     return this.updateCode(id, { status: 'INACTIVE' });
+  }
+
+  private mapCodeWithPrinting<T extends { codeGroup?: { isForPrinting?: boolean | null } | null }>(
+    code: T,
+  ) {
+    const { codeGroup, ...rest } = code as T & { codeGroup?: { isForPrinting?: boolean | null } | null };
+    return {
+      ...rest,
+      isForPrinting: Boolean(codeGroup?.isForPrinting),
+    };
   }
 
   // Subscriptions with discount logic (code-based only)

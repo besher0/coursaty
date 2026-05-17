@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsString, Max, Min, ValidateIf } from 'class-validator';
 
 export class UpdateCodeGroupDto {
 	@ApiPropertyOptional()
@@ -13,4 +13,9 @@ export class UpdateCodeGroupDto {
 	@Min(0)
 	@Max(100)
 	discountPercentage?: number;
+
+	@ApiPropertyOptional({ description: 'Whether this group is intended for printing' })
+	@ValidateIf((_, value) => value !== undefined)
+	@IsBoolean()
+	isForPrinting?: boolean;
 }

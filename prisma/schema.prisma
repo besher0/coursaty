@@ -198,7 +198,8 @@ model Advertisement {
   collegeId String?
   departmentId String?
   title     String
-  imageUrl  String
+  imageUrl  String?
+  videoUrl  String?
   helperLink String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -559,6 +560,7 @@ model CodeGroup {
   courseId            String
   batchName           String
   discountPercentage  Decimal  @db.Decimal(5, 2) @default(0.00)
+  isForPrinting       Boolean  @default(false)
   createdAt           DateTime @default(now())
 
   course Course @relation(fields: [courseId], references: [id])

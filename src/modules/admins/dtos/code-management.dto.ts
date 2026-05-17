@@ -1,4 +1,4 @@
-import { IsNumber, IsString, IsOptional, IsEmail, IsUUID, Min, Max } from 'class-validator';
+import { IsNumber, IsString, IsOptional, IsEmail, IsUUID, Min, Max, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateCodeGroupDto {
@@ -15,6 +15,10 @@ export class CreateCodeGroupDto {
   @Min(0)
   @Max(100)
   discountPercentage: number;
+
+  @ApiProperty({ example: false, description: 'Whether this group is intended for printing' })
+  @IsBoolean()
+  isForPrinting: boolean;
 }
 
 export class GenerateCodesDto {
@@ -115,6 +119,9 @@ export class CodeGeneratedDto {
 
   @ApiProperty({})
   createdAt: Date;
+
+  @ApiProperty({ example: false })
+  isForPrinting: boolean;
 }
 
 export class BulkCodesResponseDto {

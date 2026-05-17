@@ -27,6 +27,7 @@ export class AdvertisementsService {
         departmentId: dto.departmentId ? String(dto.departmentId) : null,
         title: dto.title,
         imageUrl: dto.imageUrl,
+        videoUrl: dto.videoUrl,
         helperLink: dto.helperLink,
       },
       include: {
@@ -150,6 +151,7 @@ export class AdvertisementsService {
     const data: any = {};
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl;
+    if (dto.videoUrl !== undefined) data.videoUrl = dto.videoUrl;
     if (dto.helperLink !== undefined) data.helperLink = dto.helperLink || null;
     if ('universityId' in dto) data.universityId = dto.universityId ? String(dto.universityId) : null;
     if ('collegeId' in dto) data.collegeId = dto.collegeId ? String(dto.collegeId) : null;

@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, IsUUID, IsUrl } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID, IsUrl, ValidateIf } from 'class-validator';
 
 export class UpdateAdvertisementDto {
 	@ApiPropertyOptional({ format: 'uuid', description: 'Target university' })
@@ -24,10 +24,16 @@ export class UpdateAdvertisementDto {
 	title?: string;
 
 	@ApiPropertyOptional()
-	@IsOptional()
+	@ValidateIf((_, value) => value !== undefined)
 	@IsString()
 	@IsNotEmpty()
 	imageUrl?: string;
+
+	@ApiPropertyOptional({ description: 'Optional video URL for the advertisement' })
+	@ValidateIf((_, value) => value !== undefined)
+	@IsString()
+	@IsNotEmpty()
+	videoUrl?: string;
 
 	@ApiPropertyOptional({ description: 'Optional helper link shown with advertisement' })
 	@IsOptional()

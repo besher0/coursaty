@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber, IsString, IsUUID, Max, Min } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsNumber, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class CreateCodeGroupDto {
   @ApiProperty()
@@ -16,4 +16,8 @@ export class CreateCodeGroupDto {
   @Min(0)
   @Max(100)
   discountPercentage: number;
+
+  @ApiProperty({ description: 'Whether this group is intended for printing' })
+  @IsBoolean()
+  isForPrinting: boolean;
 }
