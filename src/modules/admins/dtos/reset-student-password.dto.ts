@@ -8,7 +8,7 @@ export class ResetStudentPasswordDto {
   })
   @IsOptional()
   @IsString()
-  @MinLength(6)
+  @MinLength(8)
   password?: string;
 }
 

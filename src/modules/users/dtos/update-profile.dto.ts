@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, Matches } from 'class-validator';
 
 export enum UserGender {
   MALE = 'MALE',
@@ -21,6 +21,7 @@ export class UpdateProfileDto {
   @ApiPropertyOptional({ description: 'Phone number' })
   @IsString()
   @IsOptional()
+  @Matches(/^\d{10}$/, { message: 'phone must be exactly 10 digits' })
   phone?: string;
 
   // Student fields (optional, only for students)

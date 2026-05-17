@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsEnum, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
+import { IsArray, IsEnum, IsOptional, IsString, IsUUID, Matches, MinLength, ValidateNested } from 'class-validator';
 
 export enum UserType {
   STUDENT = 'STUDENT',
@@ -31,10 +31,12 @@ class RegisterTeacherAffiliationDto {
 export class RegisterDto {
   @ApiProperty()
   @IsString()
+  @Matches(/^\d{10}$/, { message: 'phone must be exactly 10 digits' })
   phone: string;
 
   @ApiProperty()
   @IsString()
+  @MinLength(8)
   password: string;
 
   @ApiProperty({ enum: UserType })
