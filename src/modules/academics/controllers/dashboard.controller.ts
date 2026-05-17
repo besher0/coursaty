@@ -27,11 +27,11 @@ export class DashboardController {
   }
 
   @Get('student-college-info')
-  @ApiOperation({ summary: 'Get college advertisements, teachers, and subjects/programs filtered by year and season' })
+  @ApiOperation({ summary: 'Get college advertisements, teachers, subjects (year/season filtered), and college-level programs' })
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items limit, default is 7' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
-  @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id to filter subjects/programs' })
-  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional season id to filter subjects/programs' })
+  @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id to filter subjects only' })
+  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional season id to filter subjects only' })
   getStudentCollegeInfo(
     @Req() req: any,
     @Query('limit') limit: string = '7',
@@ -115,9 +115,9 @@ export class DashboardController {
   }
 
   @Get('student/programs')
-  @ApiOperation({ summary: 'Get student college programs with full details' })
-  @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id (defaults to student year)' })
-  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional season id (defaults to active home season)' })
+  @ApiOperation({ summary: 'Get student college programs with full details (college-level, not filtered by year/season)' })
+  @ApiQuery({ name: 'collegeYearId', required: false, description: 'Ignored for programs (kept for backward compatibility)' })
+  @ApiQuery({ name: 'seasonId', required: false, description: 'Ignored for programs (kept for backward compatibility)' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
   @ApiQuery({ name: 'deviceID', required: false, description: 'Optional guest device id (alias for deviceId)' })
   getStudentProgramsFull(
@@ -165,8 +165,8 @@ export class DashboardController {
   @ApiQuery({ name: 'page', required: false, description: 'Optional page number, default is 1' })
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items per page, default is 10' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
-  @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id to filter programs/courses' })
-  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional season id to filter programs/courses' })
+  @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id to filter courses only (program list is college-level)' })
+  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional season id to filter courses only (program list is college-level)' })
   getProgramCourses(
     @Req() req: any,
     @Query('id') programId?: string,
