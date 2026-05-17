@@ -7,6 +7,12 @@ import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
 
+type RegisterTeacherAffiliationInput = {
+  universityId: string;
+  collegeId: string;
+  departmentId?: string;
+};
+
 @Injectable()
 export class AuthService {
   constructor(private readonly prisma: PrismaService, private readonly jwt: JwtService) {}
@@ -29,12 +35,15 @@ export class AuthService {
           },
         });
 
-        if (dto.userableType === 'TEACHER' && dto.teacherAffiliations?.length) {
-          await this.saveTeacherAffiliationsOnRegister(
-            tx,
-            dto.userableId,
-            dto.teacherAffiliations,
-          );
+        if (dto.userableType === 'TEACHER') {
+          const teacherAffiliations = this.resolveTeacherAffiliationsFromRegister(dto);
+          if (teacherAffiliations.length > 0) {
+            await this.saveTeacherAffiliationsOnRegister(
+              tx,
+              dto.userableId,
+              teacherAffiliations,
+            );
+          }
         }
 
         return createdUser;
@@ -87,8 +96,32 @@ export class AuthService {
     };
   }
 
+  private resolveTeacherAffiliationsFromRegister(
+    dto: RegisterDto,
+  ): RegisterTeacherAffiliationInput[] {
+    const affiliations: RegisterTeacherAffiliationInput[] = [...(dto.teacherAffiliations ?? [])];
+    const hasLegacyAffiliationFields =
+      dto.universityId !== undefined ||
+      dto.collegeId !== undefined ||
+      dto.departmentId !== undefined;
+
+    if (hasLegacyAffiliationFields) {
+      if (!dto.universityId || !dto.collegeId) {
+        throw new BadRequestException('حقلا universityId و collegeId مطلوبان');
+      }
+
+      affiliations.push({
+        universityId: dto.universityId,
+        collegeId: dto.collegeId,
+        departmentId: dto.departmentId,
+      });
+    }
+
+    return affiliations;
+  }
+
   private normalizeTeacherAffiliations(
-    affiliations: NonNullable<RegisterDto['teacherAffiliations']>,
+    affiliations: RegisterTeacherAffiliationInput[],
   ) {
     return Array.from(
       new Map(
@@ -129,7 +162,7 @@ export class AuthService {
   private async saveTeacherAffiliationsOnRegister(
     tx: Prisma.TransactionClient,
     teacherId: string,
-    affiliations: NonNullable<RegisterDto['teacherAffiliations']>,
+    affiliations: RegisterTeacherAffiliationInput[],
   ) {
     const teacher = await tx.teacher.findUnique({ where: { id: teacherId } });
     if (!teacher) throw new NotFoundException('المدرس غير موجود');

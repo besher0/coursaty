@@ -66,4 +66,28 @@ export class RegisterDto {
   @ValidateNested({ each: true })
   @Type(() => RegisterTeacherAffiliationDto)
   teacherAffiliations?: RegisterTeacherAffiliationDto[];
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Legacy university ID for teacher affiliation',
+  })
+  @IsOptional()
+  @IsUUID('4')
+  universityId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Legacy college ID for teacher affiliation',
+  })
+  @IsOptional()
+  @IsUUID('4')
+  collegeId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Legacy department ID for teacher affiliation',
+  })
+  @IsOptional()
+  @IsUUID('4')
+  departmentId?: string;
 }
