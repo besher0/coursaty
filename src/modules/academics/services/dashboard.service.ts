@@ -1818,6 +1818,65 @@ export class DashboardService {
       }),
     );
 
+    const hasCoursesInScopedFilters = yearsWithCourses.some((yearEntry) => yearEntry.courses.length > 0);
+
+    if (!hasCoursesInScopedFilters) {
+      const fallbackYears = await this.prisma.collegeYear.findMany({
+        where: {
+          collegeId,
+        },
+        include: { academicYear: true },
+        orderBy: { academicYear: { yearNumber: 'asc' } },
+      });
+
+      const fallbackYearsWithCourses = await Promise.all(
+        fallbackYears.map(async (year) => {
+          const where = {
+            collegeId,
+            collegeYearId: year.id,
+            ...(typeof isFree === 'boolean' ? { isFree } : {}),
+          } as any;
+          const total = await this.prisma.course.count({ where });
+          const courses = await this.prisma.course.findMany({
+            where,
+            include: {
+              collegeYear: { include: { academicYear: true } },
+              season: true,
+              teacher: true,
+              _count: { select: { subscriptions: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+            skip: (page - 1) * limit,
+            take: limit,
+          });
+
+          return {
+            year: {
+              id: year.id,
+              name: year.academicYear.yearName,
+              number: year.academicYear.yearNumber,
+            },
+            pagination: {
+              page,
+              limit,
+              total,
+              totalPages: Math.ceil(total / limit),
+            },
+            courses: courses.map((course) => this.buildCourseCard(course)),
+          };
+        }),
+      );
+
+      return {
+        college: {
+          id: college.id,
+          name: college.name,
+          universityId: college.universityId,
+        },
+        years: fallbackYearsWithCourses,
+      };
+    }
+
     return {
       college: {
         id: college.id,
@@ -1846,6 +1905,90 @@ export class DashboardService {
     if (categoryId) {
       const result = await this.getCoursesByCategory(user, page, limit, guestFilter, isFree);
       const matched = result.categories.find((c) => c.category.id === categoryId);
+      const hasCoursesInScopedFilters = Boolean(
+        matched?.years?.some((yearEntry) => yearEntry.courses.length > 0),
+      );
+
+      if (matched && !hasCoursesInScopedFilters) {
+        const { collegeId } = await this.getStudentCollege(user, guestFilter);
+        const fallbackCourses = await this.prisma.course.findMany({
+          where: {
+            collegeId,
+            categoryId,
+            ...(typeof isFree === 'boolean' ? { isFree } : {}),
+          },
+          include: {
+            collegeYear: { include: { academicYear: true } },
+            season: true,
+            teacher: true,
+            _count: { select: { subscriptions: true } },
+          },
+          orderBy: [
+            { collegeYear: { academicYear: { yearNumber: 'asc' } } },
+            { createdAt: 'desc' },
+          ],
+        });
+
+        const groupedByYear = new Map<
+          string,
+          {
+            year: { id: string | null; name: string | null; number: number | null };
+            courses: any[];
+          }
+        >();
+
+        for (const course of fallbackCourses) {
+          const year = course.collegeYear?.academicYear
+            ? {
+                id: course.collegeYear.id,
+                name: course.collegeYear.academicYear.yearName,
+                number: course.collegeYear.academicYear.yearNumber,
+              }
+            : {
+                id: null,
+                name: null,
+                number: null,
+              };
+          const yearKey = year.id ?? 'no-year';
+          if (!groupedByYear.has(yearKey)) {
+            groupedByYear.set(yearKey, {
+              year,
+              courses: [],
+            });
+          }
+          groupedByYear.get(yearKey)!.courses.push(this.buildCourseCard(course));
+        }
+
+        const fallbackYears = Array.from(groupedByYear.values())
+          .sort((a, b) => {
+            const aNumber = a.year.number ?? Number.MAX_SAFE_INTEGER;
+            const bNumber = b.year.number ?? Number.MAX_SAFE_INTEGER;
+            return aNumber - bNumber;
+          })
+          .map((yearEntry) => {
+            const total = yearEntry.courses.length;
+            const start = (page - 1) * limit;
+            const end = start + limit;
+            return {
+              year: yearEntry.year,
+              pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+              },
+              courses: yearEntry.courses.slice(start, end),
+            };
+          });
+
+        return {
+          college: result.college,
+          mode: 'category',
+          category: matched.category,
+          years: fallbackYears,
+        };
+      }
+
       return {
         college: result.college,
         mode: 'category',
