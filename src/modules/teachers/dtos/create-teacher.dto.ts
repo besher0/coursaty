@@ -34,10 +34,9 @@ export class CreateTeacherDto {
   @IsString()
   image?: string;
 
-  @ApiPropertyOptional({ required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'Teacher Telegram URL' })
   @IsString()
-  telegramUrl?: string;
+  telegramUrl: string;
 
   @ApiPropertyOptional({ required: false })
   @IsOptional()

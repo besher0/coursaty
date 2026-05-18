@@ -13,6 +13,11 @@ export class TeachersService {
   ) {}
 
   async create(dto: CreateTeacherDto) {
+    const normalizedTelegramUrl = dto.telegramUrl?.trim();
+    if (!normalizedTelegramUrl) {
+      throw new BadRequestException('رابط تلغرام الأستاذ مطلوب');
+    }
+
     const hasLegacyAffiliationFields =
       dto.universityId !== undefined || dto.collegeId !== undefined || dto.departmentId !== undefined;
 
@@ -64,7 +69,7 @@ export class TeachersService {
           name: dto.name,
           description: dto.description,
           image: dto.image,
-          telegramUrl: dto.telegramUrl,
+          telegramUrl: normalizedTelegramUrl,
           instagramUrl: dto.instagramUrl,
         },
       });
@@ -294,7 +299,7 @@ export class TeachersService {
           course: { select: { teacherPercentage: true } },
         },
       }),
-      this.prisma.course.count({ where: { teacherId: teacher.id } }),
+      this.prisma.course.count({ where: { teacherId: teacher.id, status: 'PENDING' } }),
       this.prisma.studentSubscription.count({ where: { course: { teacherId: teacher.id } } }),
       this.prisma.teacherLike.count({ where: { teacherId: teacher.id } }),
       this.prisma.videoInteraction.aggregate({
@@ -305,7 +310,7 @@ export class TeachersService {
         },
       }),
       this.prisma.course.findMany({
-        where: { teacherId: teacher.id },
+        where: { teacherId: teacher.id, status: 'PENDING' },
         select: {
           id: true,
           name: true,

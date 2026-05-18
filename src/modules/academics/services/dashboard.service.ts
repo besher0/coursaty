@@ -948,8 +948,6 @@ export class DashboardService {
     const skip = (normalizedPage - 1) * normalizedLimit;
     const coursesWhere = {
       collegeId,
-      ...(collegeYearId ? { collegeYearId } : {}),
-      ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
       name: {
         contains: searchText,
         mode: 'insensitive' as const,
@@ -1153,16 +1151,13 @@ export class DashboardService {
     limit: number = 10,
     guestFilter?: DashboardGuestFilter,
   ) {
-    const { universityId, collegeId, collegeYearId } = await this.resolveCourseScope(user, guestFilter);
-    const activeSeasonId = await this.getActiveHomeSeasonId();
+    const { universityId, collegeId } = await this.resolveCourseScope(user, guestFilter);
 
     const subject = await this.prisma.subject.findFirst({
       where: {
         id: String(subjectId),
         ...(collegeId ? { collegeId } : {}),
         ...(universityId ? { college: { universityId } } : {}),
-        ...(collegeYearId ? { collegeYearId } : {}),
-        ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
       },
     });
 
@@ -1173,8 +1168,6 @@ export class DashboardService {
       subjectId: String(subjectId),
       ...(collegeId ? { collegeId } : {}),
       ...(universityId ? { universityId } : {}),
-      ...(collegeYearId ? { collegeYearId } : {}),
-      ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
     } as any;
 
     const total = await this.prisma.course.count({ where });
@@ -1218,15 +1211,14 @@ export class DashboardService {
     guestFilter?: DashboardGuestFilter,
     options?: { collegeYearId?: string; seasonId?: string },
   ) {
-    const { universityId, collegeId, collegeYearId } = await this.resolveCourseScope(user, guestFilter);
-    const activeSeasonId = await this.getActiveHomeSeasonId();
+    const { universityId, collegeId } = await this.resolveCourseScope(user, guestFilter);
     const validatedFilters = collegeId
-      ? await this.resolveSubjectFiltersForCollege(collegeId, collegeYearId, options)
+      ? await this.resolveSubjectFiltersForCollege(collegeId, null, options)
       : {
-          collegeYearId: options?.collegeYearId?.trim() || collegeYearId || null,
+          collegeYearId: options?.collegeYearId?.trim() || null,
           seasonId: options?.seasonId?.trim() || null,
         };
-    const resolvedSeasonId = validatedFilters.seasonId ?? activeSeasonId;
+    const resolvedSeasonId = validatedFilters.seasonId;
     const resolvedCollegeYearId = validatedFilters.collegeYearId;
 
     const normalizedProgramId = programId?.trim();
@@ -1320,16 +1312,13 @@ export class DashboardService {
     limit: number = 10,
     guestFilter?: DashboardGuestFilter,
   ) {
-    const { universityId, collegeId, collegeYearId } = await this.resolveCourseScope(user, guestFilter);
-    const activeSeasonId = await this.getActiveHomeSeasonId();
+    const { universityId, collegeId } = await this.resolveCourseScope(user, guestFilter);
 
     const skip = (page - 1) * limit;
     const where = {
       ...(collegeId ? { collegeId } : {}),
       ...(universityId ? { universityId } : {}),
       subject: { isProgram: false },
-      ...(collegeYearId ? { collegeYearId } : {}),
-      ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
     } as any;
 
     const total = await this.prisma.course.count({ where });
