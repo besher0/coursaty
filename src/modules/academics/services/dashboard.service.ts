@@ -531,16 +531,18 @@ export class DashboardService {
 
     const teachersByProgramId = await this.getTeachersBySubjectIds(programs.map((program) => program.id));
 
+    const filters: { collegeYearId: string | null; seasonId: string | null } = {
+      collegeYearId: null,
+      seasonId: null,
+    };
+
     return {
       college: {
         id: college.id,
         name: college.name,
         universityId: college.universityId,
       },
-      filters: {
-        collegeYearId: null,
-        seasonId: null,
-      },
+      filters,
       programs: programs.map((program) => {
         const programTeachers = teachersByProgramId.get(program.id) ?? [];
         const primaryTeacher = programTeachers[0] ?? null;
@@ -822,30 +824,62 @@ export class DashboardService {
       };
     }
 
-    const { collegeId, departmentId, collegeYearId } = await this.getStudentCollege(user, guestFilter);
-    const activeSeasonId = await this.getActiveHomeSeasonId();
+    const { collegeId, departmentId } = await this.getStudentCollege(user, guestFilter);
+
+    const scopedDepartmentWhere = departmentId
+      ? {
+          OR: [{ departmentId: null }, { departmentId }],
+        }
+      : {};
 
     const subjectWhere = {
       collegeId,
-      ...(collegeYearId ? { collegeYearId } : {}),
-      ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
-      ...(departmentId
-        ? {
-            OR: [{ departmentId: null }, { departmentId }],
-          }
-        : {}),
-      subjectName: {
-        contains: searchText,
-        mode: 'insensitive' as const,
-      },
+      ...scopedDepartmentWhere,
+      OR: [
+        {
+          subjectName: {
+            contains: searchText,
+            mode: 'insensitive' as const,
+          },
+        },
+        {
+          courses: {
+            some: {
+              name: {
+                contains: searchText,
+                mode: 'insensitive' as const,
+              },
+              collegeId,
+              ...scopedDepartmentWhere,
+            },
+          },
+        },
+      ],
     };
     const programWhere = {
       collegeId,
       isProgram: true,
-      subjectName: {
-        contains: searchText,
-        mode: 'insensitive' as const,
-      },
+      ...scopedDepartmentWhere,
+      OR: [
+        {
+          subjectName: {
+            contains: searchText,
+            mode: 'insensitive' as const,
+          },
+        },
+        {
+          courses: {
+            some: {
+              name: {
+                contains: searchText,
+                mode: 'insensitive' as const,
+              },
+              collegeId,
+              ...scopedDepartmentWhere,
+            },
+          },
+        },
+      ],
     };
 
     const [subjects, programs] = await Promise.all([
@@ -884,28 +918,57 @@ export class DashboardService {
 
     const teachers = await this.prisma.teacher.findMany({
       where: {
-        ...(searchText
-          ? {
-              name: {
-                contains: searchText,
-                mode: 'insensitive' as const,
-              },
-            }
-          : {}),
-        courses: {
-          some: {
+        AND: [
+          {
+            name: {
+              contains: searchText,
+              mode: 'insensitive' as const,
+            },
+          },
+          {
             OR: [
               {
-                college: { id: collegeId },
-                ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
+                affiliations: {
+                  some: departmentId
+                    ? {
+                        collegeId,
+                        OR: [{ departmentId: null }, { departmentId }],
+                      }
+                    : {
+                        collegeId,
+                      },
+                },
               },
               {
-                subject: { collegeId },
-                ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
+                courses: {
+                  some: departmentId
+                    ? {
+                        OR: [
+                          {
+                            collegeId,
+                            OR: [{ departmentId: null }, { departmentId }],
+                          },
+                          {
+                            subject: { collegeId },
+                            OR: [{ departmentId: null }, { departmentId }],
+                          },
+                        ],
+                      }
+                    : {
+                        OR: [
+                          {
+                            collegeId,
+                          },
+                          {
+                            subject: { collegeId },
+                          },
+                        ],
+                      },
+                },
               },
             ],
           },
-        },
+        ],
       },
       include: {
         _count: {
@@ -926,7 +989,6 @@ export class DashboardService {
       const coursesWithImages = await this.prisma.course.findMany({
         where: {
           subjectId: { in: subjectIds },
-          ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
           imageUrl: { not: null },
         },
         select: {
@@ -948,6 +1010,11 @@ export class DashboardService {
     const skip = (normalizedPage - 1) * normalizedLimit;
     const coursesWhere = {
       collegeId,
+      ...(departmentId
+        ? {
+            OR: [{ departmentId: null }, { departmentId }],
+          }
+        : {}),
       name: {
         contains: searchText,
         mode: 'insensitive' as const,
@@ -1336,7 +1403,20 @@ export class DashboardService {
       take: limit,
     });
 
-    return {
+    const response: {
+      subject: null;
+      courses: {
+        data: Array<any>;
+        pagination: {
+          page: number;
+          limit: number;
+          total: number;
+          totalPages: number;
+          hasNextPage: boolean;
+          hasPreviousPage: boolean;
+        };
+      };
+    } = {
       subject: null,
       courses: {
         data: courses.map((course) => ({
@@ -1358,6 +1438,8 @@ export class DashboardService {
         },
       },
     };
+
+    return response;
   }
 
   async getMixedCourses(
@@ -1500,7 +1582,12 @@ export class DashboardService {
     };
   }
 
-  async getTeacherDetails(teacherId: string | number, page: number = 1, limit: number = 10) {
+  async getTeacherDetails(
+    user: { userId: string | number; type: string } | undefined,
+    teacherId: string | number,
+    page: number = 1,
+    limit: number = 10,
+  ) {
     const teacher = await this.prisma.teacher.findUnique({
       where: { id: String(teacherId) },
       include: {
@@ -1516,14 +1603,31 @@ export class DashboardService {
 
     const skip = (page - 1) * limit;
 
-    // Get total courses count
-    const totalCourses = await this.prisma.course.count({
-      where: { teacherId: String(teacherId) },
-    });
+    // If requester is a student, restrict courses to student's college and department
+    let where: any = { teacherId: String(teacherId) };
+    if (user && user.type === 'STUDENT') {
+      const { collegeId, departmentId } = await this.getStudentCollege(user);
+      where = {
+        teacherId: String(teacherId),
+        collegeId,
+        ...(departmentId
+          ? {
+              AND: [
+                {
+                  OR: [{ departmentId: null }, { departmentId }],
+                },
+              ],
+            }
+          : {}),
+      };
+    }
+
+    // Get total courses count within scope
+    const totalCourses = await this.prisma.course.count({ where });
 
     // Get paginated courses with year and season info
     const courses = await this.prisma.course.findMany({
-      where: { teacherId: String(teacherId) },
+      where,
       include: {
         collegeYear: { include: { academicYear: true } },
         season: true,

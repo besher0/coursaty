@@ -244,11 +244,12 @@ export class DashboardController {
   @Get('teachers/:id')
   @ApiOperation({ summary: 'Get teacher details with paginated courses' })
   getTeacherDetails(
+    @Req() req: any,
     @Param('id') teacherId: string,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
   ) {
-    return this.dashboardService.getTeacherDetails(teacherId, parseInt(page), parseInt(limit));
+    return this.dashboardService.getTeacherDetails(req.user, teacherId, parseInt(page), parseInt(limit));
   }
 
   @Get('courses-by-category')
