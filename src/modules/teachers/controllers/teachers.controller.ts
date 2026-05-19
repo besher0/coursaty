@@ -94,22 +94,60 @@ export class TeachersController {
   }
 
   @Post('me/affiliations')
-  @ApiOperation({ summary: 'Add teacher affiliation (teacher only)' })
+  @ApiOperation({ summary: 'Add teacher affiliation (teacher or admin with teacherId)' })
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('TEACHER')
+  @Roles('TEACHER', 'ADMIN')
   addMyAffiliation(@Req() req: any, @Body() body: TeacherAffiliationDto) {
-    return this.teachers.addMyAffiliation(req.user, body.universityId, body.collegeId, body.departmentId);
+    return this.teachers.addMyAffiliation(
+      req.user,
+      body.universityId,
+      body.collegeId,
+      body.departmentId,
+      body.teacherId,
+    );
   }
 
   @Post('me/affiliations/remove')
-  @ApiOperation({ summary: 'Remove teacher affiliation (teacher only)' })
+  @ApiOperation({ summary: 'Remove teacher affiliation (teacher or admin with teacherId)' })
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('TEACHER')
+  @Roles('TEACHER', 'ADMIN')
   removeMyAffiliation(@Req() req: any, @Body() body: TeacherAffiliationDto) {
-    return this.teachers.removeMyAffiliation(req.user, body.universityId, body.collegeId, body.departmentId);
+    return this.teachers.removeMyAffiliation(
+      req.user,
+      body.universityId,
+      body.collegeId,
+      body.departmentId,
+      body.teacherId,
+    );
   }
+
+  // @Post(':id/affiliations')
+  // @ApiOperation({ summary: 'Add teacher affiliation by teacher id (admin only)' })
+  // @ApiBearerAuth()
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Roles('ADMIN')
+  // addAffiliationByTeacherId(
+  //   @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  //   @Req() req: any,
+  //   @Body() body: TeacherAffiliationDto,
+  // ) {
+  //   return this.teachers.addMyAffiliation(req.user, body.universityId, body.collegeId, body.departmentId, id);
+  // }
+
+  // @Post(':id/affiliations/remove')
+  // @ApiOperation({ summary: 'Remove teacher affiliation by teacher id (admin only)' })
+  // @ApiBearerAuth()
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Roles('ADMIN')
+  // removeAffiliationByTeacherId(
+  //   @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  //   @Req() req: any,
+  //   @Body() body: TeacherAffiliationDto,
+  // ) {
+  //   return this.teachers.removeMyAffiliation(req.user, body.universityId, body.collegeId, body.departmentId, id);
+  // }
 
   @Get('me/allowed-subjects')
   @ApiOperation({ summary: 'List allowed subjects for the current teacher' })

@@ -129,6 +129,29 @@ export class TeachersService {
     return dbUser;
   }
 
+  private async resolveAffiliationTargetTeacherId(
+    user: { userId: string | number; type: string },
+    teacherId?: string,
+  ) {
+    if (user?.type === 'TEACHER') {
+      const { teacher } = await this.getTeacherContext(user);
+      return teacher.id;
+    }
+
+    if (user?.type === 'ADMIN') {
+      await this.getAdminContext(user);
+
+      if (!teacherId) {
+        throw new BadRequestException('teacherId مطلوب للمدير');
+      }
+
+      const teacher = await this.getTeacherById(teacherId);
+      return teacher.id;
+    }
+
+    throw new ForbiddenException('صلاحية مدرس أو مدير مطلوبة');
+  }
+
   private roundCurrency(value: number) {
     return Number(value.toFixed(2));
   }
@@ -207,13 +230,14 @@ export class TeachersService {
     universityId: string,
     collegeId: string,
     departmentId?: string,
+    teacherId?: string,
   ) {
-    const { teacher } = await this.getTeacherContext(user);
+    const targetTeacherId = await this.resolveAffiliationTargetTeacherId(user, teacherId);
     await this.validateAffiliationScope(universityId, collegeId, departmentId);
 
     const existing = await this.prisma.teacherAffiliation.findFirst({
       where: {
-        teacherId: teacher.id,
+        teacherId: targetTeacherId,
         universityId,
         collegeId,
         departmentId: departmentId ?? null,
@@ -224,7 +248,7 @@ export class TeachersService {
 
     return this.prisma.teacherAffiliation.create({
       data: {
-        teacherId: teacher.id,
+        teacherId: targetTeacherId,
         universityId,
         collegeId,
         departmentId: departmentId ?? null,
@@ -237,11 +261,12 @@ export class TeachersService {
     universityId: string,
     collegeId: string,
     departmentId?: string,
+    teacherId?: string,
   ) {
-    const { teacher } = await this.getTeacherContext(user);
+    const targetTeacherId = await this.resolveAffiliationTargetTeacherId(user, teacherId);
     const affiliation = await this.prisma.teacherAffiliation.findFirst({
       where: {
-        teacherId: teacher.id,
+        teacherId: targetTeacherId,
         universityId,
         collegeId,
         departmentId: departmentId ?? null,
