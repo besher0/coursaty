@@ -334,6 +334,7 @@ export class LecturesService {
           course: {
             select: {
               id: true,
+              imageUrl:true,
               teacher: {
                 select: {
                   id: true,
@@ -374,6 +375,7 @@ export class LecturesService {
           course: {
             select: {
               id: true,
+              imageUrl:true,
               teacher: {
                 select: {
                   id: true,
@@ -427,6 +429,9 @@ export class LecturesService {
 
     if (!isOwnerOrAdmin && isStudent && !hasAccess) {
       return {
+              course:{
+        imageurl: lecture.course.imageUrl,
+      },
         lecture: {
           id: lecture.id,
           title: lecture.title,
@@ -451,6 +456,9 @@ export class LecturesService {
     }
 
     return {
+      course:{
+        imageurl: lecture.course.imageUrl,
+      },
       lecture: {
         id: lecture.id,
         title: lecture.title,

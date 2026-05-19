@@ -446,6 +446,7 @@ export class TeachersService {
 
     const where: any = {
       teacherId: teacher.id,
+      status: { not: 'PENDING' },
       ...(isExpired
         ? { expiresAt: { not: null, lte: now } }
         : { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }),
@@ -460,7 +461,8 @@ export class TeachersService {
           name: true,
           imageUrl: true,
           duration: true,
-          expiresAt: true,
+          expiresAt: true,      
+          status: true,
           university: { select: { id: true, name: true } },
           college: { select: { id: true, name: true } },
           department: { select: { id: true, name: true } },
@@ -490,6 +492,7 @@ export class TeachersService {
             year: { id: string; name: string; number: number } | null;
             courses: Array<{
               id: string;
+              status: string;
               name: string;
               imageUrl: string | null;
               duration: number;
@@ -549,6 +552,7 @@ export class TeachersService {
         imageUrl: course.imageUrl ?? null,
         duration: course.duration,
         expiresAt: course.expiresAt ?? null,
+        status: course.status,
         createdAt: course.createdAt,
         studentsCount: course._count.subscriptions,
         college: course.college ? { id: course.college.id, name: course.college.name } : null,
