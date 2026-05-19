@@ -1,8 +1,10 @@
-﻿import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { UpdateProfileDto } from '../dtos/update-profile.dto';
 import { UpdateUserProfileDto } from '../dtos/update-user-profile.dto';
 import { UpdateStudentProfileDto } from '../dtos/update-student-profile.dto';
+import { ChangePasswordDto } from '../dtos/change-password.dto';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class UsersService {
@@ -158,6 +160,40 @@ export class UsersService {
     });
 
     return this.getProfile(userId);
+  }
+
+  async changePassword(userId: string | number, dto: ChangePasswordDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: String(userId) },
+      select: {
+        id: true,
+        password: true,
+      },
+    });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+    if (dto.newPassword !== dto.confirmNewPassword) {
+      throw new BadRequestException('تأكيد كلمة المرور غير مطابق');
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(dto.currentPassword, user.password);
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedException('كلمة المرور الحالية غير صحيحة');
+    }
+
+    const isSamePassword = await bcrypt.compare(dto.newPassword, user.password);
+    if (isSamePassword) {
+      throw new BadRequestException('كلمة المرور الجديدة يجب أن تكون مختلفة');
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.newPassword, 10);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { password: hashedPassword },
+    });
+
+    return { message: 'تم تغيير كلمة المرور بنجاح' };
   }
 }
 

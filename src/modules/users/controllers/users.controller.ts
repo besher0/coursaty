@@ -5,6 +5,7 @@ import { UpdateFcmDto } from '../dtos/update-fcm.dto';
 import { UpdateProfileDto } from '../dtos/update-profile.dto';
 import { UpdateUserProfileDto } from '../dtos/update-user-profile.dto';
 import { UpdateStudentProfileDto } from '../dtos/update-student-profile.dto';
+import { ChangePasswordDto } from '../dtos/change-password.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 
 @ApiTags('users')
@@ -52,6 +53,14 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   async updateStudentProfile(@Req() req: any, @Body() dto: UpdateStudentProfileDto) {
     return this.users.updateStudentProfile(req.user.userId, dto);
+  }
+
+  @Patch('me/change-password')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Change current user password' })
+  @UseGuards(JwtAuthGuard)
+  async changePassword(@Req() req: any, @Body() dto: ChangePasswordDto) {
+    return this.users.changePassword(req.user.userId, dto);
   }
 }
 
