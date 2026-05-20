@@ -1911,6 +1911,46 @@ export class DashboardService {
       }),
     );
 
+    const getNoYearCoursesEntry = async (withActiveSeason: boolean) => {
+      const where = {
+        collegeId,
+        collegeYearId: null,
+        ...(withActiveSeason && activeSeasonId ? { seasonId: activeSeasonId } : {}),
+        ...(typeof isFree === 'boolean' ? { isFree } : {}),
+      } as any;
+
+      const total = await this.prisma.course.count({ where });
+      if (total === 0) return null;
+
+      const courses = await this.prisma.course.findMany({
+        where,
+        include: {
+          collegeYear: { include: { academicYear: true } },
+          season: true,
+          teacher: true,
+          _count: { select: { subscriptions: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      });
+
+      return {
+        year: {
+          id: null,
+          name: null,
+          number: null,
+        },
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+        courses: courses.map((course) => this.buildCourseCard(course)),
+      };
+    };
+
     const hasCoursesInScopedFilters = yearsWithCourses.some((yearEntry) => yearEntry.courses.length > 0);
 
     if (!hasCoursesInScopedFilters) {
@@ -1960,15 +2000,19 @@ export class DashboardService {
         }),
       );
 
+      const fallbackNoYearEntry = await getNoYearCoursesEntry(false);
+
       return {
         college: {
           id: college.id,
           name: college.name,
           universityId: college.universityId,
         },
-        years: fallbackYearsWithCourses,
+        years: fallbackNoYearEntry ? [...fallbackYearsWithCourses, fallbackNoYearEntry] : fallbackYearsWithCourses,
       };
     }
+
+    const noYearEntry = await getNoYearCoursesEntry(true);
 
     return {
       college: {
@@ -1976,7 +2020,7 @@ export class DashboardService {
         name: college.name,
         universityId: college.universityId,
       },
-      years: yearsWithCourses,
+      years: noYearEntry ? [...yearsWithCourses, noYearEntry] : yearsWithCourses,
     };
   }
 

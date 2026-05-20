@@ -451,7 +451,7 @@ export class LecturesService {
           videoUrl: video.isFree ? video.videoUrl : null,
           locked: !video.isFree,
         })),
-        questions: [],
+        questions: lecture.questions,
       };
     }
 
