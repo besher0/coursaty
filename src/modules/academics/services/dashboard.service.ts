@@ -1791,14 +1791,15 @@ export class DashboardService {
     limit: number = 10,
     guestFilter?: DashboardGuestFilter,
     isFree?: boolean,
+    includeAllYears: boolean = false,
   ) {
     const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
-    const activeSeasonId = await this.getActiveHomeSeasonId();
+    const scopedCollegeYearId = includeAllYears ? null : collegeYearId;
 
     const years = await this.prisma.collegeYear.findMany({
       where: {
         collegeId,
-        ...(collegeYearId ? { id: collegeYearId } : {}),
+        ...(scopedCollegeYearId ? { id: scopedCollegeYearId } : {}),
       },
       include: { academicYear: true },
       orderBy: { academicYear: { yearNumber: 'asc' } },
@@ -1809,7 +1810,6 @@ export class DashboardService {
         const where = {
           collegeId,
           collegeYearId: year.id,
-          ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
           ...(typeof isFree === 'boolean' ? { isFree } : {}),
         } as any;
         const total = await this.prisma.course.count({ where });
@@ -1843,13 +1843,57 @@ export class DashboardService {
       }),
     );
 
+    let noYearEntry: {
+      year: { id: null; name: null; number: null };
+      pagination: { page: number; limit: number; total: number; totalPages: number };
+      courses: any[];
+    } | null = null;
+
+    if (includeAllYears) {
+      const noYearWhere = {
+        collegeId,
+        collegeYearId: null,
+        ...(typeof isFree === 'boolean' ? { isFree } : {}),
+      } as any;
+      const noYearTotal = await this.prisma.course.count({ where: noYearWhere });
+      if (noYearTotal > 0) {
+        const noYearCourses = await this.prisma.course.findMany({
+          where: noYearWhere,
+          include: {
+            collegeYear: { include: { academicYear: true } },
+            season: true,
+            teacher: true,
+            _count: { select: { subscriptions: true } },
+          },
+          orderBy: { subscriptions: { _count: 'desc' } },
+          skip: (page - 1) * limit,
+          take: limit,
+        });
+
+        noYearEntry = {
+          year: {
+            id: null,
+            name: null,
+            number: null,
+          },
+          pagination: {
+            page,
+            limit,
+            total: noYearTotal,
+            totalPages: Math.ceil(noYearTotal / limit),
+          },
+          courses: noYearCourses.map((course) => this.buildCourseCard(course)),
+        };
+      }
+    }
+
     return {
       college: {
         id: college.id,
         name: college.name,
         universityId: college.universityId,
       },
-      years: yearsWithCourses,
+      years: noYearEntry ? [...yearsWithCourses, noYearEntry] : yearsWithCourses,
     };
   }
 
@@ -1859,14 +1903,16 @@ export class DashboardService {
     limit: number = 10,
     guestFilter?: DashboardGuestFilter,
     isFree?: boolean,
+    includeAllYears: boolean = false,
   ) {
     const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
+    const scopedCollegeYearId = includeAllYears ? null : collegeYearId;
     const activeSeasonId = await this.getActiveHomeSeasonId();
 
     const years = await this.prisma.collegeYear.findMany({
       where: {
         collegeId,
-        ...(collegeYearId ? { id: collegeYearId } : {}),
+        ...(scopedCollegeYearId ? { id: scopedCollegeYearId } : {}),
       },
       include: { academicYear: true },
       orderBy: { academicYear: { yearNumber: 'asc' } },
@@ -2012,7 +2058,7 @@ export class DashboardService {
       };
     }
 
-    const noYearEntry = await getNoYearCoursesEntry(true);
+    const noYearEntry = await getNoYearCoursesEntry(includeAllYears ? false : true);
 
     return {
       college: {
@@ -2034,9 +2080,10 @@ export class DashboardService {
   ) {
     const normalizedFilter = (filter || 'all').trim().toLowerCase();
     const isFree = normalizedFilter === 'free' ? true : undefined;
+    const includeAllYears = normalizedFilter === 'popular' || normalizedFilter === 'free';
 
     if (normalizedFilter === 'popular') {
-      return this.getCoursesByPopular(user, page, limit, guestFilter, isFree);
+      return this.getCoursesByPopular(user, page, limit, guestFilter, isFree, includeAllYears);
     }
 
     if (categoryId) {
@@ -2134,6 +2181,6 @@ export class DashboardService {
       };
     }
 
-    return this.getCoursesByYear(user, page, limit, guestFilter, isFree);
+    return this.getCoursesByYear(user, page, limit, guestFilter, isFree, includeAllYears);
   }
 }
