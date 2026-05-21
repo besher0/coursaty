@@ -270,7 +270,11 @@ export class LecturesService {
     return true;
   }
 
-  private async getCourseAccess(user: { userId: string | number; type: string } | undefined, courseId: string) {
+  private async getCourseAccess(
+    user: { userId: string | number; type: string } | undefined,
+    courseId: string,
+    _deviceId?: string,
+  ) {
     const course = await this.prisma.course.findUnique({
       where: { id: String(courseId) },
       select: { id: true, teacherId: true, isFree: true, expiresAt: true },
@@ -280,7 +284,7 @@ export class LecturesService {
     const isExpired = !!course.expiresAt && course.expiresAt.getTime() <= Date.now();
 
     if (!user) {
-      return { hasAccess: false, isOwnerOrAdmin: false, isStudent: false };
+      return { hasAccess: course.isFree && !isExpired, isOwnerOrAdmin: false, isStudent: false };
     }
 
     if (user.type === 'ADMIN') {
@@ -291,7 +295,7 @@ export class LecturesService {
       const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
       if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
       const isOwner = course.teacherId.toString() === dbUser.userableId.toString();
-      return { hasAccess: isOwner, isOwnerOrAdmin: isOwner, isStudent: false };
+      return { hasAccess: isOwner || (course.isFree && !isExpired), isOwnerOrAdmin: isOwner, isStudent: false };
     }
 
     const isSubscribed = await this.hasStudentSubscription(user, courseId);
@@ -325,7 +329,11 @@ export class LecturesService {
     return this.assertCourseOwnership(user, lecture.courseId);
   }
 
-  async getLectureDetails(lectureId: string, user?: { userId: string | number; type: string }) {
+  async getLectureDetails(
+    lectureId: string,
+    user?: { userId: string | number; type: string },
+    deviceId?: string,
+  ) {
     let lecture: any | null;
     try {
       lecture = await this.prisma.lecture.findUnique({
@@ -423,11 +431,11 @@ export class LecturesService {
         }
       : null;
 
-    const { hasAccess, isOwnerOrAdmin, isStudent } = await this.getCourseAccess(user, lecture.course.id);
+    const { hasAccess, isOwnerOrAdmin } = await this.getCourseAccess(user, lecture.course.id, deviceId);
     const hasVideosSortOrder = lecture.videos.some((video: any) => video.sortOrder !== null && video.sortOrder !== undefined);
     const hasFilesSortOrder = lecture.files.some((file: any) => file.sortOrder !== null && file.sortOrder !== undefined);
 
-    if (!isOwnerOrAdmin && isStudent && !hasAccess) {
+    if (!isOwnerOrAdmin && !hasAccess) {
       return {
               course:{
         imageurl: lecture.course.imageUrl,

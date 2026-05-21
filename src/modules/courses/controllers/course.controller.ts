@@ -1,5 +1,5 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CourseService } from '../services/course.service';
 import { CreateCourseDto } from '../dtos/create-course.dto';
@@ -15,6 +15,7 @@ import { InitTusVideoUploadDto } from '../../lectures/dtos/init-tus-video-upload
 import { CompleteTusVideoUploadDto } from '../../lectures/dtos/complete-tus-video-upload.dto';
 import { RefreshTusVideoUploadDto } from '../../lectures/dtos/refresh-tus-video-upload.dto';
 import { BUNNY_STREAM_RESOLUTIONS } from '@/shared/bunny/bunny-resolution.constants';
+import { OptionalJwtAuthGuard } from '@/modules/auth/guards/optional-jwt-auth.guard';
 
 @ApiTags('courses')
 @ApiBearerAuth()
@@ -70,8 +71,14 @@ export class CourseController {
 
   @Get(':id/details')
   @ApiOperation({ summary: 'Get course details and lectures' })
-  async getCourseDetails(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
-    return this.courseService.getCourseDetails(id, req.user);
+  @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
+  @UseGuards(OptionalJwtAuthGuard)
+  async getCourseDetails(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Query('deviceId') deviceId?: string,
+    @Req() req?: any,
+  ) {
+    return this.courseService.getCourseDetails(id, req?.user, deviceId);
   }
 
   @Get(':id/admin-details')

@@ -302,7 +302,11 @@ export class CourseService {
     };
   }
 
-  async getCourseDetails(id: string, user?: { userId: string | number; type: string }) {
+  async getCourseDetails(
+    id: string,
+    user?: { userId: string | number; type: string },
+    _deviceId?: string,
+  ) {
     const course = await this.prisma.course.findUnique({
       where: { id: String(id) },
       include: {
