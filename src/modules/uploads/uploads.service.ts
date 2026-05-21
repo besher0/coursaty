@@ -163,7 +163,16 @@ export class UploadsService {
     };
   }
 
-  async getBunnyVideoResolutions(videoId: string) {
+  async getBunnyVideoResolutions(
+    videoId: string,
+    user?: { userId: string | number; type: string },
+    deviceId?: string,
+  ) {
+    const normalizedDeviceId = typeof deviceId === 'string' ? deviceId.trim() : '';
+    if (!user && !normalizedDeviceId) {
+      throw new BadRequestException('للزائر يجب إرسال deviceId');
+    }
+
     const { streamVideoId } = await this.resolveStreamVideoIdFromDbVideo(videoId);
 
     const [playDataResult, resolutionsResult] = await Promise.allSettled([

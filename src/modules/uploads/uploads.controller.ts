@@ -6,15 +6,18 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { UploadsService } from './uploads.service';
 import { UploadStreamVideoDto } from './dtos/upload-stream-video.dto';
 import { UpdateBunnyVideoSettingsDto } from './dtos/update-bunny-video-settings.dto';
@@ -101,10 +104,14 @@ export class UploadsController {
 
   @Get('videos/:videoId/resolutions')
   @ApiOperation({ summary: 'Get available resolutions by app video id (Video.id) for Bunny Stream video' })
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('STUDENT', 'TEACHER', 'ADMIN')
-  getVideoResolutions(@Param('videoId', new ParseUUIDPipe({ version: '4' })) videoId: string) {
-    return this.uploads.getBunnyVideoResolutions(videoId);
+  @ApiQuery({ name: 'deviceId', required: false, description: 'Guest device id (required when no token)' })
+  @UseGuards(OptionalJwtAuthGuard)
+  getVideoResolutions(
+    @Param('videoId', new ParseUUIDPipe({ version: '4' })) videoId: string,
+    @Query('deviceId') deviceId?: string,
+    @Req() req?: any,
+  ) {
+    return this.uploads.getBunnyVideoResolutions(videoId, req?.user, deviceId);
   }
 
   @Get('bunny/verify')
