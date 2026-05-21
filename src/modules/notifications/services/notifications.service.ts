@@ -34,23 +34,65 @@ export class NotificationsService {
     return dbUser.userableId;
   }
 
-  private async getStudentFromUser(user?: TokenUser) {
-    if (user?.type === 'STUDENT') {
+  private async resolveStudentOrGuestScope(user?: TokenUser, deviceId?: string) {
+    if (user) {
+      if (user.type !== 'STUDENT') {
+        throw new BadRequestException('هذا المسار مخصص للطلاب أو الزوار');
+      }
+
       const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
       if (!dbUser || dbUser.userableType !== 'STUDENT') {
         throw new BadRequestException('الطالب غير موجود');
       }
 
-      const student = await this.prisma.student.findUnique({ where: { id: dbUser.userableId } });
+      const student = await this.prisma.student.findUnique({
+        where: { id: dbUser.userableId },
+        select: { universityId: true, collegeId: true, departmentId: true },
+      });
       if (!student) throw new BadRequestException('الطالب غير موجود');
-      return student;
+
+      return {
+        universityId: student.universityId,
+        collegeId: student.collegeId,
+        departmentId: student.departmentId,
+      };
     }
 
-    const fallbackStudent = await this.prisma.student.findFirst({
-      orderBy: { createdAt: 'asc' },
+    const normalizedDeviceId = String(deviceId ?? '')
+      .trim()
+      .replace(/^['"]+|['"]+$/g, '');
+    if (!normalizedDeviceId) {
+      throw new BadRequestException('للزائر يجب إرسال deviceId');
+    }
+
+    const guestPreferenceRepo = (this.prisma as any).guestPreference;
+    let savedPreference = await guestPreferenceRepo.findUnique({
+      where: { deviceId: normalizedDeviceId },
+      select: { universityId: true, collegeId: true, departmentId: true },
     });
-    if (!fallbackStudent) throw new BadRequestException('لا يوجد طالب متاح في النظام');
-    return fallbackStudent;
+
+    // Fallback for clients that send different casing for the same device id.
+    if (!savedPreference) {
+      savedPreference = await guestPreferenceRepo.findFirst({
+        where: {
+          deviceId: {
+            equals: normalizedDeviceId,
+            mode: 'insensitive',
+          },
+        },
+        select: { universityId: true, collegeId: true, departmentId: true },
+      });
+    }
+
+    if (!savedPreference) {
+      throw new BadRequestException('لا يوجد تفضيل محفوظ لهذا الجهاز');
+    }
+
+    return {
+      universityId: savedPreference.universityId,
+      collegeId: savedPreference.collegeId,
+      departmentId: savedPreference.departmentId,
+    };
   }
 
   private buildUniversityScopeFilter(universityId?: string) {
@@ -293,16 +335,16 @@ export class NotificationsService {
     return this.attachSenderInfo(notifications);
   }
 
-  async listStudentNotifications(user?: TokenUser) {
-    const student = await this.getStudentFromUser(user);
+  async listStudentNotifications(user?: TokenUser, deviceId?: string) {
+    const scope = await this.resolveStudentOrGuestScope(user, deviceId);
 
     const visibilityFilters: any[] = [
-      { universityId: student.universityId },
-      { collegeId: student.collegeId, departmentId: null },
+      { universityId: scope.universityId },
+      { collegeId: scope.collegeId, departmentId: null },
     ];
 
-    if (student.departmentId) {
-      visibilityFilters.push({ collegeId: student.collegeId, departmentId: student.departmentId });
+    if (scope.departmentId) {
+      visibilityFilters.push({ collegeId: scope.collegeId, departmentId: scope.departmentId });
     }
 
     const notifications = await this.prisma.notification.findMany({

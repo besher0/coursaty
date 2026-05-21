@@ -1,11 +1,12 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { NotificationsService } from '../services/notifications.service';
 import { CreateNotificationDto } from '../dtos/create-notification.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/roles.decorator';
 import { ListNotificationsQueryDto } from '../dtos/list-notifications-query.dto';
+import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard';
 
 @ApiTags('notifications')
 @ApiBearerAuth()
@@ -71,7 +72,18 @@ export class NotificationsController {
 
   @Get()
   @ApiOperation({ summary: 'List approved notifications for student' })
-  listStudent(@Req() req: any) {
-    return this.notifications.listStudentNotifications(req.user);
+  @ApiQuery({ name: 'deviceId', required: false, description: 'Guest device id (required when no token)' })
+  @ApiQuery({ name: 'deviceID', required: false, description: 'Guest device id alias' })
+  @UseGuards(OptionalJwtAuthGuard)
+  listStudent(
+    @Req() req: any,
+    @Query('deviceId') deviceId?: string,
+    @Query('deviceID') deviceID?: string,
+  ) {
+    const headerDeviceIdRaw =
+      req?.headers?.['x-device-id'] ?? req?.headers?.['device-id'] ?? req?.headers?.deviceid;
+    const headerDeviceId = Array.isArray(headerDeviceIdRaw) ? headerDeviceIdRaw[0] : headerDeviceIdRaw;
+    const resolvedDeviceId = deviceId ?? deviceID ?? headerDeviceId;
+    return this.notifications.listStudentNotifications(req?.user, resolvedDeviceId);
   }
 }
