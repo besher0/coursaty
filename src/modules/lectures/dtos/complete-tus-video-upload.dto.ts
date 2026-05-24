@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 import { BUNNY_STREAM_RESOLUTIONS, BunnyStreamResolution } from '@/shared/bunny/bunny-resolution.constants';
 
 export class CompleteTusVideoUploadDto {
@@ -29,6 +30,13 @@ export class CompleteTusVideoUploadDto {
   @IsOptional()
   @IsIn(BUNNY_STREAM_RESOLUTIONS)
   preferredResolution?: BunnyStreamResolution;
+
+  @ApiPropertyOptional({ description: 'Video duration in seconds', default: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  duration?: number;
 
   @ApiPropertyOptional({ description: 'Display order for the video inside lecture' })
   @IsOptional()

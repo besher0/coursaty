@@ -60,6 +60,30 @@ export class DashboardService {
     };
   }
 
+  private freeCourseFilterClause() {
+    return {
+      OR: [
+        { isFree: true },
+        { price: { lte: 0 } },
+        {
+          AND: [
+            { price: { gt: 0 } },
+            { courseDiscountPercentage: { gte: 100 } },
+          ],
+        },
+      ],
+    };
+  }
+
+  private applyFreeCourseFilter(where: Record<string, any>, isFree?: boolean) {
+    if (typeof isFree !== 'boolean') return where;
+
+    const freeClause = this.freeCourseFilterClause();
+    if (isFree) return { AND: [where, freeClause] };
+
+    return { AND: [where, { NOT: freeClause }] };
+  }
+
   private async getStudentCollege(
     user?: { userId: string | number; type: string },
     guestFilter?: DashboardGuestFilter,
@@ -1656,13 +1680,33 @@ export class DashboardService {
       take: limit,
     });
 
+    const durationMap = new Map<string, number>(courses.map((course) => [course.id, 0]));
+    if (courses.length > 0) {
+      const lectures = await this.prisma.lecture.findMany({
+        where: { courseId: { in: courses.map((course) => course.id) } },
+        select: {
+          courseId: true,
+          videos: {
+            select: {
+              duration: true,
+            },
+          },
+        },
+      });
+
+      for (const lecture of lectures) {
+        const lectureDuration = lecture.videos.reduce((sum, video) => sum + (video.duration ?? 0), 0);
+        durationMap.set(lecture.courseId, (durationMap.get(lecture.courseId) ?? 0) + lectureDuration);
+      }
+    }
+
     const formattedCourses = courses.map((course) => ({
       id: course.id,
       name: course.name,
 
       imageUrl: course.imageUrl ?? null,
       studentsCount: course._count.subscriptions,
-      duration: course.duration,
+      duration: durationMap.get(course.id) ?? 0,
       year: course.collegeYear?.academicYear
         ? {
             id: course.collegeYear.academicYear.id,
@@ -1739,13 +1783,17 @@ export class DashboardService {
       categories.map(async (category) => {
         const yearsWithCourses = await Promise.all(
           years.map(async (year) => {
-            const where = this.withActiveCourseFilter({
-              collegeId,
-              collegeYearId: year.id,
-              categoryId: category.id,
-              ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
-              ...(typeof isFree === 'boolean' ? { isFree } : {}),
-            }) as any;
+            const where = this.withActiveCourseFilter(
+              this.applyFreeCourseFilter(
+                {
+                  collegeId,
+                  collegeYearId: year.id,
+                  categoryId: category.id,
+                  ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
+                },
+                isFree,
+              ),
+            ) as any;
 
             const total = await this.prisma.course.count({ where });
             const courses = await this.prisma.course.findMany({
@@ -1820,11 +1868,16 @@ export class DashboardService {
 
     const yearsWithCourses = await Promise.all(
       years.map(async (year) => {
-        const where = this.withActiveCourseFilter({
-          collegeId,
-          collegeYearId: year.id,
-          ...(typeof isFree === 'boolean' ? { isFree } : {}),
-        }) as any;
+        const where = this.withActiveCourseFilter(
+          this.applyFreeCourseFilter(
+            {
+              collegeId,
+              collegeYearId: year.id,
+              subscriptions: { some: {} },
+            },
+            isFree,
+          ),
+        ) as any;
         const total = await this.prisma.course.count({ where });
         const courses = await this.prisma.course.findMany({
           where,
@@ -1863,11 +1916,16 @@ export class DashboardService {
     } | null = null;
 
     if (includeAllYears) {
-      const noYearWhere = this.withActiveCourseFilter({
-        collegeId,
-        collegeYearId: null,
-        ...(typeof isFree === 'boolean' ? { isFree } : {}),
-      }) as any;
+      const noYearWhere = this.withActiveCourseFilter(
+        this.applyFreeCourseFilter(
+          {
+            collegeId,
+            collegeYearId: null,
+            subscriptions: { some: {} },
+          },
+          isFree,
+        ),
+      ) as any;
       const noYearTotal = await this.prisma.course.count({ where: noYearWhere });
       if (noYearTotal > 0) {
         const noYearCourses = await this.prisma.course.findMany({
@@ -1933,12 +1991,16 @@ export class DashboardService {
 
     const yearsWithCourses = await Promise.all(
       years.map(async (year) => {
-        const where = this.withActiveCourseFilter({
-          collegeId,
-          collegeYearId: year.id,
-          ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
-          ...(typeof isFree === 'boolean' ? { isFree } : {}),
-        }) as any;
+        const where = this.withActiveCourseFilter(
+          this.applyFreeCourseFilter(
+            {
+              collegeId,
+              collegeYearId: year.id,
+              ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
+            },
+            isFree,
+          ),
+        ) as any;
         const total = await this.prisma.course.count({ where });
         const courses = await this.prisma.course.findMany({
           where,
@@ -1971,12 +2033,16 @@ export class DashboardService {
     );
 
     const getNoYearCoursesEntry = async (withActiveSeason: boolean) => {
-      const where = this.withActiveCourseFilter({
-        collegeId,
-        collegeYearId: null,
-        ...(withActiveSeason && activeSeasonId ? { seasonId: activeSeasonId } : {}),
-        ...(typeof isFree === 'boolean' ? { isFree } : {}),
-      }) as any;
+      const where = this.withActiveCourseFilter(
+        this.applyFreeCourseFilter(
+          {
+            collegeId,
+            collegeYearId: null,
+            ...(withActiveSeason && activeSeasonId ? { seasonId: activeSeasonId } : {}),
+          },
+          isFree,
+        ),
+      ) as any;
 
       const total = await this.prisma.course.count({ where });
       if (total === 0) return null;
@@ -2023,11 +2089,15 @@ export class DashboardService {
 
       const fallbackYearsWithCourses = await Promise.all(
         fallbackYears.map(async (year) => {
-          const where = this.withActiveCourseFilter({
-            collegeId,
-            collegeYearId: year.id,
-            ...(typeof isFree === 'boolean' ? { isFree } : {}),
-          }) as any;
+          const where = this.withActiveCourseFilter(
+            this.applyFreeCourseFilter(
+              {
+                collegeId,
+                collegeYearId: year.id,
+              },
+              isFree,
+            ),
+          ) as any;
           const total = await this.prisma.course.count({ where });
           const courses = await this.prisma.course.findMany({
             where,
@@ -2109,11 +2179,15 @@ export class DashboardService {
       if (matched && !hasCoursesInScopedFilters) {
         const { collegeId } = await this.getStudentCollege(user, guestFilter);
         const fallbackCourses = await this.prisma.course.findMany({
-          where: this.withActiveCourseFilter({
-            collegeId,
-            categoryId,
-            ...(typeof isFree === 'boolean' ? { isFree } : {}),
-          }),
+          where: this.withActiveCourseFilter(
+            this.applyFreeCourseFilter(
+              {
+                collegeId,
+                categoryId,
+              },
+              isFree,
+            ),
+          ),
           include: {
             collegeYear: { include: { academicYear: true } },
             season: true,

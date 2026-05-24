@@ -494,26 +494,38 @@ export class LecturesService {
       videoName: string;
       description?: string;
       videoUrl: string;
-      durationSeconds?: number;
+      duration?: number;
       isFree?: boolean;
       sortOrder?: number;
       size?: string ;
     },
     user?: { userId: string | number; type: string },
   ) {
-    await this.assertLectureOwnership(user, dto.lectureId);
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: String(dto.lectureId) },
+      select: { courseId: true },
+    });
+    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    await this.assertCourseOwnership(user, lecture.courseId);
     const sortOrder = dto.sortOrder ?? (await this.getNextVideoSortOrder(dto.lectureId));
+    const duration = this.normalizeVideoDuration(dto.duration);
 
-    return this.prisma.video.create({
-      data: {
-        lectureId: String(dto.lectureId),
-        videoName: dto.videoName,
-        description: dto.description,
-        videoUrl: dto.videoUrl,
-        isFree: dto.isFree ?? false,
-        size: this.resolveMediaSize(dto.size),
-        sortOrder,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.video.create({
+        data: {
+          lectureId: String(dto.lectureId),
+          videoName: dto.videoName,
+          description: dto.description,
+          videoUrl: dto.videoUrl,
+          duration,
+          isFree: dto.isFree ?? false,
+          size: this.resolveMediaSize(dto.size),
+          sortOrder,
+        },
+      });
+
+      await this.recalculateCourseDuration(tx, lecture.courseId);
+      return created;
     });
   }
 
@@ -578,17 +590,24 @@ export class LecturesService {
       );
     }
     const sortOrder = dto.sortOrder ?? (await this.getNextVideoSortOrder(lectureId));
+    const duration = this.normalizeVideoDuration(dto.duration);
 
-    const created = await this.prisma.video.create({
-      data: {
-        lectureId: String(lectureId),
-        videoName: title,
-        description: dto.description,
-        videoUrl: persistedVideoUrl,
-        isFree: dto.isFree ?? false,
-        size,
-        sortOrder,
-      },
+    const created = await this.prisma.$transaction(async (tx) => {
+      const video = await tx.video.create({
+        data: {
+          lectureId: String(lectureId),
+          videoName: title,
+          description: dto.description,
+          videoUrl: persistedVideoUrl,
+          duration,
+          isFree: dto.isFree ?? false,
+          size,
+          sortOrder,
+        },
+      });
+
+      await this.recalculateCourseDuration(tx, lecture.courseId);
+      return video;
     });
 
     return {
@@ -650,11 +669,20 @@ export class LecturesService {
       if (dto.size !== undefined && existing.size !== this.resolveMediaSize(dto.size)) {
         updateData.size = this.resolveMediaSize(dto.size);
       }
+      if (dto.duration !== undefined) {
+        const duration = this.normalizeVideoDuration(dto.duration);
+        if (existing.duration !== duration) updateData.duration = duration;
+      }
 
       if (Object.keys(updateData).length) {
-        const updated = await this.prisma.video.update({
-          where: { id: existing.id },
-          data: updateData,
+        const updated = await this.prisma.$transaction(async (tx) => {
+          const video = await tx.video.update({
+            where: { id: existing.id },
+            data: updateData,
+          });
+
+          await this.recalculateCourseDuration(tx, lecture.courseId);
+          return video;
         });
         return {
           ...updated,
@@ -670,16 +698,23 @@ export class LecturesService {
 
     const title = dto.videoName?.trim() || `video-${dto.videoId}`;
     const sortOrder = dto.sortOrder ?? (await this.getNextVideoSortOrder(lectureId));
-    const created = await this.prisma.video.create({
-      data: {
-        lectureId: String(lectureId),
-        videoName: title,
-        description: dto.description,
-        videoUrl: streamPlayUrl,
-        isFree: dto.isFree ?? false,
-        size: this.resolveMediaSize(dto.size),
-        sortOrder,
-      },
+    const duration = this.normalizeVideoDuration(dto.duration);
+    const created = await this.prisma.$transaction(async (tx) => {
+      const video = await tx.video.create({
+        data: {
+          lectureId: String(lectureId),
+          videoName: title,
+          description: dto.description,
+          videoUrl: streamPlayUrl,
+          duration,
+          isFree: dto.isFree ?? false,
+          size: this.resolveMediaSize(dto.size),
+          sortOrder,
+        },
+      });
+
+      await this.recalculateCourseDuration(tx, lecture.courseId);
+      return video;
     });
 
     return {
@@ -725,6 +760,20 @@ export class LecturesService {
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
     if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
     if (dto.size !== undefined) data.size = this.resolveMediaSize(dto.size);
+    if (dto.duration !== undefined) {
+      const duration = this.normalizeVideoDuration(dto.duration);
+      if (video.duration !== duration) data.duration = duration;
+    }
+
+    if (!Object.keys(data).length) return video;
+
+    if (data.duration !== undefined) {
+      return this.prisma.$transaction(async (tx) => {
+        const updated = await tx.video.update({ where: { id: String(id) }, data });
+        await this.recalculateCourseDuration(tx, video.lecture.courseId);
+        return updated;
+      });
+    }
 
     return this.prisma.video.update({ where: { id: String(id) }, data });
   }
@@ -799,10 +848,11 @@ export class LecturesService {
     await this.assertCourseOwnership(user, video.lecture.courseId);
 
     // Clean up related records manually (e.g., interactions); extend here for other related models
-    await this.prisma.$transaction([
-      this.prisma.videoInteraction.deleteMany({ where: { videoId: String(id) } }),
-      this.prisma.video.delete({ where: { id: String(id) } }),
-    ]);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.videoInteraction.deleteMany({ where: { videoId: String(id) } });
+      await tx.video.delete({ where: { id: String(id) } });
+      await this.recalculateCourseDuration(tx, video.lecture.courseId);
+    });
     return { success: true };
   }
 
@@ -1057,6 +1107,33 @@ export class LecturesService {
 
     const metaColumn = String((error.meta as Record<string, unknown> | undefined)?.column ?? '');
     return metaColumn.toLowerCase().endsWith(column.toLowerCase());
+  }
+
+  private normalizeVideoDuration(duration?: number | null): number {
+    if (duration === undefined || duration === null) return 0;
+
+    const parsed = Number(duration);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      throw new BadRequestException('مدة الفيديو يجب أن تكون رقماً صحيحاً أكبر أو يساوي صفر');
+    }
+
+    return parsed;
+  }
+
+  private async recalculateCourseDuration(tx: Prisma.TransactionClient, courseId: string) {
+    const aggregate = await tx.video.aggregate({
+      where: {
+        lecture: {
+          courseId: String(courseId),
+        },
+      },
+      _sum: { duration: true },
+    });
+
+    await tx.course.update({
+      where: { id: String(courseId) },
+      data: { duration: aggregate._sum.duration ?? 0 },
+    });
   }
 
   private resolveMediaSize(providedSize?: string | number, uploadedSize?: number): string | null {

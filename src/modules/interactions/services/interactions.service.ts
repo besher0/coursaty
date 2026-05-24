@@ -52,13 +52,24 @@ export class InteractionsService {
   async rateCourse(courseId: string, rating: number, user?: { userId: string | number; type: string }) {
     const { studentId } = await this.ensureStudentContext(user);
 
-    const course = await this.prisma.course.findUnique({ where: { id: String(courseId) } });
+    const course = await this.prisma.course.findUnique({
+      where: { id: String(courseId) },
+      select: {
+        id: true,
+        isFree: true,
+        price: true,
+        courseDiscountPercentage: true,
+      },
+    });
     if (!course) throw new NotFoundException('الكورس غير موجود');
 
-    const subscription = await this.prisma.studentSubscription.findUnique({
-      where: { studentId_courseId: { studentId, courseId: String(courseId) } },
-    });
-    if (!subscription) throw new ForbiddenException('التقييم متاح فقط للطلاب المشتركين في الكورس');
+    const canRateWithoutSubscription = this.canStudentRateWithoutSubscription(course);
+    if (!canRateWithoutSubscription) {
+      const subscription = await this.prisma.studentSubscription.findUnique({
+        where: { studentId_courseId: { studentId, courseId: String(courseId) } },
+      });
+      if (!subscription) throw new ForbiddenException('التقييم متاح فقط للطلاب المشتركين في الكورس');
+    }
 
     return this.prisma.courseRating.upsert({
       where: {
@@ -314,6 +325,20 @@ export class InteractionsService {
   private async syncTeacherLikesCount(teacherId: string) {
     const likes = await this.prisma.teacherLike.count({ where: { teacherId } });
     await this.prisma.teacher.update({ where: { id: teacherId }, data: { likesCount: likes } });
+  }
+
+  private canStudentRateWithoutSubscription(course: {
+    isFree: boolean;
+    price: unknown;
+    courseDiscountPercentage: unknown;
+  }) {
+    if (course.isFree) return true;
+
+    const basePrice = Number(course.price ?? 0);
+    const discountPercentage = Number(course.courseDiscountPercentage ?? 0);
+    const priceAfterCourseDiscount = Math.max(0, basePrice - (basePrice * discountPercentage) / 100);
+
+    return basePrice <= 0 || priceAfterCourseDiscount <= 0;
   }
 }
 

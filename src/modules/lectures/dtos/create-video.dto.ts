@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class CreateVideoDto {
   @ApiProperty({ format: 'uuid' })
@@ -25,6 +25,12 @@ export class CreateVideoDto {
   @IsOptional()
   @IsBoolean()
   isFree?: boolean;
+
+  @ApiPropertyOptional({ description: 'Video duration in seconds', default: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  duration?: number;
 
   @ApiPropertyOptional({ description: 'Display order for the video inside lecture' })
   @IsOptional()

@@ -16,7 +16,7 @@ export class AdminsService {
       description: course.description ?? null,
       imageUrl: course.imageUrl ?? null,
       price: course.price,
-      duration: course.duration ?? null,
+      duration: course.resolvedDuration ?? 0,
       status: course.status,
       expiresAt: course.expiresAt ?? null,
       season: course.season
@@ -77,6 +77,39 @@ export class AdminsService {
         : null,
       studentsCount: course._count?.subscriptions ?? 0,
     };
+  }
+
+  private async getCourseDurationsMap(courseIds: string[]) {
+    const uniqueCourseIds = Array.from(new Set(courseIds.map((id) => String(id))));
+    if (!uniqueCourseIds.length) return new Map<string, number>();
+
+    const lectures = await this.prisma.lecture.findMany({
+      where: { courseId: { in: uniqueCourseIds } },
+      select: {
+        courseId: true,
+        videos: {
+          select: {
+            duration: true,
+          },
+        },
+      },
+    });
+
+    const durationMap = new Map<string, number>(uniqueCourseIds.map((id) => [id, 0]));
+    for (const lecture of lectures) {
+      const lectureDuration = lecture.videos.reduce((sum, video) => sum + (video.duration ?? 0), 0);
+      durationMap.set(lecture.courseId, (durationMap.get(lecture.courseId) ?? 0) + lectureDuration);
+    }
+
+    return durationMap;
+  }
+
+  private async withCourseDurations<T extends { id: string }>(courses: T[]) {
+    const durationMap = await this.getCourseDurationsMap(courses.map((course) => course.id));
+    return courses.map((course) => ({
+      ...course,
+      resolvedDuration: durationMap.get(course.id) ?? 0,
+    }));
   }
 
   async create(dto: CreateAdminDto) {
@@ -1219,11 +1252,12 @@ export class AdminsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    const coursesWithDurations = await this.withCourseDurations(courses);
 
     return {
       subject,
       courses: {
-        data: courses.map((course) => ({
+        data: coursesWithDurations.map((course) => ({
           ...this.buildCourseCardWithTeacher(course),
           subject: course.subject
             ? {
@@ -1285,11 +1319,12 @@ export class AdminsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    const coursesWithDurations = await this.withCourseDurations(courses);
 
     return {
       program,
       courses: {
-        data: courses.map((course) => ({
+        data: coursesWithDurations.map((course) => ({
           ...this.buildCourseCardWithTeacher(course),
           program: course.subject
             ? {
@@ -1323,10 +1358,11 @@ export class AdminsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    const coursesWithDurations = await this.withCourseDurations(courses);
 
     return {
       subject: { id: subject.id, name: subject.subjectName, isProgram: subject.isProgram },
-      courses: courses.map((course) => this.buildCourseCardWithTeacher(course)),
+      courses: coursesWithDurations.map((course) => this.buildCourseCardWithTeacher(course)),
     };
   }
 
@@ -1352,10 +1388,11 @@ export class AdminsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    const coursesWithDurations = await this.withCourseDurations(courses);
 
     return {
       program: { id: program.id, name: program.subjectName },
-      courses: courses.map((course) => this.buildCourseCardWithTeacher(course)),
+      courses: coursesWithDurations.map((course) => this.buildCourseCardWithTeacher(course)),
     };
   }
 
@@ -1380,10 +1417,11 @@ export class AdminsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    const coursesWithDurations = await this.withCourseDurations(courses);
 
     return {
       teacher: { id: teacher.id, name: teacher.name },
-      courses: courses.map((course) => this.buildCourseCardWithTeacher(course)),
+      courses: coursesWithDurations.map((course) => this.buildCourseCardWithTeacher(course)),
     };
   }
 
@@ -1412,11 +1450,12 @@ export class AdminsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    const coursesWithDurations = await this.withCourseDurations(subs.map((subscription) => subscription.course));
 
     return {
       student: { id: student.id, name: student.name, universityNumber: student.universityNumber ?? null, college: student.college },
-      courses: subs.map((s) => ({
-        ...this.buildCourseCardWithTeacher(s.course),
+      courses: subs.map((s, index) => ({
+        ...this.buildCourseCardWithTeacher(coursesWithDurations[index]),
         subscribedAt: s.createdAt,
       })),
     };
@@ -1964,6 +2003,9 @@ export class AdminsService {
       },
     });
 
+    const subscribedCourseIds = student.subscriptions.map((subscription) => subscription.course.id);
+    const durationMap = await this.getCourseDurationsMap(subscribedCourseIds);
+
     const mappedCourses = student.subscriptions.map((subscription) => {
       const course = subscription.course;
 
@@ -1978,7 +2020,7 @@ export class AdminsService {
               number: course.collegeYear.academicYear.yearNumber,
             }
           : null,
-        courseHours: course.duration,
+        courseHours: durationMap.get(course.id) ?? 0,
         category: course.category
           ? {
               id: course.category.id,

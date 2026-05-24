@@ -178,6 +178,7 @@ export class CourseController {
         videoName: { type: 'string' },
         description: { type: 'string' },
         isFree: { type: 'boolean' },
+        duration: { type: 'integer', minimum: 0, description: 'Video duration in seconds' },
         sortOrder: { type: 'number' },
         size: { type: 'string' },
         preferredResolution: { type: 'string', enum: [...BUNNY_STREAM_RESOLUTIONS] },

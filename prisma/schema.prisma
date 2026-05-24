@@ -353,7 +353,7 @@ model Course {
   imageUrl              String?
   price                 Decimal   @db.Decimal(10, 2)
   courseDiscountPercentage Decimal @db.Decimal(5, 2) @default(0.00)
-  duration              Int       @default(2)
+  duration              Int       @default(0)
   isFree                Boolean   @default(false)
   expiresAt             DateTime?
   introVideoUrl         String?
@@ -442,7 +442,7 @@ model Video {
   description     String?
   videoUrl        String
   size            String?
-  durationSeconds Int?
+  duration      Int      @default(0)
   viewsCount      Int      @default(0)
   isFree          Boolean  @default(false)
   sortOrder       Int?

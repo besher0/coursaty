@@ -96,6 +96,31 @@ export class TeachersService {
     return Number(value);
   }
 
+  private async getCourseDurationsMap(courseIds: string[]) {
+    const uniqueCourseIds = Array.from(new Set(courseIds.map((id) => String(id))));
+    if (!uniqueCourseIds.length) return new Map<string, number>();
+
+    const lectures = await this.prisma.lecture.findMany({
+      where: { courseId: { in: uniqueCourseIds } },
+      select: {
+        courseId: true,
+        videos: {
+          select: {
+            duration: true,
+          },
+        },
+      },
+    });
+
+    const durationMap = new Map<string, number>(uniqueCourseIds.map((id) => [id, 0]));
+    for (const lecture of lectures) {
+      const lectureDuration = lecture.videos.reduce((sum, video) => sum + (video.duration ?? 0), 0);
+      durationMap.set(lecture.courseId, (durationMap.get(lecture.courseId) ?? 0) + lectureDuration);
+    }
+
+    return durationMap;
+  }
+
   private getMonthBounds(date: Date) {
     const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
     const startOfNextMonth = new Date(date.getFullYear(), date.getMonth() + 1, 1);
@@ -380,6 +405,7 @@ export class TeachersService {
       return sum + (finalPrice * percentage) / 100;
     }, 0);
     const avgRating = this.toNumber(averageRating._avg.rating);
+    const durationMap = await this.getCourseDurationsMap(courses.map((course) => course.id));
 
     const summary: TeacherSummaryDto = {
       teacherName: teacher.name,
@@ -393,7 +419,7 @@ export class TeachersService {
         id: course.id,
         name: course.name,
         imageUrl: course.imageUrl ?? null,
-        duration: course.duration,
+        duration: durationMap.get(course.id) ?? 0,
         teacher: {
           id: teacher.id,
           name: teacher.name,
@@ -481,6 +507,7 @@ export class TeachersService {
         take: pagination.take,
       }),
     ]);
+    const durationMap = await this.getCourseDurationsMap(courses.map((course) => course.id));
 
     const universityMap = new Map<
       string,
@@ -550,7 +577,7 @@ export class TeachersService {
         id: course.id,
         name: course.name,
         imageUrl: course.imageUrl ?? null,
-        duration: course.duration,
+        duration: durationMap.get(course.id) ?? 0,
         expiresAt: course.expiresAt ?? null,
         status: course.status,
         createdAt: course.createdAt,

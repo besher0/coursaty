@@ -1,5 +1,6 @@
 ﻿import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { CreateCourseDto } from '../dtos/create-course.dto';
 import { BunnyService } from '../../../shared/bunny/bunny.service';
 import { UpdateCourseDto } from '../dtos/update-course.dto';
@@ -149,7 +150,7 @@ export class CourseService {
         imageUrl: dto.imageUrl,
         price: dto.price,
         courseDiscountPercentage: dto.courseDiscountPercentage ?? 0,
-        duration: dto.duration,
+        duration: 0,
         isFree: dto.isFree,
         expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
         teacherId,
@@ -253,7 +254,6 @@ export class CourseService {
     if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl;
     if (dto.price !== undefined) data.price = dto.price as any;
     if (dto.courseDiscountPercentage !== undefined) data.courseDiscountPercentage = dto.courseDiscountPercentage as any;
-    if (dto.duration !== undefined) data.duration = dto.duration as any;
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
     if (dto.expiresAt !== undefined) data.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
     if (dto.introVideoUrl !== undefined) data.introVideoUrl = dto.introVideoUrl;
@@ -290,12 +290,13 @@ export class CourseService {
     });
 
     if (!course) throw new NotFoundException('الكورس غير موجود');
-
     const totalVideos = course.lectures.reduce((acc, lec) => acc + (lec._count?.videos ?? 0), 0);
     const totalFiles = course.lectures.reduce((acc, lec) => acc + (lec._count?.files ?? 0), 0);
+    const duration = await this.getCourseDurationFromVideos(course.id);
 
     return {
       ...course,
+      duration,
       subscribersCount: course._count.subscriptions,
       videosCount: totalVideos,
       filesCount: totalFiles,
@@ -326,6 +327,7 @@ export class CourseService {
 
     if (!course) throw new NotFoundException('الكورس غير موجود');
 
+    const courseDuration = await this.getCourseDurationFromVideos(course.id);
     const isOwnerOrAdmin = await this.isCourseOwnerOrAdmin(user, course.id);
     const isSubscribed = await this.hasStudentSubscription(user, course.id);
     const nowTs = Date.now();
@@ -375,7 +377,7 @@ export class CourseService {
           instagramUrl: course.teacher.instagramUrl ?? null,
           telegramUrl: course.teacher.telegramUrl ?? null,
         },
-        durationSeconds: course.duration ? course.duration * 3600 : null,
+        duration: courseDuration,
         expiresAt: course.expiresAt,
         expiresInSeconds,
         expiresInDays,
@@ -472,6 +474,7 @@ export class CourseService {
     });
 
     if (!course) throw new NotFoundException('الكورس غير موجود');
+    const courseDuration = await this.getCourseDurationFromVideos(course.id);
 
     const basePrice = Number(course.price);
     const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
@@ -520,7 +523,8 @@ export class CourseService {
             }
           : null,
         lecturesCount: course._count.lectures,
-        durationHours: course.duration,
+        duration: courseDuration,
+        expiresAt: course.expiresAt,
         college: course.college,
         department: course.department,
         subject: course.subject
@@ -764,6 +768,7 @@ export class CourseService {
       videoName?: string;
       description?: string;
       isFree?: boolean;
+      duration?: number;
       sortOrder?: number;
       size?: string | number;
       preferredResolution?: string;
@@ -824,18 +829,24 @@ export class CourseService {
     }
     const sortOrder = options?.sortOrder ?? (await this.getNextLectureVideoSortOrder(lectureId));
     const size = this.resolveMediaSize(options?.size, file?.size);
+    const duration = this.normalizeVideoDuration(options?.duration);
 
-    const created = await this.prisma.video.create({
-      data: {
-        lectureId,
-        videoName: title,
-        description: options?.description,
-        videoUrl: persistedVideoUrl,
-        durationSeconds: null,
-        isFree: options?.isFree ?? false,
-        size,
-        sortOrder,
-      },
+    const created = await this.prisma.$transaction(async (tx) => {
+      const video = await tx.video.create({
+        data: {
+          lectureId,
+          videoName: title,
+          description: options?.description,
+          videoUrl: persistedVideoUrl,
+          duration,
+          isFree: options?.isFree ?? false,
+          size,
+          sortOrder,
+        },
+      });
+
+      await this.recalculateCourseDuration(tx, lecture.courseId);
+      return video;
     });
 
     return {
@@ -899,11 +910,20 @@ export class CourseService {
       if (dto.size !== undefined && existing.size !== this.resolveMediaSize(dto.size)) {
         updateData.size = this.resolveMediaSize(dto.size);
       }
+      if (dto.duration !== undefined) {
+        const duration = this.normalizeVideoDuration(dto.duration);
+        if (existing.duration !== duration) updateData.duration = duration;
+      }
 
       if (Object.keys(updateData).length) {
-        const updated = await this.prisma.video.update({
-          where: { id: existing.id },
-          data: updateData,
+        const updated = await this.prisma.$transaction(async (tx) => {
+          const video = await tx.video.update({
+            where: { id: existing.id },
+            data: updateData,
+          });
+
+          await this.recalculateCourseDuration(tx, lecture.courseId);
+          return video;
         });
         return {
           ...updated,
@@ -919,16 +939,23 @@ export class CourseService {
 
     const title = dto.videoName?.trim() || `video-${dto.videoId}`;
     const sortOrder = dto.sortOrder ?? (await this.getNextLectureVideoSortOrder(lectureId));
-    const created = await this.prisma.video.create({
-      data: {
-        lectureId: String(lectureId),
-        videoName: title,
-        description: dto.description,
-        videoUrl: streamPlayUrl,
-        isFree: dto.isFree ?? false,
-        size: this.resolveMediaSize(dto.size),
-        sortOrder,
-      },
+    const duration = this.normalizeVideoDuration(dto.duration);
+    const created = await this.prisma.$transaction(async (tx) => {
+      const video = await tx.video.create({
+        data: {
+          lectureId: String(lectureId),
+          videoName: title,
+          description: dto.description,
+          videoUrl: streamPlayUrl,
+          duration,
+          isFree: dto.isFree ?? false,
+          size: this.resolveMediaSize(dto.size),
+          sortOrder,
+        },
+      });
+
+      await this.recalculateCourseDuration(tx, lecture.courseId);
+      return video;
     });
 
     return {
@@ -963,7 +990,7 @@ export class CourseService {
   }
 
   async listCourses() {
-    return this.prisma.course.findMany({
+    const courses = await this.prisma.course.findMany({
       include: {
         teacher: {
           select: {
@@ -977,6 +1004,12 @@ export class CourseService {
         _count: { select: { subscriptions: true, lectures: true } },
       },
     });
+
+    const durationMap = await this.getCourseDurationsMap(courses.map((course) => course.id));
+    return courses.map((course) => ({
+      ...course,
+      duration: durationMap.get(course.id) ?? 0,
+    }));
   }
 
   private async getNextLectureVideoSortOrder(lectureId: string) {
@@ -1052,6 +1085,64 @@ export class CourseService {
 
   private async assertCourseOwnershipByCourseId(user: { userId: string | number; type: string } | undefined, courseId: string) {
     return this.assertCourseOwnership(user, courseId);
+  }
+
+  private async getCourseDurationFromVideos(courseId: string): Promise<number> {
+    const durations = await this.getCourseDurationsMap([courseId]);
+    return durations.get(String(courseId)) ?? 0;
+  }
+
+  private async getCourseDurationsMap(courseIds: string[]): Promise<Map<string, number>> {
+    const uniqueCourseIds = Array.from(new Set(courseIds.map((id) => String(id))));
+    if (!uniqueCourseIds.length) return new Map();
+
+    const lectures = await this.prisma.lecture.findMany({
+      where: { courseId: { in: uniqueCourseIds } },
+      select: {
+        courseId: true,
+        videos: {
+          select: {
+            duration: true,
+          },
+        },
+      },
+    });
+
+    const durationMap = new Map<string, number>(uniqueCourseIds.map((id) => [id, 0]));
+
+    for (const lecture of lectures) {
+      const lectureDuration = lecture.videos.reduce((sum, video) => sum + (video.duration ?? 0), 0);
+      durationMap.set(lecture.courseId, (durationMap.get(lecture.courseId) ?? 0) + lectureDuration);
+    }
+
+    return durationMap;
+  }
+
+  private normalizeVideoDuration(duration?: number | null): number {
+    if (duration === undefined || duration === null) return 0;
+
+    const parsed = Number(duration);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      throw new BadRequestException('مدة الفيديو يجب أن تكون رقماً صحيحاً أكبر أو يساوي صفر');
+    }
+
+    return parsed;
+  }
+
+  private async recalculateCourseDuration(tx: Prisma.TransactionClient, courseId: string) {
+    const aggregate = await tx.video.aggregate({
+      where: {
+        lecture: {
+          courseId: String(courseId),
+        },
+      },
+      _sum: { duration: true },
+    });
+
+    await tx.course.update({
+      where: { id: String(courseId) },
+      data: { duration: aggregate._sum.duration ?? 0 },
+    });
   }
 
   private resolveMediaSize(providedSize?: string | number, uploadedSize?: number): string | null {

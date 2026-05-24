@@ -67,7 +67,7 @@ export class CreateCourseDto {
   @Max(100)
   courseDiscountPercentage?: number;
 
-  @ApiPropertyOptional({ default: 2, description: 'Course duration in hours' })
+  @ApiPropertyOptional({ default: 0, description: 'Deprecated input. Course duration is auto-calculated from videos in seconds.' })
   @IsOptional()
   @IsNumber()
   duration?: number;
