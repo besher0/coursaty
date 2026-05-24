@@ -67,15 +67,17 @@ export class LecturesService {
         orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
       });
     } catch (error) {
-      if (!this.isAnySortOrderColumnMissing(error)) throw error;
+      if (!this.isAnySortOrderColumnMissing(error) && !this.isAnyVideoDurationColumnMissing(error)) throw error;
 
       lectures = await this.prisma.lecture.findMany({
         where: { courseId: String(courseId) },
         include: {
           videos: {
+            select: this.getVideoFallbackSelect(),
             orderBy: [{ id: 'asc' }],
           },
           files: {
+            select: this.getLectureFileFallbackSelect(),
             orderBy: [{ id: 'asc' }],
           },
         },
@@ -375,7 +377,7 @@ export class LecturesService {
         },
       });
     } catch (error) {
-      if (!this.isAnySortOrderColumnMissing(error)) throw error;
+      if (!this.isAnySortOrderColumnMissing(error) && !this.isAnyVideoDurationColumnMissing(error)) throw error;
 
       lecture = await this.prisma.lecture.findUnique({
         where: { id: String(lectureId) },
@@ -402,15 +404,12 @@ export class LecturesService {
             },
           },
           files: {
+            select: this.getLectureFileFallbackSelect(),
             orderBy: [{ id: 'asc' }],
           },
           videos: {
+            select: this.getVideoWithSegmentsFallbackSelect(),
             orderBy: [{ id: 'asc' }],
-            include: {
-              segments: {
-                orderBy: [{ startSeconds: 'asc' }, { id: 'asc' }],
-              },
-            },
           },
           questions: { include: { options: true } },
         },
@@ -1092,6 +1091,48 @@ export class LecturesService {
     return this.prisma.question.delete({ where: { id: String(id) } });
   }
 
+  private getLectureFileFallbackSelect(): Prisma.LectureFileSelect {
+    return {
+      id: true,
+      lectureId: true,
+      fileName: true,
+      fileUrl: true,
+      fileType: true,
+      isFree: true,
+      size: true,
+    };
+  }
+
+  private getVideoFallbackSelect(): Prisma.VideoSelect {
+    return {
+      id: true,
+      lectureId: true,
+      videoName: true,
+      description: true,
+      videoUrl: true,
+      size: true,
+      viewsCount: true,
+      isFree: true,
+    };
+  }
+
+  private getVideoWithSegmentsFallbackSelect(): Prisma.VideoSelect {
+    return {
+      ...this.getVideoFallbackSelect(),
+      segments: {
+        select: {
+          id: true,
+          videoId: true,
+          segmentName: true,
+          startSeconds: true,
+          endSeconds: true,
+          createdAt: true,
+        },
+        orderBy: [{ startSeconds: 'asc' }, { id: 'asc' }],
+      },
+    };
+  }
+
   private isAnySortOrderColumnMissing(error: unknown): boolean {
     return (
       this.isMissingSortOrderColumn(error, 'Lecture.sortOrder') ||
@@ -1102,6 +1143,21 @@ export class LecturesService {
   }
 
   private isMissingSortOrderColumn(error: unknown, column: string): boolean {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+    if (error.code !== 'P2022') return false;
+
+    const metaColumn = String((error.meta as Record<string, unknown> | undefined)?.column ?? '');
+    return metaColumn.toLowerCase().endsWith(column.toLowerCase());
+  }
+
+  private isAnyVideoDurationColumnMissing(error: unknown): boolean {
+    return (
+      this.isMissingColumn(error, 'Video.duration') ||
+      this.isMissingColumn(error, 'Video.durationSeconds')
+    );
+  }
+
+  private isMissingColumn(error: unknown, column: string): boolean {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
     if (error.code !== 'P2022') return false;
 
