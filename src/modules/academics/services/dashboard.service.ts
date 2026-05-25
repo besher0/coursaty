@@ -199,6 +199,39 @@ export class DashboardService {
     return this.buildCourseCard(course);
   }
 
+  private async getCourseDurationsMap(courseIds: string[]) {
+    const uniqueCourseIds = Array.from(new Set(courseIds.map((id) => String(id))));
+    if (!uniqueCourseIds.length) return new Map<string, number>();
+
+    const lectures = await this.prisma.lecture.findMany({
+      where: { courseId: { in: uniqueCourseIds } },
+      select: {
+        courseId: true,
+        videos: {
+          select: {
+            duration: true,
+          },
+        },
+      },
+    });
+
+    const durationMap = new Map<string, number>(uniqueCourseIds.map((id) => [id, 0]));
+    for (const lecture of lectures) {
+      const lectureDuration = lecture.videos.reduce((sum, video) => sum + (video.duration ?? 0), 0);
+      durationMap.set(lecture.courseId, (durationMap.get(lecture.courseId) ?? 0) + lectureDuration);
+    }
+
+    return durationMap;
+  }
+
+  private async withCourseDurations<T extends { id: string }>(courses: T[]) {
+    const durationMap = await this.getCourseDurationsMap(courses.map((course) => course.id));
+    return courses.map((course) => ({
+      ...course,
+      resolvedDuration: durationMap.get(course.id) ?? 0,
+    }));
+  }
+
   private buildSubjectCard(
     subject: any,
     imageUrl?: string | null,
@@ -1287,13 +1320,18 @@ export class DashboardService {
       take: limit,
     });
 
+    const coursesWithDurations = await this.withCourseDurations(courses);
+
     return {
       subject: {
         id: subject.id,
         name: subject.subjectName,
       },
       courses: {
-        data: courses.map((course) => this.buildCourseCardWithTeacher(course)),
+        data: coursesWithDurations.map((course) => ({
+          ...this.buildCourseCardWithTeacher(course),
+          duration: course.resolvedDuration ?? 0,
+        })),
         pagination: {
           page,
           limit,
