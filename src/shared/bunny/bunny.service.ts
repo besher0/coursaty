@@ -7,6 +7,7 @@ import { BUNNY_STREAM_RESOLUTIONS, BunnyStreamResolution } from './bunny-resolut
 type BunnyResolutionPath = {
   resolution: string;
   path: string;
+  sizeBytes?: number | null;
 };
 
 type BunnyVideoResolutionsResponse = {
@@ -161,7 +162,10 @@ export class BunnyService {
     };
   }
 
-  async getVideoResolutions(videoId: string) {
+  async getVideoResolutions(
+    videoId: string,
+    playData?: { playlistUrl?: string | null; fallbackUrl?: string | null } | null,
+  ) {
     this.assertStreamConfigured();
     const url = `https://video.bunnycdn.com/library/${this.streamLibraryId}/videos/${videoId}/resolutions`;
     const response = await axios.get<BunnyVideoResolutionsResponse>(url, {
@@ -169,11 +173,20 @@ export class BunnyService {
     });
 
     const payload = response.data?.data;
+    const resolvedPlayData =
+      playData === undefined ? await this.getVideoPlayData(videoId).catch((): null => null) : playData;
+    const playlistBaseUrl = resolvedPlayData?.playlistUrl ?? undefined;
+    const mp4BaseUrl = resolvedPlayData?.fallbackUrl ?? this.getStreamPlayBaseUrl(videoId);
+    const playlistResolutions = await this.attachPlaylistResolutionSizes(
+      payload?.playlistResolutions ?? [],
+      playlistBaseUrl,
+    );
+    const mp4Resolutions = await this.attachResolutionSizes(payload?.mp4Resolutions ?? [], mp4BaseUrl);
     return {
       videoId,
       availableResolutions: payload?.availableResolutions ?? [],
-      playlistResolutions: payload?.playlistResolutions ?? [],
-      mp4Resolutions: payload?.mp4Resolutions ?? [],
+      playlistResolutions,
+      mp4Resolutions,
     };
   }
 
@@ -198,10 +211,8 @@ export class BunnyService {
   }
 
   async getStreamPlaybackPayload(videoId: string, preferredResolution?: string) {
-    const [playData, resolutions] = await Promise.all([
-      this.getVideoPlayData(videoId).catch((): null => null),
-      this.getVideoResolutions(videoId).catch((): null => null),
-    ]);
+    const playData = await this.getVideoPlayData(videoId).catch((): null => null);
+    const resolutions = await this.getVideoResolutions(videoId, playData ?? undefined).catch((): null => null);
 
     const streamMasterPlaylistUrl = playData?.playlistUrl ?? null;
     const playlistResolutions = resolutions?.playlistResolutions ?? null;
@@ -248,6 +259,157 @@ export class BunnyService {
 
     const digits = normalized.match(/\d+/)?.[0];
     return digits ? `${digits}p` : normalized;
+  }
+
+  private async attachResolutionSizes(
+    resolutions: BunnyResolutionPath[],
+    baseUrl?: string,
+  ): Promise<BunnyResolutionPath[]> {
+    if (!resolutions.length) return resolutions;
+
+    const withSizes = await Promise.all(
+      resolutions.map(async (item) => ({
+        ...item,
+        sizeBytes: await this.tryResolveContentLength(item.path, baseUrl),
+      })),
+    );
+
+    return withSizes;
+  }
+
+  private async attachPlaylistResolutionSizes(
+    resolutions: BunnyResolutionPath[],
+    baseUrl?: string,
+  ): Promise<BunnyResolutionPath[]> {
+    if (!resolutions.length) return resolutions;
+
+    const withSizes = await Promise.all(
+      resolutions.map(async (item) => ({
+        ...item,
+        sizeBytes: await this.getPlaylistSizeBytes(item.path, baseUrl),
+      })),
+    );
+
+    return withSizes;
+  }
+
+  private async getPlaylistSizeBytes(playlistPath: string, baseUrl?: string): Promise<number | null> {
+    const playlistUrl = this.normalizeResolutionUrl(playlistPath, baseUrl);
+    if (!playlistUrl) return null;
+
+    const playlistCandidates = this.buildPlaylistCandidates(playlistUrl);
+    for (const candidateUrl of playlistCandidates) {
+      const playlistBody = await this.tryFetchPlaylistBody(candidateUrl);
+      if (!playlistBody) continue;
+
+      const segmentLines = playlistBody
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith('#'));
+      if (!segmentLines.length) continue;
+
+      const segmentUrls = segmentLines
+        .map((line) => this.resolvePlaylistItemUrl(candidateUrl, line))
+        .filter((line): line is string => Boolean(line));
+      if (!segmentUrls.length) continue;
+
+      const total = await this.sumContentLengths(segmentUrls, 8);
+      if (total !== null) return total;
+    }
+
+    return null;
+  }
+
+  private buildPlaylistCandidates(playlistUrl: string): string[] {
+    const urls = [playlistUrl];
+    const lower = playlistUrl.toLowerCase();
+    if (!lower.includes('.m3u8')) {
+      const base = playlistUrl.endsWith('/') ? playlistUrl : `${playlistUrl}/`;
+      urls.push(`${base}playlist.m3u8`);
+    }
+
+    return Array.from(new Set(urls));
+  }
+
+  private async tryFetchPlaylistBody(url: string): Promise<string | null> {
+    try {
+      const response = await axios.get(url, {
+        timeout: 20000,
+        responseType: 'text',
+        maxRedirects: 3,
+        validateStatus: (status) => status >= 200 && status < 400,
+      });
+      return typeof response.data === 'string' ? response.data : '';
+    } catch {
+      return null;
+    }
+  }
+
+  private async sumContentLengths(urls: string[], batchSize = 8): Promise<number | null> {
+    if (!urls.length) return null;
+
+    let total = 0;
+    for (let i = 0; i < urls.length; i += batchSize) {
+      const batch = urls.slice(i, i + batchSize);
+      const sizes = await Promise.all(batch.map((url) => this.tryResolveContentLength(url)));
+      if (sizes.some((size) => size === null)) return null;
+      total += sizes.reduce((sum, size) => sum + (size ?? 0), 0);
+    }
+
+    return total;
+  }
+
+  private resolvePlaylistItemUrl(playlistUrl: string, itemPath: string): string | null {
+    const trimmed = String(itemPath || '').trim();
+    if (!trimmed) return null;
+
+    try {
+      const resolved = new URL(trimmed, playlistUrl);
+      return resolved.toString();
+    } catch {
+      return null;
+    }
+  }
+
+  private async tryResolveContentLength(path: string, baseUrl?: string): Promise<number | null> {
+    const url = this.normalizeResolutionUrl(path, baseUrl);
+    if (!url) return null;
+
+    try {
+      const response = await axios.head(url, {
+        timeout: 20000,
+        maxRedirects: 3,
+        validateStatus: (status) => status >= 200 && status < 400,
+      });
+
+      const length = response.headers?.['content-length'];
+      const parsed = length !== undefined ? Number(length) : Number.NaN;
+      return Number.isFinite(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private normalizeResolutionUrl(path: string, baseUrl?: string): string | null {
+    const trimmed = String(path || '').trim();
+    if (!trimmed) return null;
+
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    if (trimmed.startsWith('//')) return `https:${trimmed}`;
+    if (baseUrl) {
+      try {
+        return new URL(trimmed, baseUrl).toString();
+      } catch {
+        return null;
+      }
+    }
+    if (trimmed.startsWith('/')) return `https://video.bunnycdn.com${trimmed}`;
+    return `https://video.bunnycdn.com/${trimmed}`;
+  }
+
+  private getStreamPlayBaseUrl(videoId: string): string {
+    const base = this.getStreamPlayUrl(videoId);
+    return base.endsWith('/') ? base : `${base}/`;
   }
 
   describeError(error: any, operationLabel: string): string {
