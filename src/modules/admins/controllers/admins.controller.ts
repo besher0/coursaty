@@ -7,6 +7,7 @@ import { AdminDashboardDto, AdminDashboardQueryDto } from '../dtos/admin-dashboa
 import { DashboardCoursesQueryDto } from '../dtos/dashboard-courses-query.dto';
 import { UsersDirectoryQueryDto } from '../dtos/users-directory-query.dto';
 import { UpdateUserStatusDto } from '../dtos/update-user-status.dto';
+import { UpdateUserPasswordDto } from '../dtos/update-user-password.dto';
 import { ManageSubjectTeacherDto } from '../dtos/manage-subject-teacher.dto';
 import { ResetStudentPasswordDto } from '../dtos/reset-student-password.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
@@ -551,5 +552,18 @@ export class AdminsController {
     @Body() dto: UpdateUserStatusDto,
   ) {
     return this.admins.updateUserStatus(userId, dto.status);
+  }
+
+  @Patch('users/:userId/password')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Update any user password by user id (admin only)' })
+  @ApiOkResponse({ description: 'User password updated' })
+  async updateUserPassword(
+    @Param('userId', new ParseUUIDPipe({ version: '4' })) userId: string,
+    @Body() dto: UpdateUserPasswordDto,
+  ) {
+    return this.admins.updateUserPassword(userId, dto.password);
   }
 }

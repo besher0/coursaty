@@ -198,6 +198,37 @@ export class AdminsService {
     });
   }
 
+  async updateUserPassword(userId: string, password: string) {
+    const resolvedPassword = password?.trim();
+    if (!resolvedPassword || resolvedPassword.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    const hashedPassword = await bcrypt.hash(resolvedPassword, 10);
+
+    return this.prisma.user.update({
+      where: { id: user.id },
+      data: { password: hashedPassword },
+      select: {
+        id: true,
+        phone: true,
+        userableType: true,
+        userableId: true,
+        status: true,
+        createdAt: true,
+      },
+    });
+  }
+
   async getUsersDirectory(query: UsersDirectoryQueryDto) {
     const search = query.search?.trim();
 
