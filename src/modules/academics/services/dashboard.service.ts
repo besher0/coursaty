@@ -84,6 +84,27 @@ export class DashboardService {
     return { AND: [where, { NOT: freeClause }] };
   }
 
+  private buildTeacherCourseScope(collegeId: string, departmentId?: string | null) {
+    if (departmentId) {
+      return {
+        OR: [
+          {
+            collegeId,
+            OR: [{ departmentId: null }, { departmentId }],
+          },
+          {
+            subject: { collegeId },
+            OR: [{ departmentId: null }, { departmentId }],
+          },
+        ],
+      };
+    }
+
+    return {
+      OR: [{ collegeId }, { subject: { collegeId } }],
+    };
+  }
+
   private async getStudentCollege(
     user?: { userId: string | number; type: string },
     guestFilter?: DashboardGuestFilter,
@@ -1552,7 +1573,7 @@ export class DashboardService {
     user: { userId: string | number; type: string },
     guestFilter?: DashboardGuestFilter,
   ) {
-    const { collegeId, college } = await this.getStudentCollege(user, guestFilter);
+    const { collegeId, college, departmentId } = await this.getStudentCollege(user, guestFilter);
 
     // Teacher directory should include anyone affiliated with this college,
     // even if they currently have no courses in the active season/year.
@@ -1589,6 +1610,25 @@ export class DashboardService {
       orderBy: { createdAt: 'desc' },
     });
 
+    const teacherIds = teachers.map((teacher) => teacher.id);
+    const scopedCoursesCount = new Map<string, number>();
+    if (teacherIds.length) {
+      const scopedCoursesWhere = this.withActiveCourseFilter({
+        teacherId: { in: teacherIds },
+        ...this.buildTeacherCourseScope(collegeId, departmentId),
+      }) as any;
+
+      const courseCounts = await this.prisma.course.groupBy({
+        by: ['teacherId'],
+        where: scopedCoursesWhere,
+        _count: { _all: true },
+      });
+
+      for (const row of courseCounts) {
+        scopedCoursesCount.set(row.teacherId, row._count._all);
+      }
+    }
+
     return {
       college: {
         id: college.id,
@@ -1602,7 +1642,7 @@ export class DashboardService {
         image: teacher.image,
         telegramUrl: teacher.telegramUrl ?? null,
         instagramUrl: teacher.instagramUrl ?? null,
-        coursesCount: teacher._count.courses,
+        coursesCount: scopedCoursesCount.get(teacher.id) ?? 0,
         likesCount: teacher._count.teacherLikes,
       })),
     };
@@ -1683,16 +1723,7 @@ export class DashboardService {
       const { collegeId, departmentId } = await this.getStudentCollege(user);
       scopedWhere = {
         teacherId: String(teacherId),
-        collegeId,
-        ...(departmentId
-          ? {
-              AND: [
-                {
-                  OR: [{ departmentId: null }, { departmentId }],
-                },
-              ],
-            }
-          : {}),
+        ...this.buildTeacherCourseScope(collegeId, departmentId),
       };
     }
     const where = this.withActiveCourseFilter(scopedWhere);
@@ -1779,6 +1810,7 @@ export class DashboardService {
         telegramUrl: teacher.telegramUrl ?? null,
         instagramUrl: teacher.instagramUrl ?? null,
         likesCount: teacher._count.teacherLikes,
+        coursesCount: totalCourses,
       },
       courses: {
         data: formattedCourses,
