@@ -1832,14 +1832,17 @@ export class DashboardService {
     limit: number = 10,
     guestFilter?: DashboardGuestFilter,
     isFree?: boolean,
+    includeAllYears: boolean = false,
   ) {
     const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
+    const scopedCollegeYearId = includeAllYears ? null : collegeYearId;
     const activeSeasonId = await this.getActiveHomeSeasonId();
+    const shouldApplyActiveSeason = !includeAllYears;
 
     const years = await this.prisma.collegeYear.findMany({
       where: {
         collegeId,
-        ...(collegeYearId ? { id: collegeYearId } : {}),
+        ...(scopedCollegeYearId ? { id: scopedCollegeYearId } : {}),
       },
       include: { academicYear: true },
       orderBy: { academicYear: { yearNumber: 'asc' } },
@@ -1859,7 +1862,7 @@ export class DashboardService {
                   collegeId,
                   collegeYearId: year.id,
                   categoryId: category.id,
-                  ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
+                  ...(shouldApplyActiveSeason && activeSeasonId ? { seasonId: activeSeasonId } : {}),
                 },
                 isFree,
               ),
@@ -2049,6 +2052,7 @@ export class DashboardService {
     const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
     const scopedCollegeYearId = includeAllYears ? null : collegeYearId;
     const activeSeasonId = await this.getActiveHomeSeasonId();
+    const shouldApplyActiveSeason = !includeAllYears;
 
     const years = await this.prisma.collegeYear.findMany({
       where: {
@@ -2066,7 +2070,7 @@ export class DashboardService {
             {
               collegeId,
               collegeYearId: year.id,
-              ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
+              ...(shouldApplyActiveSeason && activeSeasonId ? { seasonId: activeSeasonId } : {}),
             },
             isFree,
           ),
@@ -2233,14 +2237,14 @@ export class DashboardService {
   ) {
     const normalizedFilter = (filter || 'all').trim().toLowerCase();
     const isFree = normalizedFilter === 'free' ? true : undefined;
-    const includeAllYears = normalizedFilter === 'popular' || normalizedFilter === 'free';
+    const includeAllYears = ['all', 'popular', 'free'].includes(normalizedFilter);
 
     if (normalizedFilter === 'popular') {
       return this.getCoursesByPopular(user, page, limit, guestFilter, isFree, includeAllYears);
     }
 
     if (categoryId) {
-      const result = await this.getCoursesByCategory(user, page, limit, guestFilter, isFree);
+      const result = await this.getCoursesByCategory(user, page, limit, guestFilter, isFree, includeAllYears);
       const matched = result.categories.find((c) => c.category.id === categoryId);
       const hasCoursesInScopedFilters = Boolean(
         matched?.years?.some((yearEntry) => yearEntry.courses.length > 0),
