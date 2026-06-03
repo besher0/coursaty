@@ -18,4 +18,9 @@ export class UpdateCodeGroupDto {
 	@ValidateIf((_, value) => value !== undefined)
 	@IsBoolean()
 	isForPrinting?: boolean;
+
+	@ApiPropertyOptional({ description: 'Whether this group has been printed' })
+	@ValidateIf((_, value) => value !== undefined)
+	@IsBoolean()
+	isPrinted?: boolean;
 }

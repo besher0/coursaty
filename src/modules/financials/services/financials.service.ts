@@ -192,6 +192,7 @@ export class FinancialsService {
     if (dto.batchName !== undefined) data.batchName = dto.batchName;
     if (dto.discountPercentage !== undefined) data.discountPercentage = dto.discountPercentage as any;
     if (dto.isForPrinting !== undefined) data.isForPrinting = dto.isForPrinting;
+    if (dto.isPrinted !== undefined) data.isPrinted = dto.isPrinted;
 
     return this.prisma.codeGroup.update({
       where: { id },

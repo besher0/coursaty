@@ -561,6 +561,7 @@ model CodeGroup {
   batchName           String
   discountPercentage  Decimal  @db.Decimal(5, 2) @default(0.00)
   isForPrinting       Boolean  @default(false)
+  isPrinted           Boolean  @default(false)
   createdAt           DateTime @default(now())
 
   course Course @relation(fields: [courseId], references: [id])
@@ -628,7 +629,7 @@ model PointOfSale {
 model CustomerService {
   id                String   @id @default(uuid())
   technicalSupportPhone String
-  contactSupportPhone   String
+  contactSupportPhone   String?
   whatsappUrl       String?
   telegramUrl       String?
   facebookUrl       String?

@@ -1,0 +1,2 @@
+ALTER TABLE "CodeGroup"
+ADD COLUMN "isPrinted" BOOLEAN NOT NULL DEFAULT false;

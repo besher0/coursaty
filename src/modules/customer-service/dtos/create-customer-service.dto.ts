@@ -7,10 +7,11 @@ export class CreateCustomerServiceDto {
   @IsNotEmpty()
   technicalSupportPhone: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  contactSupportPhone: string;
+  contactSupportPhone?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()

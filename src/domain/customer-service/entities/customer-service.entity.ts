@@ -4,7 +4,7 @@ import { SocialLink } from '../value-objects/social-link.vo';
 export interface CustomerServiceProps {
   id?: string;
   technicalSupportPhone: string;
-  contactSupportPhone: string;
+  contactSupportPhone?: string | null;
   whatsappUrl?: string | null;
   telegramUrl?: string | null;
   facebookUrl?: string | null;
@@ -18,7 +18,10 @@ export class CustomerServiceEntity {
 
   static create(props: CustomerServiceProps): CustomerServiceEntity {
     const technicalSupportPhone = PhoneNumber.create(props.technicalSupportPhone).getValue();
-    const contactSupportPhone = PhoneNumber.create(props.contactSupportPhone).getValue();
+    const contactSupportPhone =
+      props.contactSupportPhone == null
+        ? null
+        : PhoneNumber.create(props.contactSupportPhone).getValue();
 
     const whatsappUrl = props.whatsappUrl ? SocialLink.create(props.whatsappUrl).getValue() : null;
     const telegramUrl = props.telegramUrl ? SocialLink.create(props.telegramUrl).getValue() : null;
@@ -43,7 +46,10 @@ export class CustomerServiceEntity {
     };
 
     const technicalSupportPhone = PhoneNumber.create(next.technicalSupportPhone).getValue();
-    const contactSupportPhone = PhoneNumber.create(next.contactSupportPhone).getValue();
+    const contactSupportPhone =
+      next.contactSupportPhone == null
+        ? null
+        : PhoneNumber.create(next.contactSupportPhone).getValue();
 
     const whatsappUrl = next.whatsappUrl ? SocialLink.create(next.whatsappUrl).getValue() : null;
     const telegramUrl = next.telegramUrl ? SocialLink.create(next.telegramUrl).getValue() : null;
