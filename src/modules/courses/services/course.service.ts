@@ -269,10 +269,71 @@ export class CourseService {
     return this.getCourseDetails(String(id), user);
   }
 
-  deleteCourse(id: string, user?: { userId: string | number; type: string }) {
-    return this.assertCourseOwnership(user, id).then(() =>
-      this.prisma.course.delete({ where: { id: String(id) } }),
-    );
+  async deleteCourse(id: string, user?: { userId: string | number; type: string }) {
+    const courseId = String(id);
+    await this.assertCourseOwnership(user, courseId);
+
+    const course = await this.prisma.course.findUnique({
+      where: { id: courseId },
+      select: { id: true },
+    });
+    if (!course) throw new NotFoundException('الكورس غير موجود');
+
+    return this.prisma.$transaction(async (tx) => {
+      const lectures = await tx.lecture.findMany({
+        where: { courseId },
+        select: { id: true },
+      });
+      const lectureIds = lectures.map((lecture) => lecture.id);
+
+      const videos = lectureIds.length
+        ? await tx.video.findMany({
+            where: { lectureId: { in: lectureIds } },
+            select: { id: true },
+          })
+        : [];
+      const videoIds = videos.map((video) => video.id);
+
+      const questions = lectureIds.length
+        ? await tx.question.findMany({
+            where: { lectureId: { in: lectureIds } },
+            select: { id: true },
+          })
+        : [];
+      const questionIds = questions.map((question) => question.id);
+
+      const codeGroups = await tx.codeGroup.findMany({
+        where: { courseId },
+        select: { id: true },
+      });
+      const codeGroupIds = codeGroups.map((group) => group.id);
+
+      if (videoIds.length) {
+        await tx.videoInteraction.deleteMany({ where: { videoId: { in: videoIds } } });
+        await tx.videoSegment.deleteMany({ where: { videoId: { in: videoIds } } });
+        await tx.video.deleteMany({ where: { id: { in: videoIds } } });
+      }
+
+      if (questionIds.length) {
+        await tx.questionOption.deleteMany({ where: { questionId: { in: questionIds } } });
+        await tx.question.deleteMany({ where: { id: { in: questionIds } } });
+      }
+
+      if (lectureIds.length) {
+        await tx.lectureFile.deleteMany({ where: { lectureId: { in: lectureIds } } });
+        await tx.lecture.deleteMany({ where: { id: { in: lectureIds } } });
+      }
+
+      if (codeGroupIds.length) {
+        await tx.code.deleteMany({ where: { codeGroupId: { in: codeGroupIds } } });
+        await tx.codeGroup.deleteMany({ where: { id: { in: codeGroupIds } } });
+      }
+
+      await tx.studentSubscription.deleteMany({ where: { courseId } });
+      await tx.courseRating.deleteMany({ where: { courseId } });
+
+      return tx.course.delete({ where: { id: courseId } });
+    });
   }
 
   async getCourseWithCounts(id: string, user?: { userId: string | number; type: string }) {

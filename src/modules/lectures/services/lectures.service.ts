@@ -123,8 +123,45 @@ export class LecturesService {
   }
 
   async deleteLecture(id: string, user?: { userId: string | number; type: string }) {
-    await this.assertLectureOwnership(user, id);
-    return this.prisma.lecture.delete({ where: { id: String(id) } });
+    const lectureId = String(id);
+    await this.assertLectureOwnership(user, lectureId);
+
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: lectureId },
+      select: { id: true, courseId: true },
+    });
+    if (!lecture) throw new NotFoundException('ط§ظ„ظ…ط­ط§ط¶ط±ط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط©');
+
+    return this.prisma.$transaction(async (tx) => {
+      const videos = await tx.video.findMany({
+        where: { lectureId },
+        select: { id: true },
+      });
+      const videoIds = videos.map((video) => video.id);
+
+      if (videoIds.length) {
+        await tx.videoInteraction.deleteMany({ where: { videoId: { in: videoIds } } });
+        await tx.videoSegment.deleteMany({ where: { videoId: { in: videoIds } } });
+        await tx.video.deleteMany({ where: { id: { in: videoIds } } });
+      }
+
+      const questions = await tx.question.findMany({
+        where: { lectureId },
+        select: { id: true },
+      });
+      const questionIds = questions.map((question) => question.id);
+
+      if (questionIds.length) {
+        await tx.questionOption.deleteMany({ where: { questionId: { in: questionIds } } });
+        await tx.question.deleteMany({ where: { id: { in: questionIds } } });
+      }
+
+      await tx.lectureFile.deleteMany({ where: { lectureId } });
+      const deletedLecture = await tx.lecture.delete({ where: { id: lectureId } });
+      await this.recalculateCourseDuration(tx, lecture.courseId);
+
+      return deletedLecture;
+    });
   }
 
   async uploadLectureFile(
