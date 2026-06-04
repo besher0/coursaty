@@ -562,6 +562,10 @@ model CodeGroup {
   discountPercentage  Decimal  @db.Decimal(5, 2) @default(0.00)
   isForPrinting       Boolean  @default(false)
   isPrinted           Boolean  @default(false)
+  prefix              String?
+  validForDays        Int?
+  validUntil          DateTime?
+  usageLimit          Int?
   createdAt           DateTime @default(now())
 
   course Course @relation(fields: [courseId], references: [id])

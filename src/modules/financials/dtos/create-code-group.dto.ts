@@ -1,5 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsNumber, IsString, IsUUID, Max, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsISO8601,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class CreateCodeGroupDto {
   @ApiProperty()
@@ -20,4 +31,26 @@ export class CreateCodeGroupDto {
   @ApiProperty({ description: 'Whether this group is intended for printing' })
   @IsBoolean()
   isForPrinting: boolean;
+
+  @ApiProperty({ required: false, description: 'Prefix used when generating codes for this group' })
+  @IsOptional()
+  @IsString()
+  prefix?: string;
+
+  @ApiProperty({ required: false, description: 'How many days generated codes are valid after activation' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  validForDays?: number;
+
+  @ApiProperty({ required: false, description: 'Absolute expiry date for generated codes' })
+  @IsOptional()
+  @IsISO8601()
+  validUntil?: string;
+
+  @ApiProperty({ required: false, description: 'Max uses per generated code' })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  usageLimit?: number;
 }

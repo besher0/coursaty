@@ -173,26 +173,69 @@ export class FinancialsService {
     batchName: string,
     discountPercentage: number,
     isForPrinting: boolean,
+    prefix?: string,
+    validForDays?: number,
+    validUntil?: string,
+    usageLimit?: number,
   ) {
+    this.ensureValidCodeExpiry(validForDays, validUntil);
+    const normalizedPrefix = this.normalizePrefix(prefix);
+    const validUntilDate = this.parseValidUntil(validUntil);
+
     return this.prisma.codeGroup.create({
       data: {
         courseId,
         batchName,
         discountPercentage: discountPercentage as any,
         isForPrinting,
+        prefix: normalizedPrefix || null,
+        validForDays,
+        validUntil: validUntilDate,
+        usageLimit,
       },
     });
   }
-  listCodeGroups(courseId?: string) {
-    return this.prisma.codeGroup.findMany({ where: courseId ? { courseId } : undefined });
+  async listCodeGroups(courseId?: string) {
+    const groups = await this.prisma.codeGroup.findMany({
+      where: courseId ? { courseId } : undefined,
+      include: {
+        course: {
+          select: {
+            name: true,
+          },
+        },
+        codes: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    return groups.map((group) => this.mapCodeGroupForList(group));
   }
 
   updateCodeGroup(id: string, dto: UpdateCodeGroupDto) {
     const data: any = {};
+    this.ensureValidCodeExpiry(dto.validForDays, dto.validUntil);
+
     if (dto.batchName !== undefined) data.batchName = dto.batchName;
     if (dto.discountPercentage !== undefined) data.discountPercentage = dto.discountPercentage as any;
     if (dto.isForPrinting !== undefined) data.isForPrinting = dto.isForPrinting;
     if (dto.isPrinted !== undefined) data.isPrinted = dto.isPrinted;
+    if (dto.prefix !== undefined) data.prefix = this.normalizePrefix(dto.prefix) || null;
+    if (dto.usageLimit !== undefined) data.usageLimit = dto.usageLimit;
+    if (dto.validForDays !== undefined) {
+      data.validForDays = dto.validForDays;
+      data.validUntil = null;
+    }
+    if (dto.validUntil !== undefined) {
+      data.validUntil = this.parseValidUntil(dto.validUntil);
+      data.validForDays = null;
+    }
 
     return this.prisma.codeGroup.update({
       where: { id },
@@ -276,13 +319,7 @@ export class FinancialsService {
     this.ensureValidCodeExpiry(dto.validForDays, dto.validUntil);
     const validUntilDate = this.parseValidUntil(dto.validUntil);
 
-    const prefix = (dto.prefix ?? '').trim();
-    if (prefix && !/^[a-z0-9]+$/.test(prefix)) {
-      throw new BadRequestException('prefix يجب أن يحتوي على أرقام وأحرف صغيرة فقط');
-    }
-    if (prefix.length >= FinancialsService.FIXED_CODE_LENGTH) {
-      throw new BadRequestException(`prefix يجب أن يكون أقل من ${FinancialsService.FIXED_CODE_LENGTH} خانات`);
-    }
+    const prefix = this.normalizePrefix(dto.prefix);
     const randomLength = FinancialsService.FIXED_CODE_LENGTH - prefix.length;
 
     const group = await this.prisma.codeGroup.findUnique({ where: { id: dto.codeGroupId } });
@@ -317,6 +354,16 @@ export class FinancialsService {
     if (created < dto.count) {
       throw new BadRequestException('تعذر إنشاء عدد كاف من الأكواد الفريدة يرجى المحاولة مجددا');
     }
+
+    await this.prisma.codeGroup.update({
+      where: { id: dto.codeGroupId },
+      data: {
+        prefix: prefix || null,
+        usageLimit: dto.usageLimit ?? null,
+        validForDays: dto.validForDays ?? null,
+        validUntil: validUntilDate ?? null,
+      },
+    });
 
     return { createdCount: created };
   }
@@ -365,6 +412,30 @@ export class FinancialsService {
     return {
       ...rest,
       isForPrinting: Boolean(codeGroup?.isForPrinting),
+    };
+  }
+
+  private mapCodeGroupForList(group: Prisma.CodeGroupGetPayload<{
+    include: {
+      course: { select: { name: true } };
+      codes: true;
+    };
+  }>) {
+    return {
+      id: group.id,
+      courseId: group.courseId,
+      batchName: group.batchName,
+      discountPercentage: Number(group.discountPercentage),
+      isForPrinting: group.isForPrinting,
+      isPrinted: group.isPrinted,
+      courseName: group.course?.name ?? '',
+      quantity: group.codes.length,
+      validForDays: group.validForDays,
+      validUntil: group.validUntil,
+      usageLimit: group.usageLimit,
+      prefix: group.prefix,
+      codes: group.codes,
+      createdAt: group.createdAt,
     };
   }
 
@@ -535,6 +606,17 @@ export class FinancialsService {
     if (validForDays && validUntil) {
       throw new BadRequestException('يجب توفير validForDays أو validUntil فقط وليس كلاهما');
     }
+  }
+
+  private normalizePrefix(prefix?: string | null) {
+    const normalized = (prefix ?? '').trim();
+    if (normalized && !/^[a-z0-9]+$/.test(normalized)) {
+      throw new BadRequestException('prefix يجب أن يحتوي على أرقام وأحرف صغيرة فقط');
+    }
+    if (normalized.length >= FinancialsService.FIXED_CODE_LENGTH) {
+      throw new BadRequestException(`prefix يجب أن يكون أقل من ${FinancialsService.FIXED_CODE_LENGTH} خانات`);
+    }
+    return normalized;
   }
 
   private parseValidUntil(validUntil?: string) {

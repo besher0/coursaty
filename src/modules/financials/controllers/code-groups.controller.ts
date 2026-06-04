@@ -24,6 +24,10 @@ export class CodeGroupsController {
       body.batchName,
       body.discountPercentage,
       body.isForPrinting,
+      body.prefix,
+      body.validForDays,
+      body.validUntil,
+      body.usageLimit,
     );
   }
 
