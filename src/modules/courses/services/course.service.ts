@@ -478,8 +478,6 @@ export class CourseService {
   }
 
   async getAdminCourseDetails(courseId: string) {
-    const now = new Date();
-
     const course = await this.prisma.course.findUnique({
       where: { id: String(courseId) },
       include: {
@@ -628,31 +626,10 @@ export class CourseService {
           return {
             id: group.id,
             batchName: group.batchName,
+            teacherName: course.teacher.name,
             discountPercentage: groupDiscountPct,
             codePrice,
-            codes: group.codes.map((code) => {
-              const baseExpiresAt = new Date(code.createdAt);
-              baseExpiresAt.setMonth(baseExpiresAt.getMonth() + 6);
-              const redeemExpiresAt = code.validForDays && code.validForDays > 0
-                ? baseExpiresAt
-                : code.validUntil
-                ? new Date(Math.min(baseExpiresAt.getTime(), code.validUntil.getTime()))
-                : baseExpiresAt;
-
-              return {
-                id: code.id,
-                codeValue: code.codeValue,
-                status: code.status,
-                validForDays: code.validForDays ?? null,
-                validUntil: code.validUntil,
-                maxValidUntil: baseExpiresAt,
-                redeemExpiresAt,
-                isExpired: redeemExpiresAt.getTime() <= now.getTime(),
-                usageLimit: code.usageLimit,
-                usageCount: code.usageCount,
-                usedAt: code.usedAt,
-              };
-            }),
+            codes: group.codes.map((code) => code.codeValue),
           };
         }),
       },

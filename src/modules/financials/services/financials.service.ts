@@ -202,6 +202,11 @@ export class FinancialsService {
         course: {
           select: {
             name: true,
+            teacher: {
+              select: {
+                name: true,
+              },
+            },
           },
         },
         codes: {
@@ -417,7 +422,7 @@ export class FinancialsService {
 
   private mapCodeGroupForList(group: Prisma.CodeGroupGetPayload<{
     include: {
-      course: { select: { name: true } };
+      course: { select: { name: true; teacher: { select: { name: true } } } };
       codes: true;
     };
   }>) {
@@ -429,12 +434,13 @@ export class FinancialsService {
       isForPrinting: group.isForPrinting,
       isPrinted: group.isPrinted,
       courseName: group.course?.name ?? '',
+      teacherName: group.course?.teacher?.name ?? '',
       quantity: group.codes.length,
       validForDays: group.validForDays,
       validUntil: group.validUntil,
       usageLimit: group.usageLimit,
       prefix: group.prefix,
-      codes: group.codes,
+      codes: group.codes.map((code) => code.codeValue),
       createdAt: group.createdAt,
     };
   }
