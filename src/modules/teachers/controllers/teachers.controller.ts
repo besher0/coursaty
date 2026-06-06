@@ -1,5 +1,13 @@
 import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { TeachersService } from '../services/teachers.service';
 import { CreateTeacherDto } from '../dtos/create-teacher.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -85,12 +93,25 @@ export class TeachersController {
   }
 
   @Get('me/affiliations')
-  @ApiOperation({ summary: 'List teacher affiliations (teacher only)' })
+  @ApiOperation({ summary: 'List own teacher affiliations, or all affiliations for admin' })
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('TEACHER')
-  listMyAffiliations(@Req() req: any) {
-    return this.teachers.listMyAffiliations(req.user);
+  @Roles('TEACHER', 'ADMIN')
+  listAffiliations(@Req() req: any) {
+    return this.teachers.listAffiliations(req.user);
+  }
+
+  @Get('me/affiliations/:teacherId')
+  @ApiOperation({ summary: 'List affiliations for a specific teacher' })
+  @ApiParam({ name: 'teacherId', type: String, format: 'uuid' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  listAffiliationsByTeacherId(
+    @Req() req: any,
+    @Param('teacherId', new ParseUUIDPipe({ version: '4' })) teacherId: string,
+  ) {
+    return this.teachers.listAffiliations(req.user, teacherId);
   }
 
   @Post('me/affiliations')

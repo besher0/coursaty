@@ -241,10 +241,29 @@ export class TeachersService {
     }
   }
 
-  async listMyAffiliations(user: { userId: string | number; type: string }) {
-    const { teacher } = await this.getTeacherContext(user);
+  async listAffiliations(
+    user: { userId: string | number; type: string },
+    teacherId?: string,
+  ) {
+    let targetTeacherId: string | undefined;
+
+    if (user?.type === 'TEACHER') {
+      const { teacher } = await this.getTeacherContext(user);
+      if (teacherId && teacherId !== teacher.id) {
+        throw new ForbiddenException('لا يمكن للمدرس عرض انتسابات مدرس آخر');
+      }
+      targetTeacherId = teacher.id;
+    } else if (user?.type === 'ADMIN') {
+      await this.getAdminContext(user);
+      if (teacherId) {
+        targetTeacherId = (await this.getTeacherById(teacherId)).id;
+      }
+    } else {
+      throw new ForbiddenException('صلاحية مدرس أو مدير مطلوبة');
+    }
+
     return this.prisma.teacherAffiliation.findMany({
-      where: { teacherId: teacher.id },
+      where: targetTeacherId ? { teacherId: targetTeacherId } : undefined,
       include: { university: true, college: true, department: true },
       orderBy: { createdAt: 'desc' },
     });
