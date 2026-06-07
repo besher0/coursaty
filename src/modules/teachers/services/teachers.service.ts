@@ -368,7 +368,7 @@ export class TeachersService {
           course: { select: { teacherPercentage: true } },
         },
       }),
-      this.prisma.course.count({ where: { teacherId: teacher.id, status: 'PENDING' } }),
+      this.prisma.course.count({ where: { teacherId: teacher.id } }),
       this.prisma.studentSubscription.count({ where: { course: { teacherId: teacher.id } } }),
       this.prisma.teacherLike.count({ where: { teacherId: teacher.id } }),
       this.prisma.videoInteraction.aggregate({
