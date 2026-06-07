@@ -748,9 +748,21 @@ export class DashboardService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Get teachers teaching in this college
+    const activeTeacherUsers = await this.prisma.user.findMany({
+      where: {
+        userableType: 'TEACHER',
+        status: 'active',
+      },
+      select: {
+        userableId: true,
+      },
+    });
+    const activeTeacherIds = activeTeacherUsers.map((teacherUser) => teacherUser.userableId);
+
+    // Get accepted teachers teaching in this college
     const teachers = await this.prisma.teacher.findMany({
       where: {
+        id: { in: activeTeacherIds },
         OR: [
           ...(!hasExplicitSeasonFilter
             ? [

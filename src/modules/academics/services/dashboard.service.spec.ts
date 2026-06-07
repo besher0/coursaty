@@ -65,4 +65,63 @@ describe('DashboardService unified courses filters', () => {
     const courseWhereClauses = prisma.course.count.mock.calls.map(([query]) => query.where);
     expect(JSON.stringify(courseWhereClauses)).not.toContain('active-season');
   });
+
+  it('returns only teachers whose user account is active in student college info', async () => {
+    const prisma = {
+      advertisement: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      user: {
+        findMany: jest.fn().mockResolvedValue([
+          { userableId: 'teacher-active-1' },
+          { userableId: 'teacher-active-2' },
+        ]),
+      },
+      teacher: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      subject: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const service = new DashboardService(prisma as any);
+
+    jest.spyOn(service as any, 'getStudentCollege').mockResolvedValue({
+      collegeId: 'college-1',
+      college: {
+        id: 'college-1',
+        name: 'Medicine',
+        universityId: 'university-1',
+      },
+      departmentId: null,
+      collegeYearId: 'year-1',
+    });
+    jest.spyOn(service as any, 'getActiveHomeSeasonId').mockResolvedValue(null);
+    jest.spyOn(service as any, 'resolveSubjectFiltersForCollege').mockResolvedValue({
+      collegeYearId: 'year-1',
+      seasonId: null,
+    });
+    jest.spyOn(service, 'getStudentPrograms').mockResolvedValue([]);
+
+    await service.getStudentCollegeInfo(user, 7, guestFilter);
+
+    expect(prisma.user.findMany).toHaveBeenCalledWith({
+      where: {
+        userableType: 'TEACHER',
+        status: 'active',
+      },
+      select: {
+        userableId: true,
+      },
+    });
+    expect(prisma.teacher.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: {
+            in: ['teacher-active-1', 'teacher-active-2'],
+          },
+        }),
+      }),
+    );
+  });
 });
