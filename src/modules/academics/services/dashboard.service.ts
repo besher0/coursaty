@@ -1586,11 +1586,22 @@ export class DashboardService {
     guestFilter?: DashboardGuestFilter,
   ) {
     const { collegeId, college, departmentId } = await this.getStudentCollege(user, guestFilter);
+    const activeTeacherUsers = await this.prisma.user.findMany({
+      where: {
+        userableType: 'TEACHER',
+        status: 'active',
+      },
+      select: {
+        userableId: true,
+      },
+    });
+    const activeTeacherIds = activeTeacherUsers.map((teacherUser) => teacherUser.userableId);
 
     // Teacher directory should include anyone affiliated with this college,
     // even if they currently have no courses in the active season/year.
     const teachers = await this.prisma.teacher.findMany({
       where: {
+                id: { in: activeTeacherIds },
         OR: [
           {
             affiliations: {
