@@ -242,6 +242,7 @@ export class LecturesService {
     await this.assertLectureOwnership(user, file.lectureId);
 
     const data: any = {};
+    if (dto.fileName !== undefined) data.fileName = dto.fileName;
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
     if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
     if (dto.size !== undefined) data.size = this.resolveMediaSize(dto.size);

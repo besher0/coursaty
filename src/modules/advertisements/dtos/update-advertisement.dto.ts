@@ -29,6 +29,12 @@ export class UpdateAdvertisementDto {
 	@IsNotEmpty()
 	imageUrl?: string;
 
+	@ApiPropertyOptional({ description: 'Optional full-screen image URL for the advertisement' })
+	@ValidateIf((_, value) => value !== undefined)
+	@IsString()
+	@IsNotEmpty()
+	fullScreen_imageUrl?: string;
+
 	@ApiPropertyOptional({ description: 'Optional video URL for the advertisement' })
 	@ValidateIf((_, value) => value !== undefined)
 	@IsString()

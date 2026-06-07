@@ -199,6 +199,7 @@ model Advertisement {
   departmentId String?
   title     String
   imageUrl  String?
+  fullScreen_imageUrl String?
   videoUrl  String?
   helperLink String?
   createdAt DateTime @default(now())
