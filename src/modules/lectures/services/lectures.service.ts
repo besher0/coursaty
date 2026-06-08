@@ -1115,7 +1115,12 @@ export class LecturesService {
       ]);
     }
 
-    return this.prisma.question.findUnique({ where: { id: String(updated.id) }, include: { options: true } });
+    return this.prisma.question.findUnique({ where: { id: String(updated.id) }, include: { options: {
+      orderBy: {
+        sortOrder: 'asc', // أو يمكنك استخدام id: 'asc' إذا لم يكن لديك sortOrder للخيارات
+      },
+    }
+    }, });
   }
 
   async deleteQuestion(id: string, user?: { userId: string | number; type: string }) {
