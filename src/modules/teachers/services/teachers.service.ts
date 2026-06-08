@@ -357,6 +357,7 @@ export class TeachersService {
       courses,
       pendingNotificationsCount,
       pendingNotifications,
+      coursesRatings,
     ] = await this.prisma.$transaction([
       this.prisma.studentSubscription.findMany({
         where: {
@@ -416,6 +417,12 @@ export class TeachersService {
         skip: pendingPagination.skip,
         take: pendingPagination.take,
       }),
+      this.prisma.courseRating.aggregate({
+        _avg: { rating: true },
+        where: {
+          course: { teacherId: teacher.id },
+        },
+      }),
     ]);
 
     const totalMonthlyEarnings = monthlySubscriptions.reduce((sum, subscription) => {
@@ -423,7 +430,7 @@ export class TeachersService {
       const percentage = this.toNumber(subscription.course?.teacherPercentage);
       return sum + (finalPrice * percentage) / 100;
     }, 0);
-    const avgRating = this.toNumber(averageRating._avg.rating);
+    const avgRating = this.toNumber(coursesRatings._avg.rating);
     const durationMap = await this.getCourseDurationsMap(courses.map((course) => course.id));
 
     const summary: TeacherSummaryDto = {
