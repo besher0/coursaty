@@ -9,7 +9,7 @@ export class StudentsController {
   constructor(private readonly students: StudentsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create student profile (public)' })
+  @ApiOperation({ summary: 'Create student profile (legacy public endpoint)' })
   @ApiCreatedResponse({ description: 'Student created' })
   async create(@Body() dto: CreateStudentDto) {
     return this.students.create(dto);

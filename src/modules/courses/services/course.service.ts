@@ -347,16 +347,24 @@ export class CourseService {
           },
         },
         codeGroups: true,
+        teacher: {
+          select: {
+            id: true,
+            isVisibleToStudents: true,
+          },
+        },
       },
     });
 
     if (!course) throw new NotFoundException('الكورس غير موجود');
+    await this.assertCourseVisibleToRequester(course, user);
     const totalVideos = course.lectures.reduce((acc, lec) => acc + (lec._count?.videos ?? 0), 0);
     const totalFiles = course.lectures.reduce((acc, lec) => acc + (lec._count?.files ?? 0), 0);
     const duration = await this.getCourseDurationFromVideos(course.id);
+    const { teacher: _visibilityTeacher, ...courseData } = course;
 
     return {
-      ...course,
+      ...courseData,
       duration,
       subscribersCount: course._count.subscriptions,
       videosCount: totalVideos,
@@ -387,6 +395,7 @@ export class CourseService {
     });
 
     if (!course) throw new NotFoundException('الكورس غير موجود');
+    await this.assertCourseVisibleToRequester(course, user);
 
     const courseDuration = await this.getCourseDurationFromVideos(course.id);
     const isOwnerOrAdmin = await this.isCourseOwnerOrAdmin(user, course.id);
@@ -1029,6 +1038,9 @@ export class CourseService {
 
   async listCourses() {
     const courses = await this.prisma.course.findMany({
+      where: {
+        teacher: { isVisibleToStudents: true },
+      },
       include: {
         teacher: {
           select: {
@@ -1119,6 +1131,24 @@ export class CourseService {
     const course = await this.prisma.course.findUnique({ where: { id: String(courseId) } });
     if (!course) return false;
     return course.teacherId.toString() === dbUser.userableId.toString();
+  }
+
+  private async assertCourseVisibleToRequester(
+    course: { teacherId: string; teacher?: { isVisibleToStudents?: boolean } | null },
+    user?: { userId: string | number; type: string },
+  ) {
+    if (course.teacher?.isVisibleToStudents === true) return;
+    if (user?.type === 'ADMIN') return;
+
+    if (user?.type === 'TEACHER') {
+      const dbUser = await this.prisma.user.findUnique({
+        where: { id: String(user.userId) },
+        select: { userableId: true },
+      });
+      if (dbUser?.userableId === course.teacherId) return;
+    }
+
+    throw new NotFoundException('الكورس غير موجود');
   }
 
   private async assertCourseOwnershipByCourseId(user: { userId: string | number; type: string } | undefined, courseId: string) {

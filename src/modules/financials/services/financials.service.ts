@@ -480,8 +480,18 @@ export class FinancialsService {
     });
     if (existing) throw new BadRequestException('أنت مشترك مسبقا');
 
-    const course = await this.prisma.course.findUnique({ where: { id: courseId } });
+    const course = await this.prisma.course.findUnique({
+      where: { id: courseId },
+      include: {
+        teacher: {
+          select: { isVisibleToStudents: true },
+        },
+      },
+    });
     if (!course) throw new NotFoundException('الكورس غير موجود');
+    if (!course.teacher.isVisibleToStudents) {
+      throw new NotFoundException('الكورس غير موجود');
+    }
     if (course.status !== 'APPROVED') {
       throw new BadRequestException('الكورس غير معتمد');
     }
@@ -692,6 +702,7 @@ export class FinancialsService {
         OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
         course: {
           OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+          teacher: { isVisibleToStudents: true },
         },
       },
       include: this.subscriptionCourseInclude,
@@ -711,6 +722,9 @@ export class FinancialsService {
     const subscriptions = await this.prisma.studentSubscription.findMany({
       where: {
         studentId,
+        course: {
+          teacher: { isVisibleToStudents: true },
+        },
         OR: [
           { expiresAt: { lt: now } },
           { course: { expiresAt: { lte: now } } },

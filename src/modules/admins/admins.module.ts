@@ -5,10 +5,12 @@ import { AdminsService } from './services/admins.service';
 import { AdminDashboardService } from './services/admin-dashboard.service';
 import { CodeManagementService } from './services/code-management.service';
 import { PrismaModule } from '@/prisma/prisma.module';
+import { UsersModule } from '@/modules/users/users.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, UsersModule],
   controllers: [AdminsController, CodeManagementController],
   providers: [AdminsService, AdminDashboardService, CodeManagementService],
+  exports: [AdminsService],
 })
 export class AdminsModule {}

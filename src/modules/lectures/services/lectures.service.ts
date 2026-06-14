@@ -274,8 +274,16 @@ export class LecturesService {
 
     const course = await this.prisma.course.findUnique({
       where: { id: String(courseId) },
-      select: { expiresAt: true },
+      select: {
+        expiresAt: true,
+        teacher: {
+          select: { isVisibleToStudents: true },
+        },
+      },
     });
+    if (course && !course.teacher.isVisibleToStudents) {
+      throw new NotFoundException('الكورس غير موجود');
+    }
     if (!course) throw new NotFoundException('الكورس غير موجود');
     if (course.expiresAt && course.expiresAt.getTime() <= Date.now()) {
       throw new ForbiddenException('انتهت صلاحية الوصول للكورس');
@@ -317,13 +325,24 @@ export class LecturesService {
   ) {
     const course = await this.prisma.course.findUnique({
       where: { id: String(courseId) },
-      select: { id: true, teacherId: true, isFree: true, expiresAt: true },
+      select: {
+        id: true,
+        teacherId: true,
+        isFree: true,
+        expiresAt: true,
+        teacher: {
+          select: { isVisibleToStudents: true },
+        },
+      },
     });
     if (!course) throw new NotFoundException('الكورس غير موجود');
 
     const isExpired = !!course.expiresAt && course.expiresAt.getTime() <= Date.now();
 
     if (!user) {
+      if (!course.teacher.isVisibleToStudents) {
+        throw new NotFoundException('الكورس غير موجود');
+      }
       return { hasAccess: course.isFree && !isExpired, isOwnerOrAdmin: false, isStudent: false };
     }
 
@@ -336,6 +355,10 @@ export class LecturesService {
       if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
       const isOwner = course.teacherId.toString() === dbUser.userableId.toString();
       return { hasAccess: isOwner || (course.isFree && !isExpired), isOwnerOrAdmin: isOwner, isStudent: false };
+    }
+
+    if (!course.teacher.isVisibleToStudents) {
+      throw new NotFoundException('الكورس غير موجود');
     }
 
     const isSubscribed = await this.hasStudentSubscription(user, courseId);

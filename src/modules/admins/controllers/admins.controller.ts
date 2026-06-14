@@ -23,7 +23,10 @@ export class AdminsController {
   ) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create admin profile (public)' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Create admin profile (legacy, admin only)' })
   @ApiCreatedResponse({ description: 'Admin created' })
   async create(@Body() dto: CreateAdminDto) {
     return this.admins.create(dto);
@@ -545,13 +548,25 @@ export class AdminsController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Update user status (active, pending, inactive, suspended)' })
+  @ApiOperation({ summary: 'Update user status (active, pending, inactive, suspended, deleted)' })
   @ApiOkResponse({ description: 'User status updated' })
   async updateUserStatus(
     @Param('userId', new ParseUUIDPipe({ version: '4' })) userId: string,
     @Body() dto: UpdateUserStatusDto,
   ) {
     return this.admins.updateUserStatus(userId, dto.status);
+  }
+
+  @Delete('users/:userId')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Soft delete user without deleting financial or subscription records' })
+  @ApiOkResponse({ description: 'User status changed to deleted' })
+  async softDeleteUser(
+    @Param('userId', new ParseUUIDPipe({ version: '4' })) userId: string,
+  ) {
+    return this.admins.updateUserStatus(userId, 'deleted');
   }
 
   @Patch('users/:userId/password')

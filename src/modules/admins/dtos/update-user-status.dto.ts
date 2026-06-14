@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import { IsIn, IsNotEmpty, IsString } from 'class-validator';
 
-export const ALLOWED_USER_STATUSES = ['active', 'pending', 'inactive', 'suspended'] as const;
+export const ALLOWED_USER_STATUSES = ['active', 'pending', 'inactive', 'suspended', 'deleted'] as const;
 export type AllowedUserStatus = (typeof ALLOWED_USER_STATUSES)[number];
 
 export class UpdateUserStatusDto {

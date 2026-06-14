@@ -6,6 +6,10 @@ import { LoginDto } from '../dtos/login.dto';
 import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
+import { RegisterCompleteDto } from '../dtos/register-complete.dto';
+import { StudentsService } from '@/modules/students/services/students.service';
+import { TeachersService } from '@/modules/teachers/services/teachers.service';
+import { AdminsService } from '@/modules/admins/services/admins.service';
 
 type RegisterTeacherAffiliationInput = {
   universityId: string;
@@ -15,9 +19,16 @@ type RegisterTeacherAffiliationInput = {
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly prisma: PrismaService, private readonly jwt: JwtService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwt: JwtService,
+    private readonly studentsService: StudentsService,
+    private readonly teachersService: TeachersService,
+    private readonly adminsService: AdminsService,
+  ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, requester?: { userId: string | number; type: string }) {
+    this.assertAdminRegistrationAllowed(dto.userableType, requester);
     const hash = await bcrypt.hash(dto.password, 10);
     try {
       const userStatus = dto.userableType === 'TEACHER' ? 'pending' : 'active';
@@ -36,6 +47,11 @@ export class AuthService {
         });
 
         if (dto.userableType === 'TEACHER') {
+          await tx.teacher.updateMany({
+            where: { id: dto.userableId },
+            data: { isVisibleToStudents: false },
+          });
+
           const teacherAffiliations = this.resolveTeacherAffiliationsFromRegister(dto);
           if (teacherAffiliations.length > 0) {
             await this.saveTeacherAffiliationsOnRegister(
@@ -54,11 +70,7 @@ export class AuthService {
 
       return {
         accessToken,
-        user: {
-          ...user,
-          id: user.id.toString(),
-          userableId: user.userableId.toString(),
-        },
+        user: this.mapAuthUser(user),
       };
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -69,12 +81,95 @@ export class AuthService {
     }
   }
 
+  async registerComplete(
+    dto: RegisterCompleteDto,
+    requester?: { userId: string | number; type: string },
+  ) {
+    this.assertAdminRegistrationAllowed(dto.userableType, requester);
+    this.validateCompleteRegistrationProfile(dto);
+    const hash = await bcrypt.hash(dto.password, 10);
+    const userStatus = dto.userableType === 'TEACHER' ? 'pending' : 'active';
+
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const profile =
+          dto.userableType === 'STUDENT'
+            ? await this.studentsService.create(dto.student!, tx)
+            : dto.userableType === 'TEACHER'
+              ? await this.teachersService.create(dto.teacher!, tx)
+              : await this.adminsService.create(dto.admin!, tx);
+
+        const user = await tx.user.create({
+          data: {
+            phone: dto.phone,
+            password: hash,
+            userableId: profile.id,
+            userableType: dto.userableType,
+            status: userStatus,
+            fcmToken: dto.fcmToken,
+            gender: dto.gender,
+          },
+        });
+
+        return { user, profile };
+      });
+
+      const profileKey = result.user.userableType.toLowerCase();
+      const response: Record<string, unknown> = {
+        user: this.mapAuthUser(result.user),
+        [profileKey]: result.profile,
+      };
+
+      if (result.user.userableType !== 'ADMIN') {
+        response.accessToken = await this.jwt.signAsync({
+          sub: result.user.id,
+          type: result.user.userableType,
+        });
+      }
+
+      return response;
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const target = String(err.meta?.target ?? '');
+        if (target.includes('universityNumber')) {
+          throw new ConflictException('الرقم الجامعي مستخدم مسبقا');
+        }
+        throw new ConflictException('رقم الهاتف مسجل مسبقا');
+      }
+      throw err;
+    }
+  }
+
   async validateUser(phone: string, password: string) {
     const user = await this.prisma.user.findUnique({ where: { phone } });
     if (!user) throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+    if (user.status === 'deleted') throw new UnauthorizedException('الحساب محذوف');
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) throw new UnauthorizedException('بيانات الدخول غير صحيحة');
     return user;
+  }
+
+  private assertAdminRegistrationAllowed(
+    type: string,
+    requester?: { userId: string | number; type: string },
+  ) {
+    if (type === 'ADMIN' && requester?.type !== 'ADMIN') {
+      throw new UnauthorizedException('إنشاء حساب مدير يتطلب تسجيل الدخول كمدير');
+    }
+  }
+
+  private validateCompleteRegistrationProfile(dto: RegisterCompleteDto) {
+    const profileTypes = [
+      dto.student ? 'STUDENT' : null,
+      dto.teacher ? 'TEACHER' : null,
+      dto.admin ? 'ADMIN' : null,
+    ].filter(Boolean);
+
+    if (profileTypes.length !== 1 || profileTypes[0] !== dto.userableType) {
+      throw new BadRequestException(
+        'يجب إرسال ملف واحد فقط مطابق للحقل userableType: student أو teacher أو admin',
+      );
+    }
   }
 
   async login(dto: LoginDto) {
@@ -88,11 +183,21 @@ export class AuthService {
     const accessToken = await this.jwt.signAsync(payload);
     return {
       accessToken,
-      user: {
-        ...user,
-        id: user.id.toString(),
-        userableId: user.userableId.toString(),
-      },
+      user: this.mapAuthUser(user),
+    };
+  }
+
+  private mapAuthUser(user: {
+    id: string;
+    userableId: string;
+    password: string;
+    [key: string]: unknown;
+  }) {
+    const { password: _password, ...safeUser } = user;
+    return {
+      ...safeUser,
+      id: user.id.toString(),
+      userableId: user.userableId.toString(),
     };
   }
 

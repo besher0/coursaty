@@ -46,6 +46,7 @@ enum CourseStatus {
 model User {
   id           String   @id @default(uuid())
   phone        String   @unique
+  deletedPhone String?
   password     String
   userableId   String
   userableType UserType
@@ -53,6 +54,7 @@ model User {
   gender       Gender   @default(MALE)
   fcmToken     String?
   createdAt    DateTime @default(now())
+  deletedAt    DateTime?
 
   videoInteractions VideoInteraction[]
   createdNotifications Notification[] @relation("CreatedNotifications")
@@ -94,6 +96,7 @@ model Teacher {
   image              String?
   telegramUrl        String?
   instagramUrl       String?
+  isVisibleToStudents Boolean @default(false)
   likesCount         Int      @default(0)
   createdAt          DateTime @default(now())
 

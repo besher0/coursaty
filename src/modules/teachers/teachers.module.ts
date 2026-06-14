@@ -7,5 +7,6 @@ import { TeachersService } from './services/teachers.service';
   imports: [PrismaModule],
   controllers: [TeachersController],
   providers: [TeachersService],
+  exports: [TeachersService],
 })
 export class TeachersModule {}

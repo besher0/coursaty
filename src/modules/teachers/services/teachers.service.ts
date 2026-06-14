@@ -4,6 +4,7 @@ import { Cache } from 'cache-manager';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateTeacherDto } from '../dtos/create-teacher.dto';
 import { TeacherSummaryDto } from '../dtos/teacher-summary.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class TeachersService {
@@ -12,7 +13,8 @@ export class TeachersService {
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
-  async create(dto: CreateTeacherDto) {
+  async create(dto: CreateTeacherDto, tx?: Prisma.TransactionClient) {
+    const client = tx ?? this.prisma;
     const normalizedTelegramUrl = dto.telegramUrl?.trim();
     if (!normalizedTelegramUrl) {
       throw new BadRequestException('رابط تلغرام الأستاذ مطلوب');
@@ -60,22 +62,24 @@ export class TeachersService {
         affiliation.universityId,
         affiliation.collegeId,
         affiliation.departmentId ?? undefined,
+        client,
       );
     }
 
-    const teacher = await this.prisma.$transaction(async (tx) => {
-      const createdTeacher = await tx.teacher.create({
+    const createTeacher = async (db: Prisma.TransactionClient) => {
+      const createdTeacher = await db.teacher.create({
         data: {
           name: dto.name,
           description: dto.description,
           image: dto.image,
           telegramUrl: normalizedTelegramUrl,
           instagramUrl: dto.instagramUrl,
+          isVisibleToStudents: false,
         },
       });
 
       if (uniqueAffiliations.length > 0) {
-        await tx.teacherAffiliation.createMany({
+        await db.teacherAffiliation.createMany({
           data: uniqueAffiliations.map((affiliation) => ({
             teacherId: createdTeacher.id,
             universityId: affiliation.universityId,
@@ -86,9 +90,10 @@ export class TeachersService {
       }
 
       return createdTeacher;
-    });
+    };
 
-    return teacher;
+    if (tx) return createTeacher(tx);
+    return this.prisma.$transaction((transaction) => createTeacher(transaction));
   }
 
   private toNumber(value: unknown) {
@@ -222,18 +227,23 @@ export class TeachersService {
     return { page: safePage, limit: safeLimit, skip, take: safeLimit };
   }
 
-  private async validateAffiliationScope(universityId: string, collegeId: string, departmentId?: string) {
-    const university = await this.prisma.university.findUnique({ where: { id: universityId } });
+  private async validateAffiliationScope(
+    universityId: string,
+    collegeId: string,
+    departmentId?: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const university = await client.university.findUnique({ where: { id: universityId } });
     if (!university) throw new NotFoundException('الجامعة غير موجودة');
 
-    const college = await this.prisma.college.findUnique({ where: { id: collegeId } });
+    const college = await client.college.findUnique({ where: { id: collegeId } });
     if (!college) throw new NotFoundException('الكلية غير موجودة');
     if (college.universityId !== universityId) {
       throw new ForbiddenException('الكلية لا تتبع للجامعة');
     }
 
     if (departmentId !== undefined) {
-      const department = await this.prisma.department.findUnique({ where: { id: departmentId } });
+      const department = await client.department.findUnique({ where: { id: departmentId } });
       if (!department) throw new NotFoundException('القسم غير موجود');
       if (department.collegeId !== collegeId) {
         throw new ForbiddenException('القسم لا يتبع للكلية');

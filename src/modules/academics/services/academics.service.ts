@@ -69,7 +69,10 @@ export class AcademicsService {
           _count: { _all: true },
         }),
         this.prisma.teacherAffiliation.findMany({
-          where: { collegeId: { in: collegeIds } },
+          where: {
+            collegeId: { in: collegeIds },
+            teacher: { isVisibleToStudents: true },
+          },
           select: { collegeId: true, teacherId: true },
         }),
       ]);
@@ -124,7 +127,10 @@ export class AcademicsService {
           _count: { _all: true },
         }),
         this.prisma.teacherAffiliation.findMany({
-          where: { departmentId: { in: departmentIds } },
+          where: {
+            departmentId: { in: departmentIds },
+            teacher: { isVisibleToStudents: true },
+          },
           select: { departmentId: true, teacherId: true },
         }),
       ]);

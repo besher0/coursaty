@@ -6,10 +6,16 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { AuthService } from './services/auth.service';
 import { AuthController } from './controllers/auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { StudentsModule } from '@/modules/students/students.module';
+import { TeachersModule } from '@/modules/teachers/teachers.module';
+import { AdminsModule } from '@/modules/admins/admins.module';
 
 @Module({
   imports: [
     PrismaModule,
+    StudentsModule,
+    TeachersModule,
+    AdminsModule,
     ConfigModule,
     PassportModule,
     JwtModule.registerAsync({

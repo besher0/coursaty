@@ -1,10 +1,12 @@
 ﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { ConflictException } from '@nestjs/common';
 import { UpdateProfileDto } from '../dtos/update-profile.dto';
 import { UpdateUserProfileDto } from '../dtos/update-user-profile.dto';
 import { UpdateStudentProfileDto } from '../dtos/update-student-profile.dto';
 import { ChangePasswordDto } from '../dtos/change-password.dto';
 import * as bcrypt from 'bcryptjs';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
@@ -14,6 +16,108 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('المستخدم غير موجود');
     return this.prisma.user.update({ where: { id }, data: { fcmToken } });
+  }
+
+  async updateUserStatus(
+    userId: string,
+    status: 'active' | 'pending' | 'inactive' | 'suspended' | 'deleted',
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: userId } });
+      if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+      if (status === 'deleted') {
+        if (user.status === 'deleted') return this.mapStatusResponse(user);
+
+        if (user.userableType === 'ADMIN' && user.status === 'active') {
+          const activeAdmins = await tx.user.count({
+            where: { userableType: 'ADMIN', status: 'active' },
+          });
+          if (activeAdmins <= 1) {
+            throw new BadRequestException('لا يمكن حذف آخر مدير فعال');
+          }
+        }
+
+        if (user.userableType === 'TEACHER') {
+          await tx.teacher.updateMany({
+            where: { id: user.userableId },
+            data: { isVisibleToStudents: false },
+          });
+        }
+
+        const deleted = await tx.user.update({
+          where: { id: user.id },
+          data: {
+            phone: this.buildDeletedPhone(user.id),
+            deletedPhone: user.phone,
+            deletedAt: new Date(),
+            status: 'deleted',
+            fcmToken: null,
+          },
+        });
+        return this.mapStatusResponse(deleted);
+      }
+
+      let phone = user.phone;
+      let deletedPhone = user.deletedPhone;
+      let deletedAt = user.deletedAt;
+
+      if (user.status === 'deleted') {
+        if (!user.deletedPhone) {
+          throw new ConflictException('رقم الهاتف الأصلي للحساب المحذوف غير متوفر');
+        }
+
+        const phoneOwner = await tx.user.findUnique({
+          where: { phone: user.deletedPhone },
+          select: { id: true },
+        });
+        if (phoneOwner && phoneOwner.id !== user.id) {
+          throw new ConflictException('رقم الهاتف الأصلي مستخدم من حساب آخر');
+        }
+
+        phone = user.deletedPhone;
+        deletedPhone = null;
+        deletedAt = null;
+      }
+
+      if (user.userableType === 'TEACHER') {
+        await tx.teacher.updateMany({
+          where: { id: user.userableId },
+          data: { isVisibleToStudents: status === 'active' },
+        });
+      }
+
+      const updated = await tx.user.update({
+        where: { id: user.id },
+        data: { phone, deletedPhone, deletedAt, status },
+      });
+      return this.mapStatusResponse(updated);
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+  }
+
+  private buildDeletedPhone(userId: string) {
+    return `deleted:${userId}:${Date.now()}`;
+  }
+
+  private mapStatusResponse(user: {
+    id: string;
+    phone: string;
+    deletedPhone?: string | null;
+    userableType: string;
+    status: string;
+    createdAt: Date;
+    deletedAt?: Date | null;
+  }) {
+    return {
+      id: user.id,
+      phone: user.deletedPhone ?? user.phone,
+      userableType: user.userableType,
+      status: user.status,
+      createdAt: user.createdAt,
+      deletedAt: user.deletedAt ?? null,
+    };
   }
 
   async getProfile(userId: string | number) {

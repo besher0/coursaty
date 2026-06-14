@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, UseGuards, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, UseGuards, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UsersService } from '../services/users.service';
 import { UpdateFcmDto } from '../dtos/update-fcm.dto';
@@ -61,6 +61,14 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   async changePassword(@Req() req: any, @Body() dto: ChangePasswordDto) {
     return this.users.changePassword(req.user.userId, dto);
+  }
+
+  @Delete('me')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Soft delete current account while preserving related records' })
+  @UseGuards(JwtAuthGuard)
+  async deleteMyAccount(@Req() req: any) {
+    return this.users.updateUserStatus(String(req.user.userId), 'deleted');
   }
 }
 

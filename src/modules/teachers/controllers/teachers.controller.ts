@@ -24,7 +24,7 @@ export class TeachersController {
   constructor(private readonly teachers: TeachersService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create teacher profile (public)' })
+  @ApiOperation({ summary: 'Create teacher profile (legacy public endpoint)' })
   @ApiCreatedResponse({ description: 'Teacher created' })
   async create(@Body() dto: CreateTeacherDto) {
     return this.teachers.create(dto);

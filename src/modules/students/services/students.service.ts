@@ -7,14 +7,15 @@ import { CreateStudentDto } from '../dtos/create-student.dto';
 export class StudentsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateStudentDto) {
-    const university = await this.prisma.university.findUnique({
+  async create(dto: CreateStudentDto, tx?: Prisma.TransactionClient) {
+    const client = tx ?? this.prisma;
+    const university = await client.university.findUnique({
       where: { id: dto.universityId },
     });
     if (!university) throw new NotFoundException('الجامعة غير موجودة');
 
     try {
-      const student = await this.prisma.student.create({
+      const student = await client.student.create({
         data: {
           name: dto.name,
           universityNumber: dto.universityNumber,

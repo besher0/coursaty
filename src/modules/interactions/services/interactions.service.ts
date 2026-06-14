@@ -8,7 +8,12 @@ export class InteractionsService {
   async getMyCourseRating(courseId: string, user?: { userId: string | number; type: string }) {
     const { studentId } = await this.ensureStudentContext(user);
 
-    const course = await this.prisma.course.findUnique({ where: { id: String(courseId) } });
+    const course = await this.prisma.course.findFirst({
+      where: {
+        id: String(courseId),
+        teacher: { isVisibleToStudents: true },
+      },
+    });
     if (!course) throw new NotFoundException('الكورس غير موجود');
 
     const rating = await this.prisma.courseRating.findUnique({
@@ -59,9 +64,13 @@ export class InteractionsService {
         isFree: true,
         price: true,
         courseDiscountPercentage: true,
+        teacher: {
+          select: { isVisibleToStudents: true },
+        },
       },
     });
     if (!course) throw new NotFoundException('الكورس غير موجود');
+    if (!course.teacher.isVisibleToStudents) throw new NotFoundException('الكورس غير موجود');
 
     const canRateWithoutSubscription = this.canStudentRateWithoutSubscription(course);
     if (!canRateWithoutSubscription) {
@@ -89,6 +98,7 @@ export class InteractionsService {
 
   async likeTeacher(teacherId: string, user?: { userId: string | number; type: string }) {
     const { studentId } = await this.ensureStudentContext(user);
+    await this.ensureVisibleTeacher(teacherId);
 
     const result = await this.prisma.teacherLike.upsert({
       where: { teacherId_studentId: { teacherId, studentId } },
@@ -102,6 +112,7 @@ export class InteractionsService {
 
   async deleteTeacherLike(teacherId: string, user?: { userId: string | number; type: string }) {
     const { studentId } = await this.ensureStudentContext(user);
+    await this.ensureVisibleTeacher(teacherId);
     const result = await this.prisma.teacherLike.delete({
       where: { teacherId_studentId: { teacherId, studentId } },
     });
@@ -181,7 +192,7 @@ export class InteractionsService {
   }
 
   async getVideoLikes(videoId: string, user: { userId: string | number; type: string } | undefined) {
-    await this.ensureVideoExists(videoId);
+    await this.ensureVideoAccess(videoId, user);
     const { dbUser } = await this.ensureStudentContext(user);
 
     const [likesCount, myLike] = await Promise.all([
@@ -247,6 +258,7 @@ export class InteractionsService {
 
     const { dbUser } = await this.ensureStudentContext(user);
     if (interaction.userId.toString() !== dbUser.id.toString()) throw new ForbiddenException('هذا التفاعل ليس لك');
+    await this.ensureVideoAccess(interaction.videoId, user);
 
     await this.prisma.videoInteraction.delete({ where: { id } });
     return { success: true };
@@ -273,7 +285,22 @@ export class InteractionsService {
   private async ensureVideoAccess(videoId: string, user: { userId: string | number; type: string } | undefined) {
     const video = await this.prisma.video.findUnique({
       where: { id: videoId },
-      include: { lecture: { select: { courseId: true, course: { select: { isFree: true, expiresAt: true } } } } },
+      include: {
+        lecture: {
+          select: {
+            courseId: true,
+            course: {
+              select: {
+                isFree: true,
+                expiresAt: true,
+                teacher: {
+                  select: { isVisibleToStudents: true },
+                },
+              },
+            },
+          },
+        },
+      },
     });
     if (!video) throw new NotFoundException('الفيديو غير موجود');
 
@@ -291,6 +318,10 @@ export class InteractionsService {
     }
 
     const { dbUser } = await this.ensureStudentContext(user);
+
+    if (!video.lecture.course?.teacher.isVisibleToStudents) {
+      throw new NotFoundException('الفيديو غير موجود');
+    }
 
     if (video.lecture.course?.expiresAt && video.lecture.course.expiresAt.getTime() <= Date.now()) {
       throw new ForbiddenException('انتهت صلاحية الوصول للكورس');
@@ -320,6 +351,18 @@ export class InteractionsService {
     });
     if (!video) throw new NotFoundException('الفيديو غير موجود');
     return video;
+  }
+
+  private async ensureVisibleTeacher(teacherId: string) {
+    const teacher = await this.prisma.teacher.findFirst({
+      where: {
+        id: teacherId,
+        isVisibleToStudents: true,
+      },
+      select: { id: true },
+    });
+    if (!teacher) throw new NotFoundException('المدرس غير موجود');
+    return teacher;
   }
 
   private async syncTeacherLikesCount(teacherId: string) {

@@ -56,7 +56,11 @@ export class DashboardService {
 
   private withActiveCourseFilter(where: Record<string, any> = {}, now: Date = new Date()) {
     return {
-      AND: [where, this.activeCourseConstraint(now)],
+      AND: [
+        where,
+        this.activeCourseConstraint(now),
+        { teacher: { isVisibleToStudents: true } },
+      ],
     };
   }
 
@@ -341,6 +345,7 @@ export class DashboardService {
       this.prisma.teacherSubjectPermission.findMany({
         where: {
           subjectId: { in: normalizedIds },
+          teacher: { isVisibleToStudents: true },
         },
         select: {
           subjectId: true,
@@ -763,6 +768,7 @@ export class DashboardService {
     const teachers = await this.prisma.teacher.findMany({
       where: {
         id: { in: activeTeacherIds },
+        isVisibleToStudents: true,
         OR: [
           ...(!hasExplicitSeasonFilter
             ? [
@@ -1020,6 +1026,7 @@ export class DashboardService {
 
     const teachers = await this.prisma.teacher.findMany({
       where: {
+        isVisibleToStudents: true,
         AND: [
           {
             name: {
@@ -1601,7 +1608,8 @@ export class DashboardService {
     // even if they currently have no courses in the active season/year.
     const teachers = await this.prisma.teacher.findMany({
       where: {
-                id: { in: activeTeacherIds },
+        id: { in: activeTeacherIds },
+        isVisibleToStudents: true,
         OR: [
           {
             affiliations: {
@@ -1688,7 +1696,10 @@ export class DashboardService {
     }
 
     const likedTeachers = await this.prisma.teacherLike.findMany({
-      where: { studentId },
+      where: {
+        studentId,
+        teacher: { isVisibleToStudents: true },
+      },
       include: {
         teacher: {
           include: {
@@ -1725,8 +1736,11 @@ export class DashboardService {
     page: number = 1,
     limit: number = 10,
   ) {
-    const teacher = await this.prisma.teacher.findUnique({
-      where: { id: String(teacherId) },
+    const teacher = await this.prisma.teacher.findFirst({
+      where: {
+        id: String(teacherId),
+        isVisibleToStudents: true,
+      },
       include: {
         _count: {
           select: {

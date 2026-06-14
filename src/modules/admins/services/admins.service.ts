@@ -1,13 +1,18 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { CreateAdminDto } from '../dtos/create-admin.dto';
 import { UsersDirectoryQueryDto, UsersDirectoryType } from '../dtos/users-directory-query.dto';
 import { AllowedUserStatus } from '../dtos/update-user-status.dto';
 import * as bcrypt from 'bcryptjs';
+import { UsersService } from '@/modules/users/services/users.service';
 
 @Injectable()
 export class AdminsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly usersService: UsersService,
+  ) {}
 
   private buildCourseCardWithTeacher(course: any) {
     return {
@@ -112,8 +117,9 @@ export class AdminsService {
     }));
   }
 
-  async create(dto: CreateAdminDto) {
-    return this.prisma.admin.create({
+  async create(dto: CreateAdminDto, tx?: Prisma.TransactionClient) {
+    const client = tx ?? this.prisma;
+    return client.admin.create({
       data: {
         name: dto.name,
       },
@@ -182,20 +188,7 @@ export class AdminsService {
   }
 
   async updateUserStatus(userId: string, status: AllowedUserStatus) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('ط§ظ„ظ…ط³طھط®ط¯ظ… ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
-
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: { status },
-      select: {
-        id: true,
-        phone: true,
-        userableType: true,
-        status: true,
-        createdAt: true,
-      },
-    });
+    return this.usersService.updateUserStatus(userId, status);
   }
 
   async updateUserPassword(userId: string, password: string) {
