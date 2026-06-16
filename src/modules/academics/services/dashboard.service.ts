@@ -193,6 +193,7 @@ export class DashboardService {
       description: course.description,
       imageUrl: course.imageUrl ?? null,
       price: course.price,
+      isFree: course.isFree ?? false,
       season: course.season
         ? {
             id: course.season.id,
@@ -1813,6 +1814,7 @@ export class DashboardService {
       imageUrl: course.imageUrl ?? null,
       studentsCount: course._count.subscriptions,
       duration: durationMap.get(course.id) ?? 0,
+      isFree: course.isFree ?? false,
       year: course.collegeYear?.academicYear
         ? {
             id: course.collegeYear.academicYear.id,

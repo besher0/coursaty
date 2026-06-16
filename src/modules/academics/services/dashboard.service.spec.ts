@@ -4,6 +4,70 @@ describe('DashboardService unified courses filters', () => {
   const user = { userId: 'user-1', type: 'STUDENT' };
   const guestFilter = { collegeId: 'college-1' };
 
+  it('includes isFree in shared course cards', () => {
+    const service = new DashboardService({} as any);
+
+    const card = (service as any).buildCourseCard({
+      id: 'course-1',
+      name: 'Anatomy basics',
+      description: 'Intro course',
+      imageUrl: null,
+      price: 0,
+      isFree: true,
+      season: null,
+      collegeYear: null,
+      teacher: null,
+      _count: { subscriptions: 0 },
+    });
+
+    expect(card).toEqual(expect.objectContaining({ isFree: true }));
+  });
+
+  it('includes isFree in teacher details courses', async () => {
+    const prisma = {
+      teacher: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'teacher-1',
+          name: 'Teacher One',
+          description: null,
+          image: null,
+          telegramUrl: null,
+          instagramUrl: null,
+          _count: { teacherLikes: 0 },
+        }),
+      },
+      course: {
+        count: jest.fn().mockResolvedValue(1),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'course-1',
+            name: 'Free course',
+            imageUrl: null,
+            isFree: true,
+            collegeYear: null,
+            season: null,
+            teacher: {
+              id: 'teacher-1',
+              name: 'Teacher One',
+              image: null,
+              telegramUrl: null,
+              instagramUrl: null,
+            },
+            _count: { subscriptions: 0 },
+          },
+        ]),
+      },
+      lecture: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const service = new DashboardService(prisma as any);
+
+    const result = await service.getTeacherDetails(undefined, 'teacher-1', 1, 10);
+
+    expect(result.courses.data[0]).toEqual(expect.objectContaining({ isFree: true }));
+  });
+
   it('treats filter=all as all years in the unified courses endpoint', async () => {
     const service = new DashboardService({} as any);
     const getCoursesByYear = jest
