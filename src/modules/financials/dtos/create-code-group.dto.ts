@@ -37,13 +37,13 @@ export class CreateCodeGroupDto {
   @IsString()
   prefix?: string;
 
-  @ApiProperty({ required: false, description: 'How many days generated codes are valid after activation' })
+  @ApiProperty({ required: false, description: 'Subscription duration in days after activation; course expiry can shorten it. Codes remain redeemable for up to 6 months.' })
   @IsOptional()
   @IsInt()
   @Min(1)
   validForDays?: number;
 
-  @ApiProperty({ required: false, description: 'Absolute expiry date for generated codes' })
+  @ApiProperty({ required: false, description: 'Absolute ISO deadline for code redemption and the resulting subscription; redemption is also capped at 6 months from creation.' })
   @IsOptional()
   @IsISO8601()
   validUntil?: string;

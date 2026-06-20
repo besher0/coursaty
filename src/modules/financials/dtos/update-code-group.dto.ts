@@ -29,13 +29,13 @@ export class UpdateCodeGroupDto {
 	@IsString()
 	prefix?: string;
 
-	@ApiPropertyOptional({ description: 'How many days generated codes are valid after activation' })
+	@ApiPropertyOptional({ description: 'Subscription duration in days after activation; course expiry can shorten it. Updating this also updates unused active codes in the group.' })
 	@IsOptional()
 	@IsInt()
 	@Min(1)
 	validForDays?: number;
 
-	@ApiPropertyOptional({ description: 'Absolute expiry date for generated codes' })
+	@ApiPropertyOptional({ description: 'Absolute ISO deadline for code redemption and the resulting subscription; updating this also updates unused active codes in the group.' })
 	@IsOptional()
 	@IsISO8601()
 	validUntil?: string;

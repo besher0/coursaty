@@ -29,13 +29,13 @@ export class CreateBulkCodesDto {
   @Min(1)
   usageLimit?: number;
 
-  @ApiPropertyOptional({ description: 'Valid for N days starting from code activation/use date (capped by 6 months from creation)' })
+  @ApiPropertyOptional({ description: 'Subscription duration in days from code activation; course expiry can shorten it. Each code remains redeemable for up to 6 months.' })
   @IsOptional()
   @IsInt()
   @Min(1)
   validForDays?: number;
 
-  @ApiPropertyOptional({ description: 'Absolute expiry date (ISO), and still capped by 6 months from creation' })
+  @ApiPropertyOptional({ description: 'Absolute ISO deadline that limits both code redemption and the resulting subscription; redemption is also capped at 6 months from code creation.' })
   @IsOptional()
   @IsISO8601()
   validUntil?: string;

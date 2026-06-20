@@ -34,7 +34,7 @@ export class GenerateCodesDto {
 
   @ApiPropertyOptional({
     example: 30,
-    description: 'Days of subscription validity starting from activation (capped by 6 months from code creation)',
+    description: 'Subscription duration in days from activation; course expiry can shorten it. The code remains redeemable for up to 6 months.',
   })
   @IsOptional()
   @IsNumber()
@@ -74,7 +74,7 @@ export class BulkGenerateCodesDto {
 
   @ApiPropertyOptional({
     example: 30,
-    description: 'Days of subscription validity starting from activation (capped by 6 months from code creation)',
+    description: 'Subscription duration in days from activation; course expiry can shorten it. The code remains redeemable for up to 6 months.',
   })
   @IsOptional()
   @IsNumber()

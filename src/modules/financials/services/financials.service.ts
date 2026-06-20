@@ -223,7 +223,7 @@ export class FinancialsService {
     return groups.map((group) => this.mapCodeGroupForList(group));
   }
 
-  updateCodeGroup(id: string, dto: UpdateCodeGroupDto) {
+  async updateCodeGroup(id: string, dto: UpdateCodeGroupDto) {
     const data: any = {};
     this.ensureValidCodeExpiry(dto.validForDays, dto.validUntil);
 
@@ -242,9 +242,27 @@ export class FinancialsService {
       data.validForDays = null;
     }
 
-    return this.prisma.codeGroup.update({
-      where: { id },
-      data,
+    return this.prisma.$transaction(async (tx) => {
+      const group = await tx.codeGroup.update({
+        where: { id },
+        data,
+      });
+
+      if (dto.validForDays !== undefined || dto.validUntil !== undefined) {
+        await tx.code.updateMany({
+          where: {
+            codeGroupId: id,
+            status: 'ACTIVE',
+            usageCount: 0,
+          },
+          data: {
+            validForDays: dto.validForDays !== undefined ? dto.validForDays : null,
+            validUntil: dto.validUntil !== undefined ? this.parseValidUntil(dto.validUntil) : null,
+          },
+        });
+      }
+
+      return group;
     });
   }
 
@@ -455,11 +473,7 @@ export class FinancialsService {
     if (!code) throw new BadRequestException('الكود غير صالح');
     if (code.status !== 'ACTIVE') throw new BadRequestException('الكود غير فعال');
 
-    const redemptionExpiry = this.getCodeRedemptionExpiry(
-      code.createdAt,
-      code.validForDays,
-      code.validUntil,
-    );
+    const redemptionExpiry = this.getCodeRedemptionExpiry(code.createdAt, code.validUntil);
     if (redemptionExpiry.getTime() <= now.getTime()) {
       throw new BadRequestException('انتهت صلاحية الكود');
     }
@@ -495,6 +509,9 @@ export class FinancialsService {
     if (course.status !== 'APPROVED') {
       throw new BadRequestException('الكورس غير معتمد');
     }
+    if (course.expiresAt && course.expiresAt.getTime() <= now.getTime()) {
+      throw new BadRequestException('انتهى الكورس ولا يمكن الاشتراك به');
+    }
 
     let expiresAt: Date | null = null;
 
@@ -508,7 +525,12 @@ export class FinancialsService {
     const codeDiscountAmount = Number(((priceAfterCourseDiscount * codeDiscountPct) / 100).toFixed(2));
     const finalPrice = Number((priceAfterCourseDiscount - codeDiscountAmount).toFixed(2));
 
-    expiresAt = this.getSubscriptionExpiryFromCode(code.createdAt, now, code.validForDays, code.validUntil);
+    expiresAt = this.getSubscriptionExpiryFromCode(
+      now,
+      code.validForDays,
+      code.validUntil,
+      course.expiresAt,
+    );
 
     await this.prisma.$transaction(async (tx) => {
       if (code.usageLimit !== null && code.usageLimit !== undefined) {
@@ -657,12 +679,9 @@ export class FinancialsService {
    */
   private getCodeRedemptionExpiry(
     createdAt: Date,
-    validForDays?: number | null,
     validUntil?: Date | null,
   ) {
     const baseExpiry = this.getCodeBaseExpiry(createdAt);
-    // When relative validity exists, redemption window is controlled by base lifetime only.
-    if (validForDays && validForDays > 0) return baseExpiry;
     if (!validUntil) return baseExpiry;
     return new Date(Math.min(baseExpiry.getTime(), new Date(validUntil).getTime()));
   }
@@ -671,25 +690,28 @@ export class FinancialsService {
    * انتهاء الاشتراك الناتج من الكود:
    * - صلاحية الأدمن (validForDays) تُحسب من وقت التفعيل.
    * - validUntil (إن وجد) سقف إضافي.
-   * - لا يمكن تجاوز الحد الأساسي (6 أشهر من إنشاء الكود).
+   * - تاريخ انتهاء الكورس (إن وجد) سقف إضافي.
+   * - مهلة الستة أشهر تخص تفعيل الكود فقط، ولا تحدد مدة اشتراك الطالب.
    */
   private getSubscriptionExpiryFromCode(
-    codeCreatedAt: Date,
     activatedAt: Date,
     validForDays?: number | null,
     validUntil?: Date | null,
+    courseExpiresAt?: Date | null,
   ) {
-    const candidates: number[] = [this.getCodeBaseExpiry(codeCreatedAt).getTime()];
+    const candidates: number[] = [];
 
     if (validForDays && validForDays > 0) {
       const relativeExpiry = new Date(activatedAt);
       relativeExpiry.setDate(relativeExpiry.getDate() + validForDays);
       candidates.push(relativeExpiry.getTime());
-    } else if (validUntil) {
+    }
+    if (validUntil) {
       candidates.push(new Date(validUntil).getTime());
     }
+    if (courseExpiresAt) candidates.push(new Date(courseExpiresAt).getTime());
 
-    return new Date(Math.min(...candidates));
+    return candidates.length ? new Date(Math.min(...candidates)) : null;
   }
 
   async getActiveCoursesByUser(user?: { userId: string | number; type: string }) {

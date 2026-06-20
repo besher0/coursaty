@@ -265,7 +265,29 @@ export class CourseService {
       data.categoryId = String(dto.categoryId);
     }
 
-    await this.prisma.course.update({ where: { id: String(id) }, data });
+    await this.prisma.$transaction(async (tx) => {
+      const currentCourse = data.expiresAt
+        ? await tx.course.findUnique({
+            where: { id: String(id) },
+            select: { expiresAt: true },
+          })
+        : null;
+      await tx.course.update({ where: { id: String(id) }, data });
+
+      const isCourseExpiryShortened =
+        data.expiresAt &&
+        (!currentCourse?.expiresAt || data.expiresAt.getTime() < currentCourse.expiresAt.getTime());
+
+      if (isCourseExpiryShortened) {
+        await tx.studentSubscription.updateMany({
+          where: {
+            courseId: String(id),
+            OR: [{ expiresAt: null }, { expiresAt: { gt: data.expiresAt } }],
+          },
+          data: { expiresAt: data.expiresAt },
+        });
+      }
+    });
     return this.getCourseDetails(String(id), user);
   }
 
