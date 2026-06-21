@@ -13,8 +13,8 @@ export class SubscriptionsController {
   constructor(private readonly financials: FinancialsService) {}
 
   @Post('subscribe')
-  @ApiOperation({ summary: 'Subscribe to a course using code only' })
-  @ApiOkResponse({ description: 'Subscription created' })
+  @ApiOperation({ summary: 'Subscribe to or renew a course using a code' })
+  @ApiOkResponse({ description: 'Subscription created or renewed' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('STUDENT')
   subscribe(@Body() body: SubscribeWithCodeDto, @Req() req: any) {

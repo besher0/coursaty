@@ -492,7 +492,6 @@ export class FinancialsService {
     const existing = await this.prisma.studentSubscription.findUnique({
       where: { studentId_courseId: { studentId, courseId } },
     });
-    if (existing) throw new BadRequestException('أنت مشترك مسبقا');
 
     const course = await this.prisma.course.findUnique({
       where: { id: courseId },
@@ -513,8 +512,6 @@ export class FinancialsService {
       throw new BadRequestException('انتهى الكورس ولا يمكن الاشتراك به');
     }
 
-    let expiresAt: Date | null = null;
-
     // Calculate prices with sequential discounts
     const basePrice = Number(course.price);
     const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
@@ -525,14 +522,27 @@ export class FinancialsService {
     const codeDiscountAmount = Number(((priceAfterCourseDiscount * codeDiscountPct) / 100).toFixed(2));
     const finalPrice = Number((priceAfterCourseDiscount - codeDiscountAmount).toFixed(2));
 
-    expiresAt = this.getSubscriptionExpiryFromCode(
+    const newSubscriptionExpiry = this.getSubscriptionExpiryFromCode(
       now,
       code.validForDays,
       code.validUntil,
       course.expiresAt,
     );
+    const expiresAt = this.getRenewedSubscriptionExpiry(
+      existing?.expiresAt,
+      newSubscriptionExpiry,
+      course.expiresAt,
+    );
 
-    await this.prisma.$transaction(async (tx) => {
+    const subscriptionPricing = {
+      basePrice: basePrice as any,
+      courseDiscountAmount: courseDiscountAmount as any,
+      codeDiscountAmount: codeDiscountAmount as any,
+      finalPrice: finalPrice as any,
+      expiresAt,
+    };
+
+    const subscription = await this.prisma.$transaction(async (tx) => {
       if (code.usageLimit !== null && code.usageLimit !== undefined) {
         if (code.usageCount >= code.usageLimit) {
           throw new BadRequestException('تم الوصول لحد استخدام الكود');
@@ -575,18 +585,19 @@ export class FinancialsService {
           data: { usedByStudentId: studentId },
         });
       }
-    });
 
-    const subscription = await this.prisma.studentSubscription.create({
-      data: {
-        studentId,
-        courseId,
-        basePrice: basePrice as any,
-        courseDiscountAmount: courseDiscountAmount as any,
-        codeDiscountAmount: codeDiscountAmount as any,
-        finalPrice: finalPrice as any,
-        expiresAt,
-      },
+      return tx.studentSubscription.upsert({
+        where: { studentId_courseId: { studentId, courseId } },
+        create: {
+          studentId,
+          courseId,
+          ...subscriptionPricing,
+        },
+        update: {
+          ...subscriptionPricing,
+          createdAt: now,
+        },
+      });
     });
 
     return subscription;
@@ -712,6 +723,27 @@ export class FinancialsService {
     if (courseExpiresAt) candidates.push(new Date(courseExpiresAt).getTime());
 
     return candidates.length ? new Date(Math.min(...candidates)) : null;
+  }
+
+  /**
+   * تجديد الاشتراك لا يقصر مدة الطالب الحالية، مع بقاء تاريخ انتهاء الكورس سقفًا نهائيًا.
+   */
+  private getRenewedSubscriptionExpiry(
+    existingExpiresAt: Date | null | undefined,
+    renewedExpiresAt: Date | null,
+    courseExpiresAt: Date | null,
+  ) {
+    if (existingExpiresAt === null || renewedExpiresAt === null) {
+      return courseExpiresAt ? new Date(courseExpiresAt) : null;
+    }
+
+    const candidateTimes = [renewedExpiresAt.getTime()];
+    if (existingExpiresAt) candidateTimes.push(existingExpiresAt.getTime());
+
+    const renewedExpiry = Math.max(...candidateTimes);
+    return courseExpiresAt
+      ? new Date(Math.min(renewedExpiry, courseExpiresAt.getTime()))
+      : new Date(renewedExpiry);
   }
 
   async getActiveCoursesByUser(user?: { userId: string | number; type: string }) {
