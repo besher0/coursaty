@@ -1,11 +1,17 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class UpdateVideoDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   videoName?: string;
+
+  @ApiPropertyOptional({ description: 'Video URL' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  videoUrl?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

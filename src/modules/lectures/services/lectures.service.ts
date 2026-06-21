@@ -243,6 +243,7 @@ export class LecturesService {
 
     const data: any = {};
     if (dto.fileName !== undefined) data.fileName = dto.fileName;
+    if (dto.fileUrl !== undefined) data.fileUrl = dto.fileUrl;
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
     if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
     if (dto.size !== undefined) data.size = this.resolveMediaSize(dto.size);
@@ -434,7 +435,14 @@ export class LecturesService {
               },
             },
           },
-          questions: { include: { options: true } },
+          questions: {
+            orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+            include: {
+              options: {
+                orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+              },
+            },
+          },
         },
       });
     } catch (error) {
@@ -472,7 +480,14 @@ export class LecturesService {
             select: this.getVideoWithSegmentsFallbackSelect(),
             orderBy: [{ id: 'asc' }],
           },
-          questions: { include: { options: true } },
+          questions: {
+            orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+            include: {
+              options: {
+                orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+              },
+            },
+          },
         },
       });
     }
@@ -816,6 +831,7 @@ export class LecturesService {
 
     const data: any = {};
     if (dto.videoName !== undefined) data.videoName = dto.videoName;
+    if (dto.videoUrl !== undefined) data.videoUrl = dto.videoUrl;
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
     if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
@@ -1070,7 +1086,11 @@ export class LecturesService {
             }
           : undefined,
       },
-      include: { options: true },
+      include: {
+        options: {
+          orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+        },
+      },
     });
   }
 
@@ -1081,7 +1101,11 @@ export class LecturesService {
 
     return this.prisma.question.findMany({
       where: { lectureId: String(lectureId) },
-      include: { options: true },
+      include: {
+        options: {
+          orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+        },
+      },
       orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
     });
   }
@@ -1100,7 +1124,7 @@ export class LecturesService {
     if (dto.explanation !== undefined) data.explanation = dto.explanation;
     if (dto.questionType !== undefined) data.questionType = dto.questionType;
     if (dto.points !== undefined) data.points = dto.points;
-    if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
+    if (typeof dto.sortOrder === 'number' && Number.isFinite(dto.sortOrder)) data.sortOrder = dto.sortOrder;
 
     const nextType = dto.questionType ?? question.questionType;
     const nextText = dto.questionText ?? question.questionText;
@@ -1120,6 +1144,17 @@ export class LecturesService {
       if (nextType === 'multiple_choice' && (dto.options.length < 2 || dto.options.length > 6)) {
         throw new BadRequestException('نوع multiple_choice يتطلب من 2 إلى 6 خيارات');
       }
+    }
+
+    if (!Object.keys(data).length && !dto.options) {
+      return this.prisma.question.findUnique({
+        where: { id: String(id) },
+        include: {
+          options: {
+            orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+          },
+        },
+      });
     }
 
     const updated = await this.prisma.question.update({ where: { id: String(id) }, data });

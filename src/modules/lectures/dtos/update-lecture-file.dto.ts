@@ -1,11 +1,17 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class UpdateLectureFileDto {
   @ApiPropertyOptional({ description: 'File display name' })
   @IsOptional()
   @IsString()
   fileName?: string;
+
+  @ApiPropertyOptional({ description: 'File URL' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  fileUrl?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
