@@ -55,6 +55,9 @@ export class PendingNotificationDto {
   @ApiProperty()
   description: string;
 
+  @ApiPropertyOptional({ nullable: true })
+  link: string | null;
+
   @ApiProperty()
   collegeId: string;
 

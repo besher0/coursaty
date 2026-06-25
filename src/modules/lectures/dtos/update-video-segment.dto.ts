@@ -17,7 +17,7 @@ export class UpdateVideoSegmentDto {
   @IsOptional()
   @IsInt()
   @Min(1)
-  endSeconds?: number;
+  endSeconds?: number | null;
 
   @ApiPropertyOptional({ description: 'Optional display order' })
   @IsOptional()

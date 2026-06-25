@@ -420,6 +420,7 @@ export class TeachersService {
           id: true,
           title: true,
           description: true,
+          link: true,
           collegeId: true,
           departmentId: true,
           createdAt: true,

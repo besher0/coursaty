@@ -221,6 +221,7 @@ model Notification {
   id           String             @id @default(uuid())
   title        String
   description  String
+  link         String?
   status       NotificationStatus @default(PENDING)
   createdById  String
   universityId String?

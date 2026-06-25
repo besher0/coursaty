@@ -139,6 +139,9 @@ export class NotificationPendingDto {
   @ApiProperty({ example: 'Teacher requested approval for new course' })
   description: string | null;
 
+  @ApiPropertyOptional({ nullable: true, example: 'https://example.com/details' })
+  link: string | null;
+
   @ApiProperty({ example: 'PENDING' })
   status: string;
 

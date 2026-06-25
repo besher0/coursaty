@@ -276,6 +276,10 @@ export class NotificationsService {
       throw new BadRequestException('فقط المدرسون والمدراء يمكنهم إنشاء إشعارات');
     }
 
+    if (dbUser.userableType === 'TEACHER' && dto.link !== undefined && dto.link !== null) {
+      throw new BadRequestException('لا يمكن للمدرس إضافة رابط للإشعار');
+    }
+
     const target = await this.resolveNotificationTarget(dto);
 
     const status = dbUser.userableType === 'ADMIN' ? 'APPROVED' : 'PENDING';
@@ -284,6 +288,7 @@ export class NotificationsService {
       data: {
         title: dto.title,
         description: dto.description,
+        link: dbUser.userableType === 'ADMIN' ? (dto.link ?? null) : null,
         createdById: dbUser.id,
         universityId: target.universityId,
         collegeId: target.collegeId,

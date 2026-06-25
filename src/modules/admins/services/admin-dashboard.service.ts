@@ -639,6 +639,7 @@ export class AdminDashboardService {
         id: notif.id,
         title: notif.title,
         description: notif.description,
+        link: notif.link ?? null,
         status: notif.status,
         createdAt: notif.createdAt,
         sender: {

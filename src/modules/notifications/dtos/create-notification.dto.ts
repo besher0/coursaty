@@ -12,6 +12,11 @@ export class CreateNotificationDto {
   @IsNotEmpty()
   description: string;
 
+  @ApiPropertyOptional({ nullable: true, description: 'Optional link for admin-created notifications' })
+  @IsOptional()
+  @IsString()
+  link?: string | null;
+
   @ApiPropertyOptional({ description: 'Target university id (for university-wide notification)' })
   @IsOptional()
   @IsUUID('4')
