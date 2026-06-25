@@ -12,7 +12,7 @@ export class CreateNotificationDto {
   @IsNotEmpty()
   description: string;
 
-  @ApiPropertyOptional({ nullable: true, description: 'Optional link for admin-created notifications' })
+  @ApiPropertyOptional({ nullable: true, description: 'Optional notification link' })
   @IsOptional()
   @IsString()
   link?: string | null;

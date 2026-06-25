@@ -1,4 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 
 describe('NotificationsService notification link', () => {
@@ -111,22 +110,28 @@ describe('NotificationsService notification link', () => {
     expect(result.link).toBeNull();
   });
 
-  it('rejects a teacher-provided link', async () => {
+  it('stores and returns a teacher-provided link', async () => {
     const { service, prisma } = createService(teacherUser);
 
-    await expect(
-      service.createNotification(
-        {
-          title: 'Important',
-          description: 'Details',
-          link: 'https://example.com/details',
-          universityId: 'university-1',
-        },
-        { userId: teacherUser.id, type: 'TEACHER' },
-      ),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    const result = await service.createNotification(
+      {
+        title: 'Important',
+        description: 'Details',
+        link: 'https://example.com/details',
+        universityId: 'university-1',
+      },
+      { userId: teacherUser.id, type: 'TEACHER' },
+    );
 
-    expect(prisma.notification.create).not.toHaveBeenCalled();
+    expect(prisma.notification.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          link: 'https://example.com/details',
+          status: 'PENDING',
+        }),
+      }),
+    );
+    expect(result.link).toBe('https://example.com/details');
   });
 
   it('stores null when a teacher omits the link', async () => {
