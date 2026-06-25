@@ -122,6 +122,67 @@ describe('LecturesService media links and question ordering', () => {
     expect(prisma.question.update).not.toHaveBeenCalled();
   });
 
+  it('creates a video segment with a null end time', async () => {
+    const prisma = {
+      video: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'video-1',
+          lecture: { courseId: 'course-1' },
+        }),
+      },
+      videoSegment: {
+        create: jest.fn().mockResolvedValue({ id: 'segment-1', endSeconds: null }),
+      },
+    } as any;
+    const service = new LecturesService(prisma, {} as any);
+    jest.spyOn(service as any, 'assertCourseOwnership').mockResolvedValue(undefined);
+
+    await service.createVideoSegment(
+      'video-1',
+      { segmentName: 'Intro', startSeconds: 10, endSeconds: null },
+      { userId: 'teacher-user-1', type: 'TEACHER' },
+    );
+
+    expect(prisma.videoSegment.create).toHaveBeenCalledWith({
+      data: {
+        videoId: 'video-1',
+        segmentName: 'Intro',
+        startSeconds: 10,
+        endSeconds: null,
+        sortOrder: null,
+      },
+    });
+  });
+
+  it('updates a video segment end time to null', async () => {
+    const prisma = {
+      videoSegment: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'segment-1',
+          videoId: 'video-1',
+          startSeconds: 10,
+          endSeconds: 30,
+          video: { lecture: { courseId: 'course-1' } },
+        }),
+        update: jest.fn().mockResolvedValue({ id: 'segment-1', endSeconds: null }),
+      },
+    } as any;
+    const service = new LecturesService(prisma, {} as any);
+    jest.spyOn(service as any, 'assertCourseOwnership').mockResolvedValue(undefined);
+
+    await service.updateVideoSegment(
+      'video-1',
+      'segment-1',
+      { endSeconds: null },
+      { userId: 'teacher-user-1', type: 'TEACHER' },
+    );
+
+    expect(prisma.videoSegment.update).toHaveBeenCalledWith({
+      where: { id: 'segment-1' },
+      data: { endSeconds: null },
+    });
+  });
+
   it('requests deterministic ordering for questions and their options in lecture details', async () => {
     const prisma = {
       lecture: {

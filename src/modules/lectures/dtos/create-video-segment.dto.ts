@@ -12,10 +12,15 @@ export class CreateVideoSegmentDto {
   @Min(0)
   startSeconds: number;
 
-  @ApiProperty({ description: 'Segment end time in seconds (must be greater than start)', minimum: 1 })
+  @ApiPropertyOptional({
+    description: 'Segment end time in seconds (must be greater than start)',
+    minimum: 1,
+    nullable: true,
+  })
+  @IsOptional()
   @IsInt()
   @Min(1)
-  endSeconds: number | null;
+  endSeconds?: number | null;
 
   @ApiPropertyOptional({ description: 'Optional display order' })
   @IsOptional()

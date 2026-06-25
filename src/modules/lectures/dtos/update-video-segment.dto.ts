@@ -13,7 +13,11 @@ export class UpdateVideoSegmentDto {
   @Min(0)
   startSeconds?: number;
 
-  @ApiPropertyOptional({ description: 'Segment end time in seconds (must be greater than start)', minimum: 1 })
+  @ApiPropertyOptional({
+    description: 'Segment end time in seconds (must be greater than start)',
+    minimum: 1,
+    nullable: true,
+  })
   @IsOptional()
   @IsInt()
   @Min(1)

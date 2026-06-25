@@ -465,7 +465,7 @@ model VideoSegment {
   videoId       String
   segmentName   String
   startSeconds  Int
-  endSeconds    Int
+  endSeconds    Int?
   sortOrder     Int?
   createdAt     DateTime @default(now())
 

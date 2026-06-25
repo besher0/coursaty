@@ -937,7 +937,7 @@ export class LecturesService {
     dto: CreateVideoSegmentDto,
     user?: { userId: string | number; type: string },
   ) {
-    if (dto.endSeconds <= dto.startSeconds) {
+    if (dto.endSeconds !== undefined && dto.endSeconds !== null && dto.endSeconds <= dto.startSeconds) {
       throw new BadRequestException('يجب أن تكون endSeconds أكبر من startSeconds');
     }
 
@@ -954,7 +954,7 @@ export class LecturesService {
         videoId: String(videoId),
         segmentName: dto.segmentName,
         startSeconds: dto.startSeconds,
-        endSeconds: dto.endSeconds,
+        endSeconds: dto.endSeconds ?? null,
         sortOrder: dto.sortOrder ?? null,
       },
     });
@@ -999,8 +999,8 @@ export class LecturesService {
     await this.assertCourseOwnership(user, segment.video.lecture.courseId);
 
     const nextStart = dto.startSeconds ?? segment.startSeconds;
-    const nextEnd = dto.endSeconds ?? segment.endSeconds;
-    if (nextEnd <= nextStart) {
+    const nextEnd = dto.endSeconds === undefined ? segment.endSeconds : dto.endSeconds;
+    if (nextEnd !== null && nextEnd <= nextStart) {
       throw new BadRequestException('يجب أن تكون endSeconds أكبر من startSeconds');
     }
 
