@@ -38,6 +38,9 @@ export class TeacherSummaryCourseDto {
   @ApiProperty()
   studentsCount: number;
 
+  @ApiProperty()
+  isCompleted: boolean;
+
   @ApiPropertyOptional({ type: TeacherSummarySeasonDto })
   season: TeacherSummarySeasonDto | null;
 

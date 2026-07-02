@@ -396,6 +396,7 @@ export class TeachersService {
           name: true,
           imageUrl: true,
           duration: true,
+          isCompleted: true,
           season: { select: { id: true, seasonName: true, seasonNumber: true } },
           collegeYear: {
             select: {
@@ -457,6 +458,7 @@ export class TeachersService {
         name: course.name,
         imageUrl: course.imageUrl ?? null,
         duration: durationMap.get(course.id) ?? 0,
+        isCompleted: course.isCompleted ?? false,
         teacher: {
           id: teacher.id,
           name: teacher.name,
@@ -524,6 +526,7 @@ export class TeachersService {
           name: true,
           imageUrl: true,
           duration: true,
+          isCompleted: true,
           expiresAt: true,      
           status: true,
           university: { select: { id: true, name: true } },
@@ -560,6 +563,7 @@ export class TeachersService {
               name: string;
               imageUrl: string | null;
               duration: number;
+              isCompleted: boolean;
               expiresAt: Date | null;
               studentsCount: number;
               createdAt: Date;
@@ -615,6 +619,7 @@ export class TeachersService {
         name: course.name,
         imageUrl: course.imageUrl ?? null,
         duration: durationMap.get(course.id) ?? 0,
+        isCompleted: course.isCompleted ?? false,
         expiresAt: course.expiresAt ?? null,
         status: course.status,
         createdAt: course.createdAt,
@@ -757,6 +762,7 @@ export class TeachersService {
         createdAt: true,
         expiresAt: true,
         price: true,
+        isCompleted: true,
         teacherPercentage: true,
       },
       orderBy: { createdAt: 'desc' },
@@ -825,6 +831,7 @@ export class TeachersService {
           publishedAt: course.createdAt,
           expiresAt: course.expiresAt,
           price: this.roundCurrency(this.toNumber(course.price)),
+          isCompleted: course.isCompleted ?? false,
         },
         subscribersCount,
         rating: {
