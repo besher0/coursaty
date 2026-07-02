@@ -454,7 +454,7 @@ export class CourseService {
         basePrice: basePrice,
         discountedPrice: priceAfterCourseDiscount,
         isFree: course.isFree,
-        isCompleted: course.isCompleted,
+        isCompleted: course.isCompleted ?? false,
         locked: !hasAccess,
       },
       details: {
@@ -473,7 +473,7 @@ export class CourseService {
           telegramUrl: course.teacher.telegramUrl ?? null,
         },
         duration: courseDuration,
-        isCompleted: course.isCompleted,
+        isCompleted: course.isCompleted ?? false,
         expiresAt: course.expiresAt,
         expiresInSeconds,
         expiresInDays,
@@ -504,7 +504,7 @@ export class CourseService {
         title: lec.title,
         description: lec.description,
         imageUrl: lec.imageUrl,
-        isCompleted: lec.isCompleted,
+        isCompleted: lec.isCompleted ?? false,
         sortOrder: lec.sortOrder ?? null,
         videosCount: lec._count?.videos ?? 0,
         filesCount: lec._count?.files ?? 0,
@@ -593,7 +593,7 @@ export class CourseService {
         imageUrl: course.imageUrl ?? null,
         basePrice,
         discountedPrice: courseDiscountedPrice,
-        isCompleted: course.isCompleted,
+        isCompleted: course.isCompleted ?? false,
       },
       details: {
         teacher: {
@@ -619,7 +619,7 @@ export class CourseService {
             }
           : null,
         lecturesCount: course._count.lectures,
-        isCompleted: course.isCompleted,
+        isCompleted: course.isCompleted ?? false,
         duration: courseDuration,
         expiresAt: course.expiresAt,
         college: course.college,
@@ -647,7 +647,7 @@ export class CourseService {
         title: lec.title,
         description: lec.description,
         imageUrl: lec.imageUrl,
-        isCompleted: lec.isCompleted,
+        isCompleted: lec.isCompleted ?? false,
         sortOrder: lec.sortOrder ?? null,
         videosCount: lec._count?.videos ?? 0,
         filesCount: lec._count?.files ?? 0,
