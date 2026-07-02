@@ -77,6 +77,11 @@ export class CreateCourseDto {
   @IsBoolean()
   isFree?: boolean;
 
+  @ApiPropertyOptional({ default: false, description: 'Whether the course is completed' })
+  @IsOptional()
+  @IsBoolean()
+  isCompleted?: boolean;
+
   @ApiPropertyOptional({ description: 'Course expiry date (ISO string)' })
   @IsOptional()
   @Transform(({ value }) => {

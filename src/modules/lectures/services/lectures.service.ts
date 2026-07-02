@@ -34,6 +34,7 @@ export class LecturesService {
           title: dto.title,
           description: dto.description,
           imageUrl: dto.imageUrl,
+          isCompleted: dto.isCompleted ?? false,
           sortOrder,
         },
       });
@@ -45,6 +46,7 @@ export class LecturesService {
           title: dto.title,
           description: dto.description,
           imageUrl: dto.imageUrl,
+          isCompleted: dto.isCompleted ?? false,
         },
       });
     }
@@ -114,6 +116,7 @@ export class LecturesService {
     if (data.title !== undefined) update.title = data.title;
     if (data.description !== undefined) update.description = data.description;
     if (data.imageUrl !== undefined) update.imageUrl = data.imageUrl;
+    if (data.isCompleted !== undefined) update.isCompleted = data.isCompleted;
     if (data.sortOrder !== undefined) update.sortOrder = data.sortOrder;
 
     return this.prisma.lecture.update({
@@ -520,6 +523,7 @@ export class LecturesService {
           title: lecture.title,
           description: lecture.description,
           imageUrl: lecture.imageUrl,
+          isCompleted: lecture.isCompleted,
         },
         teacher,
         hasVideosSortOrder,
@@ -547,6 +551,7 @@ export class LecturesService {
         title: lecture.title,
         description: lecture.description,
         imageUrl: lecture.imageUrl,
+        isCompleted: lecture.isCompleted,
       },
       teacher,
       hasVideosSortOrder,

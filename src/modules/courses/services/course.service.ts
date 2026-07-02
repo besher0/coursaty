@@ -152,6 +152,7 @@ export class CourseService {
         courseDiscountPercentage: dto.courseDiscountPercentage ?? 0,
         duration: 0,
         isFree: dto.isFree,
+        isCompleted: dto.isCompleted ?? false,
         expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
         teacherId,
         subjectId: dto.subjectId ? String(dto.subjectId) : null,
@@ -255,6 +256,7 @@ export class CourseService {
     if (dto.price !== undefined) data.price = dto.price as any;
     if (dto.courseDiscountPercentage !== undefined) data.courseDiscountPercentage = dto.courseDiscountPercentage as any;
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
+    if (dto.isCompleted !== undefined) data.isCompleted = dto.isCompleted;
     if (dto.expiresAt !== undefined) data.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
     if (dto.introVideoUrl !== undefined) data.introVideoUrl = dto.introVideoUrl;
     if (dto.discussionGroupUrl !== undefined) data.discussionGroupUrl = dto.discussionGroupUrl;
@@ -452,6 +454,7 @@ export class CourseService {
         basePrice: basePrice,
         discountedPrice: priceAfterCourseDiscount,
         isFree: course.isFree,
+        isCompleted: course.isCompleted,
         locked: !hasAccess,
       },
       details: {
@@ -470,6 +473,7 @@ export class CourseService {
           telegramUrl: course.teacher.telegramUrl ?? null,
         },
         duration: courseDuration,
+        isCompleted: course.isCompleted,
         expiresAt: course.expiresAt,
         expiresInSeconds,
         expiresInDays,
@@ -500,6 +504,7 @@ export class CourseService {
         title: lec.title,
         description: lec.description,
         imageUrl: lec.imageUrl,
+        isCompleted: lec.isCompleted,
         sortOrder: lec.sortOrder ?? null,
         videosCount: lec._count?.videos ?? 0,
         filesCount: lec._count?.files ?? 0,
@@ -588,6 +593,7 @@ export class CourseService {
         imageUrl: course.imageUrl ?? null,
         basePrice,
         discountedPrice: courseDiscountedPrice,
+        isCompleted: course.isCompleted,
       },
       details: {
         teacher: {
@@ -613,6 +619,7 @@ export class CourseService {
             }
           : null,
         lecturesCount: course._count.lectures,
+        isCompleted: course.isCompleted,
         duration: courseDuration,
         expiresAt: course.expiresAt,
         college: course.college,
@@ -640,6 +647,7 @@ export class CourseService {
         title: lec.title,
         description: lec.description,
         imageUrl: lec.imageUrl,
+        isCompleted: lec.isCompleted,
         sortOrder: lec.sortOrder ?? null,
         videosCount: lec._count?.videos ?? 0,
         filesCount: lec._count?.files ?? 0,

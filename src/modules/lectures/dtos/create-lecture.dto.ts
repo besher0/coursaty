@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateLectureDto {
   @ApiProperty({ format: 'uuid' })
@@ -20,6 +20,11 @@ export class CreateLectureDto {
   @IsOptional()
   @IsString()
   imageUrl?: string;
+
+  @ApiPropertyOptional({ default: false, description: 'Whether the lecture is completed' })
+  @IsOptional()
+  @IsBoolean()
+  isCompleted?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()

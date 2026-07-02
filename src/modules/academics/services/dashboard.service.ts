@@ -194,6 +194,7 @@ export class DashboardService {
       imageUrl: course.imageUrl ?? null,
       price: course.price,
       isFree: course.isFree ?? false,
+      isCompleted: course.isCompleted ?? false,
       season: course.season
         ? {
             id: course.season.id,

@@ -360,6 +360,7 @@ model Course {
   courseDiscountPercentage Decimal @db.Decimal(5, 2) @default(0.00)
   duration              Int       @default(0)
   isFree                Boolean   @default(false)
+  isCompleted           Boolean   @default(false)
   expiresAt             DateTime?
   introVideoUrl         String?
   discussionGroupUrl    String?
@@ -430,6 +431,7 @@ model Lecture {
   title      String
   description String?
   imageUrl   String?
+  isCompleted Boolean @default(false)
   sortOrder  Int?
 
   course      Course      @relation(fields: [courseId], references: [id])

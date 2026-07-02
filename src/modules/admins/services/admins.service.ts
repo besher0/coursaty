@@ -22,6 +22,7 @@ export class AdminsService {
       imageUrl: course.imageUrl ?? null,
       price: course.price,
       duration: course.resolvedDuration ?? 0,
+      isCompleted: course.isCompleted ?? false,
       status: course.status,
       expiresAt: course.expiresAt ?? null,
       season: course.season
