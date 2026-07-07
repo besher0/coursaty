@@ -44,6 +44,129 @@ describe('LecturesService media links and question ordering', () => {
     });
   });
 
+  it('deletes a lecture after verifying ownership and related records', async () => {
+    const tx = {
+      video: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'video-1' }]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+        aggregate: jest.fn().mockResolvedValue({ _sum: { duration: 0 } }),
+      },
+      videoInteraction: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
+      },
+      videoSegment: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      question: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'question-1' }]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      questionOption: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 3 }),
+      },
+      lectureFile: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      lecture: {
+        delete: jest.fn().mockResolvedValue({ id: 'lecture-1' }),
+      },
+      course: {
+        update: jest.fn().mockResolvedValue({ id: 'course-1', duration: 0 }),
+      },
+    };
+    const prisma = {
+      lecture: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'lecture-1', courseId: 'course-1' }),
+      },
+      $transaction: jest.fn((callback) => callback(tx)),
+    } as any;
+    const service = new LecturesService(prisma, {} as any);
+    const ownership = jest.spyOn(service as any, 'assertLectureOwnership').mockResolvedValue(undefined);
+
+    await expect(
+      service.deleteLecture('lecture-1', { userId: 'teacher-user-1', type: 'TEACHER' }),
+    ).resolves.toEqual({ id: 'lecture-1' });
+
+    expect(ownership).toHaveBeenCalledWith(
+      { userId: 'teacher-user-1', type: 'TEACHER' },
+      'lecture-1',
+    );
+    expect(tx.videoInteraction.deleteMany).toHaveBeenCalledWith({ where: { videoId: { in: ['video-1'] } } });
+    expect(tx.videoSegment.deleteMany).toHaveBeenCalledWith({ where: { videoId: { in: ['video-1'] } } });
+    expect(tx.questionOption.deleteMany).toHaveBeenCalledWith({ where: { questionId: { in: ['question-1'] } } });
+    expect(tx.lectureFile.deleteMany).toHaveBeenCalledWith({ where: { lectureId: 'lecture-1' } });
+    expect(tx.lecture.delete).toHaveBeenCalledWith({ where: { id: 'lecture-1' } });
+    expect(tx.course.update).toHaveBeenCalledWith({
+      where: { id: 'course-1' },
+      data: { duration: 0 },
+    });
+  });
+
+  it('deletes a lecture file after verifying lecture ownership', async () => {
+    const prisma = {
+      lectureFile: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'file-1',
+          lectureId: 'lecture-1',
+        }),
+        delete: jest.fn().mockResolvedValue({ id: 'file-1' }),
+      },
+    } as any;
+    const service = new LecturesService(prisma, {} as any);
+    const ownership = jest.spyOn(service as any, 'assertLectureOwnership').mockResolvedValue(undefined);
+
+    await expect(
+      service.deleteLectureFile('file-1', { userId: 'teacher-user-1', type: 'TEACHER' }),
+    ).resolves.toEqual({ id: 'file-1' });
+
+    expect(ownership).toHaveBeenCalledWith(
+      { userId: 'teacher-user-1', type: 'TEACHER' },
+      'lecture-1',
+    );
+    expect(prisma.lectureFile.delete).toHaveBeenCalledWith({ where: { id: 'file-1' } });
+  });
+
+  it('deletes a video after verifying course ownership and recalculates course duration', async () => {
+    const tx = {
+      videoInteraction: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      video: {
+        delete: jest.fn().mockResolvedValue({ id: 'video-1' }),
+        aggregate: jest.fn().mockResolvedValue({ _sum: { duration: 125 } }),
+      },
+      course: {
+        update: jest.fn().mockResolvedValue({ id: 'course-1', duration: 125 }),
+      },
+    };
+    const prisma = {
+      video: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'video-1',
+          lecture: { courseId: 'course-1' },
+        }),
+      },
+      $transaction: jest.fn((callback) => callback(tx)),
+    } as any;
+    const service = new LecturesService(prisma, {} as any);
+    const ownership = jest.spyOn(service as any, 'assertCourseOwnership').mockResolvedValue(undefined);
+
+    await expect(
+      service.deleteVideo('video-1', { userId: 'teacher-user-1', type: 'TEACHER' }),
+    ).resolves.toEqual({ success: true });
+
+    expect(ownership).toHaveBeenCalledWith(
+      { userId: 'teacher-user-1', type: 'TEACHER' },
+      'course-1',
+    );
+    expect(tx.videoInteraction.deleteMany).toHaveBeenCalledWith({ where: { videoId: 'video-1' } });
+    expect(tx.video.delete).toHaveBeenCalledWith({ where: { id: 'video-1' } });
+    expect(tx.course.update).toHaveBeenCalledWith({
+      where: { id: 'course-1' },
+      data: { duration: 125 },
+    });
+  });
+
   it('preserves a question sort order when it is omitted from an update', async () => {
     const question = {
       id: 'question-1',

@@ -67,9 +67,9 @@ export class LecturesController {
   }
 
   @Delete(':lectureId')
-  @ApiOperation({ summary: 'Delete lecture' })
+  @ApiOperation({ summary: 'Delete lecture (owner or admin only)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('TEACHER', 'ADMIN')
   remove(@Param('lectureId', new ParseUUIDPipe({ version: '4' })) lectureId: string, @Req() req: any) {
     return this.lectures.deleteLecture(lectureId, req.user);
   }
@@ -108,9 +108,9 @@ export class LecturesController {
   }
 
   @Delete('files/:id')
-  @ApiOperation({ summary: 'Delete lecture file' })
+  @ApiOperation({ summary: 'Delete lecture file (owner or admin only)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('TEACHER', 'ADMIN')
   removeFile(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
     return this.lectures.deleteLectureFile(id, req.user);
   }
