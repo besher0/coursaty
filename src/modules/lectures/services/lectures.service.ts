@@ -1072,6 +1072,11 @@ export class LecturesService {
       }
     }
 
+    const sortOrder = dto.sortOrder ??
+      (await this.prisma.question.count({
+        where: { lectureId: String(dto.lectureId) },
+      })) + 1;
+
     return this.prisma.question.create({
       data: {
         lectureId: String(dto.lectureId),
@@ -1080,7 +1085,7 @@ export class LecturesService {
         explanation: dto.explanation ?? null,
         questionType: dto.questionType,
         points: dto.points,
-        sortOrder: dto.sortOrder ?? null,
+        sortOrder,
         options: dto.options
           ? {
               create: dto.options.map((opt) => ({

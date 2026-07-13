@@ -245,6 +245,83 @@ describe('LecturesService media links and question ordering', () => {
     expect(prisma.question.update).not.toHaveBeenCalled();
   });
 
+  it('assigns the current questions count plus one when creating without a sort order', async () => {
+    const prisma = {
+      lecture: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'lecture-1', courseId: 'course-1' }),
+      },
+      question: {
+        count: jest.fn().mockResolvedValue(4),
+        create: jest.fn().mockResolvedValue({ id: 'question-5', sortOrder: 5 }),
+      },
+    } as any;
+    const service = new LecturesService(prisma, {} as any);
+    jest.spyOn(service as any, 'assertLectureOwnership').mockResolvedValue(undefined);
+
+    await service.createQuestion(
+      {
+        lectureId: 'lecture-1',
+        questionText: 'New question',
+        questionType: 'short_answer',
+        points: 1,
+      },
+      { userId: 'teacher-user-1', type: 'TEACHER' },
+    );
+
+    expect(prisma.question.count).toHaveBeenCalledWith({
+      where: { lectureId: 'lecture-1' },
+    });
+    expect(prisma.question.create).toHaveBeenCalledWith({
+      data: {
+        lectureId: 'lecture-1',
+        questionText: 'New question',
+        imageUrl: null,
+        explanation: null,
+        questionType: 'short_answer',
+        points: 1,
+        sortOrder: 5,
+        options: undefined,
+      },
+      include: {
+        options: {
+          orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+        },
+      },
+    });
+  });
+
+  it('keeps an explicitly supplied question sort order without counting questions', async () => {
+    const prisma = {
+      lecture: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'lecture-1', courseId: 'course-1' }),
+      },
+      question: {
+        count: jest.fn(),
+        create: jest.fn().mockResolvedValue({ id: 'question-1', sortOrder: 9 }),
+      },
+    } as any;
+    const service = new LecturesService(prisma, {} as any);
+    jest.spyOn(service as any, 'assertLectureOwnership').mockResolvedValue(undefined);
+
+    await service.createQuestion(
+      {
+        lectureId: 'lecture-1',
+        questionText: 'Ordered question',
+        questionType: 'short_answer',
+        points: 1,
+        sortOrder: 9,
+      },
+      { userId: 'teacher-user-1', type: 'TEACHER' },
+    );
+
+    expect(prisma.question.count).not.toHaveBeenCalled();
+    expect(prisma.question.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ sortOrder: 9 }),
+      }),
+    );
+  });
+
   it('creates a video segment with a null end time', async () => {
     const prisma = {
       video: {
