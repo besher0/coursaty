@@ -5,7 +5,7 @@ describe('CourseService academic identity immutability', () => {
   it('rejects academic identity overrides on create', async () => {
     const prisma = {} as any;
     const bunny = {} as any;
-    const service = new CourseService(prisma, bunny);
+    const service = new CourseService(prisma, bunny, {} as any);
 
     const dto = {
       categoryId: 1,
@@ -18,7 +18,7 @@ describe('CourseService academic identity immutability', () => {
   it('rejects academic identity overrides on update', async () => {
     const prisma = {} as any;
     const bunny = {} as any;
-    const service = new CourseService(prisma, bunny);
+    const service = new CourseService(prisma, bunny, {} as any);
 
     await expect(
       service.updateCourse("1", { collegeId: 5 } as any, { userId: 1, type: 'ADMIN' }),
@@ -36,7 +36,7 @@ describe('CourseService academic identity immutability', () => {
     const prisma = {
       $transaction: jest.fn((callback) => callback(tx)),
     } as any;
-    const service = new CourseService(prisma, {} as any);
+    const service = new CourseService(prisma, {} as any, {} as any);
     jest.spyOn(service as any, 'assertCourseOwnership').mockResolvedValue(undefined);
     jest.spyOn(service, 'getCourseDetails').mockResolvedValue({} as any);
 
@@ -64,7 +64,7 @@ describe('CourseService academic identity immutability', () => {
     const prisma = {
       $transaction: jest.fn((callback) => callback(tx)),
     } as any;
-    const service = new CourseService(prisma, {} as any);
+    const service = new CourseService(prisma, {} as any, {} as any);
     jest.spyOn(service as any, 'assertCourseOwnership').mockResolvedValue(undefined);
     jest.spyOn(service, 'getCourseDetails').mockResolvedValue({} as any);
 
@@ -87,7 +87,7 @@ describe('CourseService academic identity immutability', () => {
     const prisma = {
       $transaction: jest.fn((callback) => callback(tx)),
     } as any;
-    const service = new CourseService(prisma, {} as any);
+    const service = new CourseService(prisma, {} as any, {} as any);
     jest.spyOn(service as any, 'assertCourseOwnership').mockResolvedValue(undefined);
     jest.spyOn(service, 'getCourseDetails').mockResolvedValue({} as any);
 

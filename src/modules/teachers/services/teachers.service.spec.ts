@@ -19,7 +19,7 @@ describe('TeachersService affiliations', () => {
 
     return {
       prisma,
-      service: new TeachersService(prisma as any, cacheManager),
+      service: new TeachersService(prisma as any, cacheManager, {} as any),
     };
   }
 

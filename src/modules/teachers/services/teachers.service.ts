@@ -5,12 +5,15 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { CreateTeacherDto } from '../dtos/create-teacher.dto';
 import { TeacherSummaryDto } from '../dtos/teacher-summary.dto';
 import { Prisma } from '@prisma/client';
+import { RevenueService } from '@/modules/revenues/services/revenue.service';
+import { RevenuePeriodQueryDto } from '@/modules/revenues/dtos';
 
 @Injectable()
 export class TeachersService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    private readonly revenueService: RevenueService,
   ) {}
 
   async create(dto: CreateTeacherDto, tx?: Prisma.TransactionClient) {
@@ -187,25 +190,11 @@ export class TeachersService {
   }
 
   private async getTeacherEarningsTotal(teacherId: string) {
-    const subscriptions = await this.prisma.studentSubscription.findMany({
-      where: {
-        course: { teacherId },
-      },
-      select: {
-        finalPrice: true,
-        course: {
-          select: {
-            teacherPercentage: true,
-          },
-        },
-      },
+    const result = await this.prisma.revenueTransaction.aggregate({
+      where: { teacherId },
+      _sum: { teacherRevenue: true },
     });
-
-    return subscriptions.reduce((sum, subscription) => {
-      const finalPrice = this.toNumber(subscription.finalPrice);
-      const teacherPercentage = this.toNumber(subscription.course.teacherPercentage);
-      return sum + (finalPrice * teacherPercentage) / 100;
-    }, 0);
+    return this.toNumber(result._sum.teacherRevenue);
   }
 
   private normalizeSubjectIds(subjectIds: string[]) {
@@ -746,12 +735,15 @@ export class TeachersService {
     return { removedCount: result.count };
   }
 
-  async getMyCoursesRevenue(user: { userId: string | number; type: string }) {
+  async getMyCoursesRevenue(
+    user: { userId: string | number; type: string },
+    query: RevenuePeriodQueryDto = {},
+  ) {
     const { teacher } = await this.getTeacherContext(user);
-    return this.getTeacherCoursesRevenue(teacher.id);
+    return this.getTeacherCoursesRevenue(teacher.id, query);
   }
 
-  async getTeacherCoursesRevenue(teacherId: string) {
+  async getTeacherCoursesRevenue(teacherId: string, query: RevenuePeriodQueryDto = {}) {
     const teacher = await this.getTeacherById(teacherId);
 
     const courses = await this.prisma.course.findMany({
@@ -769,24 +761,29 @@ export class TeachersService {
     });
 
     const courseIds = courses.map((course) => course.id);
-    const [revenueByCourse, ratingsByCourse] = courseIds.length
-      ? await Promise.all([
-          this.prisma.studentSubscription.groupBy({
-            by: ['courseId'],
-            where: { courseId: { in: courseIds } },
-            _sum: { finalPrice: true },
-            _count: { _all: true },
-          }),
-          this.prisma.courseRating.groupBy({
+    const invoicePromise = this.revenueService.buildInvoice(
+      { teacherId, ...query },
+      courses.map((course) => ({ id: course.id, name: course.name })),
+    );
+    const hasPeriod = Boolean(query.dateFrom || query.dateTo || query.year !== undefined || query.month !== undefined);
+    const allTimeInvoicePromise = hasPeriod
+      ? this.revenueService.buildInvoice(
+          { teacherId },
+          courses.map((course) => ({ id: course.id, name: course.name })),
+        )
+      : invoicePromise;
+
+    const [invoice, allTimeInvoice, ratingsByCourse, withdrawals, withdrawnAgg] = await Promise.all([
+      invoicePromise,
+      allTimeInvoicePromise,
+      courseIds.length
+        ? this.prisma.courseRating.groupBy({
             by: ['courseId'],
             where: { courseId: { in: courseIds } },
             _avg: { rating: true },
             _count: { _all: true },
-          }),
-        ])
-      : [[], []];
-
-    const [withdrawals, withdrawnAgg] = await Promise.all([
+          })
+        : Promise.resolve([]),
       this.prisma.teacherWithdrawal.findMany({
         where: { teacherId },
         orderBy: { createdAt: 'desc' },
@@ -800,12 +797,6 @@ export class TeachersService {
       }),
     ]);
 
-    const revenueMap = new Map<string, { grossRevenue: number; subscribersCount: number }>(
-      revenueByCourse.map((item) => [
-        item.courseId,
-        { grossRevenue: this.toNumber(item._sum.finalPrice), subscribersCount: item._count._all },
-      ]),
-    );
     const ratingsMap = new Map<string, { average: number; ratersCount: number }>(
       ratingsByCourse.map((item) => [
         item.courseId,
@@ -813,25 +804,31 @@ export class TeachersService {
       ]),
     );
 
-    const coursesRevenue = courses.map((course) => {
-      const revenueItem = revenueMap.get(course.id);
-      const ratingsItem = ratingsMap.get(course.id);
-
-      const grossRevenue = revenueItem?.grossRevenue ?? 0;
-      const subscribersCount = revenueItem?.subscribersCount ?? 0;
-      const teacherPercentage = this.toNumber(course.teacherPercentage);
+    const courseMap = new Map(courses.map((course) => [course.id, course]));
+    const coursesRevenue = invoice.courses.map((courseInvoice) => {
+      const course = courseMap.get(courseInvoice.course.id);
+      const ratingsItem = ratingsMap.get(courseInvoice.course.id);
+      const grossRevenue = courseInvoice.summary.totalRevenues;
+      const subscribersCount = courseInvoice.summary.totalSubscribers;
+      const teacherPercentage = course
+        ? this.toNumber(course.teacherPercentage)
+        : grossRevenue > 0
+          ? (courseInvoice.summary.teacherRevenue * 100) / grossRevenue
+          : 0;
       const adminPercentage = Math.max(0, 100 - teacherPercentage);
-      const teacherRevenue = (grossRevenue * teacherPercentage) / 100;
-      const adminRevenue = grossRevenue - teacherRevenue;
+      const teacherRevenue = courseInvoice.summary.teacherRevenue;
+      const adminRevenue = courseInvoice.summary.platformRevenue;
 
       return {
         course: {
-          id: course.id,
-          name: course.name,
-          publishedAt: course.createdAt,
-          expiresAt: course.expiresAt,
-          price: this.roundCurrency(this.toNumber(course.price)),
-          isCompleted: course.isCompleted ?? false,
+          id: courseInvoice.course.id,
+          name: courseInvoice.course.name,
+          publishedAt: course?.createdAt ?? null,
+          expiresAt: course?.expiresAt ?? null,
+          price: this.roundCurrency(
+            course ? this.toNumber(course.price) : (courseInvoice.lineItems[0]?.coursePrice ?? 0),
+          ),
+          isCompleted: course?.isCompleted ?? false,
         },
         subscribersCount,
         rating: {
@@ -848,24 +845,8 @@ export class TeachersService {
       };
     });
 
-    const totals = coursesRevenue.reduce(
-      (acc, item) => {
-        acc.grossRevenue += item.revenue.beforePercentage;
-        acc.teacherRevenue += item.revenue.teacherRevenue;
-        acc.adminRevenue += item.revenue.adminRevenue;
-        acc.subscribersCount += item.subscribersCount;
-        return acc;
-      },
-      {
-        grossRevenue: 0,
-        teacherRevenue: 0,
-        adminRevenue: 0,
-        subscribersCount: 0,
-      },
-    );
-
     // Calculate withdrawal statistics
-    const teacherEarnings = totals.teacherRevenue;
+    const teacherEarnings = allTimeInvoice.summary.teacherRevenue;
     const withdrawnAmount = this.toNumber(withdrawnAgg._sum.amount);
     const remainingAmount = Math.max(0, teacherEarnings - withdrawnAmount);
     const withdrawalCount = withdrawals.filter((w) => w.status === 'APPROVED').length;
@@ -876,10 +857,10 @@ export class TeachersService {
         name: teacher.name,
       },
       totals: {
-        grossRevenue: this.roundCurrency(totals.grossRevenue),
-        teacherRevenue: this.roundCurrency(totals.teacherRevenue),
-        adminRevenue: this.roundCurrency(totals.adminRevenue),
-        subscribersCount: totals.subscribersCount,
+        grossRevenue: invoice.summary.totalRevenues,
+        teacherRevenue: invoice.summary.teacherRevenue,
+        adminRevenue: invoice.summary.platformRevenue,
+        subscribersCount: invoice.summary.totalSubscribers,
       },
       withdrawals: {
         withdrawnAmount: this.roundCurrency(withdrawnAmount),
@@ -888,35 +869,13 @@ export class TeachersService {
         withdrawalsCount: withdrawalCount,
       },
       courses: coursesRevenue,
+      invoice,
     };
   }
 
-  async getTeacherRevenueByPeriod(teacherId: string) {
+  async getTeacherRevenueByPeriod(teacherId: string, query: RevenuePeriodQueryDto = {}) {
     const teacher = await this.getTeacherById(teacherId);
-
-    const courses = await this.prisma.course.findMany({
-      where: { teacherId },
-      select: { id: true, teacherPercentage: true },
-    });
-
-    if (courses.length === 0) {
-      return {
-        teacher: {
-          id: teacher.id,
-          name: teacher.name,
-        },
-        years: [],
-      };
-    }
-
-    const courseIds = courses.map((c) => c.id);
-    const subscriptions = await this.prisma.studentSubscription.findMany({
-      where: { courseId: { in: courseIds } },
-      select: { courseId: true, finalPrice: true, createdAt: true },
-    });
-
-    // Create a map of course teacher percentages
-    const coursePercentageMap = new Map(courses.map((c) => [c.id, this.toNumber(c.teacherPercentage)]));
+    const transactions = await this.revenueService.findTransactions({ teacherId, ...query });
 
     // Group by year and month
     const yearsMap = new Map<
@@ -932,10 +891,16 @@ export class TeachersService {
       >
     >();
 
-    subscriptions.forEach((sub) => {
-      const year = sub.createdAt.getFullYear();
-      const month = sub.createdAt.getMonth();
-      const monthName = sub.createdAt.toLocaleString('en', { month: 'long' });
+    const periodFormatter = new Intl.DateTimeFormat('en', {
+      timeZone: 'Asia/Damascus',
+      year: 'numeric',
+      month: 'long',
+    });
+    transactions.forEach((transaction) => {
+      const parts = periodFormatter.formatToParts(transaction.purchasedAt);
+      const year = Number(parts.find((part) => part.type === 'year')?.value);
+      const monthName = parts.find((part) => part.type === 'month')?.value ?? '';
+      const month = new Date(`${monthName} 1, 2000`).getMonth();
 
       if (!yearsMap.has(year)) {
         yearsMap.set(year, new Map());
@@ -952,12 +917,8 @@ export class TeachersService {
       }
 
       const monthData = monthsMap.get(month)!;
-      const finalPrice = this.toNumber(sub.finalPrice);
-      const teacherPercentage = coursePercentageMap.get(sub.courseId) || 0;
-      const teacherEarnings = (finalPrice * teacherPercentage) / 100;
-
-      monthData.totalRevenue += finalPrice;
-      monthData.teacherRevenue += teacherEarnings;
+      monthData.totalRevenue += this.toNumber(transaction.finalPrice);
+      monthData.teacherRevenue += this.toNumber(transaction.teacherRevenue);
       monthData.subscriptionCount += 1;
     });
 

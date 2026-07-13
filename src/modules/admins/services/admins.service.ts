@@ -6,12 +6,15 @@ import { UsersDirectoryQueryDto, UsersDirectoryType } from '../dtos/users-direct
 import { AllowedUserStatus } from '../dtos/update-user-status.dto';
 import * as bcrypt from 'bcryptjs';
 import { UsersService } from '@/modules/users/services/users.service';
+import { AdminRevenueQueryDto } from '@/modules/revenues/dtos';
+import { RevenueService } from '@/modules/revenues/services/revenue.service';
 
 @Injectable()
 export class AdminsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
+    private readonly revenueService: RevenueService,
   ) {}
 
   private buildCourseCardWithTeacher(course: any) {
@@ -1613,77 +1616,38 @@ export class AdminsService {
     };
   }
 
-  async getRevenue(
-    universityId?: string,
-    collegeId?: string,
-    year?: number,
-    month?: number,
-    dateFrom?: string,
-    dateTo?: string,
-  ) {
-    const dateFilter: Record<string, any> = {};
-    if (dateFrom || dateTo) {
-      const parsedFrom = dateFrom ? new Date(dateFrom) : null;
-      const parsedTo = dateTo ? new Date(dateTo) : null;
+  async getRevenue(query: AdminRevenueQueryDto = {}) {
+    const revenueFilters = {
+      courseId: query.courseId,
+      universityId: query.universityId,
+      collegeId: query.collegeId,
+      year: query.year,
+      month: query.month,
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
+    };
+    const [transactions, selectedCourse] = await Promise.all([
+      this.revenueService.findTransactions(revenueFilters),
+      query.courseId
+        ? this.prisma.course.findUnique({
+            where: { id: query.courseId },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve(null),
+    ]);
+    const invoice = this.revenueService.buildInvoiceFromTransactions(
+      transactions,
+      revenueFilters,
+      selectedCourse ? [selectedCourse] : [],
+    );
 
-      if (dateFrom && Number.isNaN(parsedFrom?.getTime())) {
-        throw new BadRequestException('dateFrom ط؛ظٹط± طµط§ظ„ط­');
-      }
-      if (dateTo && Number.isNaN(parsedTo?.getTime())) {
-        throw new BadRequestException('dateTo ط؛ظٹط± طµط§ظ„ط­');
-      }
-
-      if (!parsedFrom || !parsedTo) {
-        throw new BadRequestException('ط¹ظ†ط¯ ط§ط³طھط®ط¯ط§ظ… ط§ظ„ظپطھط±ط© ط§ظ„ط²ظ…ظ†ظٹط© ظٹط¬ط¨ ط¥ط±ط³ط§ظ„ dateFrom ظˆ dateTo ظ…ط¹ط§ظ‹');
-      }
-      if (parsedFrom > parsedTo) {
-        throw new BadRequestException('dateFrom ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ظ‚ط¨ظ„ ط£ظˆ ظٹط³ط§ظˆظٹ dateTo');
-      }
-
-      const endInclusive = new Date(parsedTo);
-      endInclusive.setHours(23, 59, 59, 999);
-      dateFilter.createdAt = { gte: parsedFrom, lte: endInclusive };
-    } else if (year && month) {
-      const start = new Date(year, month - 1, 1);
-      const end = new Date(year, month, 1);
-      dateFilter.createdAt = { gte: start, lt: end };
-    } else if (year) {
-      const start = new Date(year, 0, 1);
-      const end = new Date(year + 1, 0, 1);
-      dateFilter.createdAt = { gte: start, lt: end };
-    }
-
-    const courseFilter: Record<string, any> = { status: 'APPROVED' as const };
-    if (collegeId) courseFilter.collegeId = collegeId;
-    else if (universityId) courseFilter.universityId = universityId;
-
-    const subscriptions = await this.prisma.studentSubscription.findMany({
-      where: {
-        ...dateFilter,
-        course: courseFilter,
-      },
-      select: {
-        createdAt: true,
-        finalPrice: true,
-        course: {
-          select: {
-            teacherPercentage: true,
-            universityId: true,
-            collegeId: true,
-            university: { select: { id: true, name: true } },
-            college: {
-              select: {
-                id: true,
-                name: true,
-                universityId: true,
-              },
-            },
-          },
-        },
-      },
+    const round = (value: number) =>
+      Math.round((value + Number.EPSILON) * 100) / 100;
+    const monthFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Damascus',
+      year: 'numeric',
+      month: 'numeric',
     });
-
-    const round = (n: number) => Math.round(n * 100) / 100;
     const periodYearsMap = new Map<
       number,
       Map<
@@ -1697,13 +1661,17 @@ export class AdminsService {
       >
     >();
 
-    for (const sub of subscriptions) {
-      const yearKey = sub.createdAt.getFullYear();
-      const monthKey = sub.createdAt.getMonth() + 1;
-      const price = Number(sub.finalPrice);
-      const teacherPct = Number(sub.course.teacherPercentage ?? 0);
-      const teacherShare = (price * teacherPct) / 100;
-      const platformShare = price - teacherShare;
+    for (const transaction of transactions) {
+      const dateParts = monthFormatter.formatToParts(transaction.purchasedAt);
+      const yearKey = Number(
+        dateParts.find((part) => part.type === 'year')?.value,
+      );
+      const monthKey = Number(
+        dateParts.find((part) => part.type === 'month')?.value,
+      );
+      const price = Number(transaction.finalPrice);
+      const teacherShare = Number(transaction.teacherRevenue);
+      const platformShare = Number(transaction.platformRevenue);
 
       if (!periodYearsMap.has(yearKey)) {
         periodYearsMap.set(yearKey, new Map());
@@ -1741,77 +1709,78 @@ export class AdminsService {
           })),
       }));
 
-    if (collegeId) {
+    if (query.collegeId) {
       let totalRevenue = 0;
       let platformRevenue = 0;
       let teacherRevenue = 0;
 
-      for (const sub of subscriptions) {
-        const price = Number(sub.finalPrice);
-        const teacherPct = Number(sub.course.teacherPercentage ?? 0);
-        const teacherShare = (price * teacherPct) / 100;
-        totalRevenue += price;
-        teacherRevenue += teacherShare;
-        platformRevenue += price - teacherShare;
+      for (const transaction of transactions) {
+        totalRevenue += Number(transaction.finalPrice);
+        teacherRevenue += Number(transaction.teacherRevenue);
+        platformRevenue += Number(transaction.platformRevenue);
       }
 
-      const college = subscriptions[0]?.course?.college ?? null;
-      const university = subscriptions[0]?.course?.university ?? null;
+      const firstTransaction = transactions[0] ?? null;
 
       return {
         filters: {
-          universityId: college?.universityId ?? universityId ?? null,
-          universityName: university?.name ?? null,
-          collegeId,
-          collegeName: college?.name ?? null,
-          year: year ?? null,
-          month: month ?? null,
-          dateFrom: dateFrom ?? null,
-          dateTo: dateTo ?? null,
+          courseId: query.courseId ?? null,
+          universityId:
+            query.universityId ?? firstTransaction?.universityId ?? null,
+          universityName: firstTransaction?.universityName ?? null,
+          collegeId: query.collegeId,
+          collegeName: firstTransaction?.collegeName ?? null,
+          year: query.year ?? null,
+          month: query.month ?? null,
+          dateFrom: query.dateFrom ?? null,
+          dateTo: query.dateTo ?? null,
         },
-        subscribersCount: subscriptions.length,
+        subscribersCount: transactions.length,
         totalRevenue: round(totalRevenue),
         platformRevenue: round(platformRevenue),
         teacherRevenue: round(teacherRevenue),
         years,
+        invoice,
       };
     }
 
-    if (universityId) {
-      const collegeMap = new Map<string, {
-        collegeName: string;
-        subscribersCount: number;
-        totalRevenue: number;
-        platformRevenue: number;
-        teacherRevenue: number;
-      }>();
+    if (query.universityId) {
+      const collegeMap = new Map<
+        string,
+        {
+          collegeName: string;
+          subscribersCount: number;
+          totalRevenue: number;
+          platformRevenue: number;
+          teacherRevenue: number;
+        }
+      >();
 
       let grandTotal = 0;
       let grandPlatform = 0;
       let grandTeacher = 0;
 
-      for (const sub of subscriptions) {
-        const price = Number(sub.finalPrice);
-        const teacherPct = Number(sub.course.teacherPercentage ?? 0);
-        const teacherShare = (price * teacherPct) / 100;
-        const platformShare = price - teacherShare;
+      for (const transaction of transactions) {
+        const price = Number(transaction.finalPrice);
+        const teacherShare = Number(transaction.teacherRevenue);
+        const platformShare = Number(transaction.platformRevenue);
 
         grandTotal += price;
         grandPlatform += platformShare;
         grandTeacher += teacherShare;
 
-        const cId = sub.course.collegeId;
-        if (!cId) continue;
+        const collegeId = transaction.collegeId;
+        if (!collegeId) continue;
 
-        const existing = collegeMap.get(cId);
+        const existing = collegeMap.get(collegeId);
         if (existing) {
           existing.subscribersCount += 1;
           existing.totalRevenue += price;
           existing.platformRevenue += platformShare;
           existing.teacherRevenue += teacherShare;
         } else {
-          collegeMap.set(cId, {
-            collegeName: sub.course.college?.name ?? 'Unknown',
+          collegeMap.set(collegeId, {
+            collegeName: transaction.collegeName ?? 'Unknown',
             subscribersCount: 1,
             totalRevenue: price,
             platformRevenue: platformShare,
@@ -1820,11 +1789,9 @@ export class AdminsService {
         }
       }
 
-      const universityName = subscriptions[0]?.course?.university?.name ?? null;
-
       const colleges = Array.from(collegeMap.entries())
-        .map(([id, data]) => ({
-          collegeId: id,
+        .map(([collegeId, data]) => ({
+          collegeId,
           collegeName: data.collegeName,
           subscribersCount: data.subscribersCount,
           totalRevenue: round(data.totalRevenue),
@@ -1835,59 +1802,63 @@ export class AdminsService {
 
       return {
         filters: {
-          universityId,
-          universityName,
+          courseId: query.courseId ?? null,
+          universityId: query.universityId,
+          universityName: transactions[0]?.universityName ?? null,
           collegeId: null,
-          year: year ?? null,
-          month: month ?? null,
-          dateFrom: dateFrom ?? null,
-          dateTo: dateTo ?? null,
+          year: query.year ?? null,
+          month: query.month ?? null,
+          dateFrom: query.dateFrom ?? null,
+          dateTo: query.dateTo ?? null,
         },
         summary: {
-          subscribersCount: subscriptions.length,
+          subscribersCount: transactions.length,
           totalRevenue: round(grandTotal),
           platformRevenue: round(grandPlatform),
           teacherRevenue: round(grandTeacher),
         },
         years,
         colleges,
+        invoice,
       };
     }
 
-    const universityMap = new Map<string, {
-      universityName: string;
-      subscribersCount: number;
-      totalRevenue: number;
-      platformRevenue: number;
-      teacherRevenue: number;
-    }>();
+    const universityMap = new Map<
+      string,
+      {
+        universityName: string;
+        subscribersCount: number;
+        totalRevenue: number;
+        platformRevenue: number;
+        teacherRevenue: number;
+      }
+    >();
 
     let grandTotal = 0;
     let grandPlatform = 0;
     let grandTeacher = 0;
 
-    for (const sub of subscriptions) {
-      const price = Number(sub.finalPrice);
-      const teacherPct = Number(sub.course.teacherPercentage ?? 0);
-      const teacherShare = (price * teacherPct) / 100;
-      const platformShare = price - teacherShare;
+    for (const transaction of transactions) {
+      const price = Number(transaction.finalPrice);
+      const teacherShare = Number(transaction.teacherRevenue);
+      const platformShare = Number(transaction.platformRevenue);
 
       grandTotal += price;
       grandPlatform += platformShare;
       grandTeacher += teacherShare;
 
-      const uId = sub.course.universityId;
-      if (!uId) continue;
+      const universityId = transaction.universityId;
+      if (!universityId) continue;
 
-      const existing = universityMap.get(uId);
+      const existing = universityMap.get(universityId);
       if (existing) {
         existing.subscribersCount += 1;
         existing.totalRevenue += price;
         existing.platformRevenue += platformShare;
         existing.teacherRevenue += teacherShare;
       } else {
-        universityMap.set(uId, {
-          universityName: sub.course.university?.name ?? 'Unknown',
+        universityMap.set(universityId, {
+          universityName: transaction.universityName ?? 'Unknown',
           subscribersCount: 1,
           totalRevenue: price,
           platformRevenue: platformShare,
@@ -1897,8 +1868,8 @@ export class AdminsService {
     }
 
     const universities = Array.from(universityMap.entries())
-      .map(([id, data]) => ({
-        universityId: id,
+      .map(([universityId, data]) => ({
+        universityId,
         universityName: data.universityName,
         subscribersCount: data.subscribersCount,
         totalRevenue: round(data.totalRevenue),
@@ -1909,21 +1880,23 @@ export class AdminsService {
 
     return {
       filters: {
+        courseId: query.courseId ?? null,
         universityId: null,
         collegeId: null,
-        year: year ?? null,
-        month: month ?? null,
-        dateFrom: dateFrom ?? null,
-        dateTo: dateTo ?? null,
+        year: query.year ?? null,
+        month: query.month ?? null,
+        dateFrom: query.dateFrom ?? null,
+        dateTo: query.dateTo ?? null,
       },
       summary: {
-        subscribersCount: subscriptions.length,
+        subscribersCount: transactions.length,
         totalRevenue: round(grandTotal),
         platformRevenue: round(grandPlatform),
         teacherRevenue: round(grandTeacher),
       },
       years,
       universities,
+      invoice,
     };
   }
 

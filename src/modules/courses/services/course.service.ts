@@ -10,10 +10,16 @@ import * as path from 'path';
 import { InitTusVideoUploadDto } from '../../lectures/dtos/init-tus-video-upload.dto';
 import { CompleteTusVideoUploadDto } from '../../lectures/dtos/complete-tus-video-upload.dto';
 import { RefreshTusVideoUploadDto } from '../../lectures/dtos/refresh-tus-video-upload.dto';
+import { RevenueService } from '@/modules/revenues/services/revenue.service';
+import { RevenuePeriodQueryDto } from '@/modules/revenues/dtos';
 
 @Injectable()
 export class CourseService {
-  constructor(private readonly prisma: PrismaService, private readonly bunny: BunnyService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly bunny: BunnyService,
+    private readonly revenueService: RevenueService,
+  ) {}
 
   async getCourseCategories() {
     const categories = await this.prisma.courseCategory.findMany({
@@ -690,7 +696,7 @@ export class CourseService {
     return { course: payload.course, codes: payload.codes };
   }
 
-  async getAdminCourseRevenue(courseId: string) {
+  async getAdminCourseRevenue(courseId: string, query: RevenuePeriodQueryDto = {}) {
     const course = await this.prisma.course.findUnique({
       where: { id: String(courseId) },
       select: {
@@ -704,14 +710,11 @@ export class CourseService {
     });
     if (!course) throw new NotFoundException('الكورس غير موجود');
 
-    const [subscriptionsAgg, subscriptionsCount, ratingsAgg] = await this.prisma.$transaction([
-      this.prisma.studentSubscription.aggregate({
-        where: { courseId: course.id },
-        _sum: { finalPrice: true },
-      }),
-      this.prisma.studentSubscription.count({
-        where: { courseId: course.id },
-      }),
+    const [invoice, ratingsAgg] = await Promise.all([
+      this.revenueService.buildInvoice(
+        { courseId: course.id, ...query },
+        [{ id: course.id, name: course.name }],
+      ),
       this.prisma.courseRating.aggregate({
         where: { courseId: course.id },
         _avg: { rating: true },
@@ -719,11 +722,11 @@ export class CourseService {
       }),
     ]);
 
-    const grossRevenue = Number(subscriptionsAgg._sum.finalPrice ?? 0);
+    const grossRevenue = invoice.summary.totalRevenues;
     const teacherPercentage = Number(course.teacherPercentage ?? 0);
     const adminPercentage = Math.max(0, 100 - teacherPercentage);
-    const teacherRevenue = (grossRevenue * teacherPercentage) / 100;
-    const adminRevenue = grossRevenue - teacherRevenue;
+    const teacherRevenue = invoice.summary.teacherRevenue;
+    const adminRevenue = invoice.summary.platformRevenue;
     const coursePrice = Number(course.price ?? 0);
 
     return {
@@ -734,7 +737,7 @@ export class CourseService {
         expiresAt: course.expiresAt,
         price: Number(coursePrice.toFixed(2)),
       },
-      subscribersCount: subscriptionsCount,
+      subscribersCount: invoice.summary.totalSubscribers,
       rating: {
         average: Number((Number(ratingsAgg._avg.rating ?? 0)).toFixed(2)),
         ratersCount: ratingsAgg._count._all,
@@ -749,10 +752,15 @@ export class CourseService {
         platformRevenue: Number(adminRevenue.toFixed(2)),
         afterTeacherShareForAdmin: Number(adminRevenue.toFixed(2)),
       },
+      invoice,
     };
   }
 
-  async getCourseStatistics(courseId: string, user: { userId: string | number; type: string }) {
+  async getCourseStatistics(
+    courseId: string,
+    user: { userId: string | number; type: string },
+    query: RevenuePeriodQueryDto = {},
+  ) {
     await this.assertCourseOwnership(user, courseId);
 
     const course = await this.prisma.course.findUnique({
@@ -770,16 +778,11 @@ export class CourseService {
 
     if (!course) throw new NotFoundException('الكورس غير موجود');
 
-    const [subscriptionsAgg, subscriptionsCount, ratingsAgg] = await this.prisma.$transaction([
-      this.prisma.studentSubscription.aggregate({
-        where: { courseId: course.id },
-        _sum: {
-          finalPrice: true,
-        },
-      }),
-      this.prisma.studentSubscription.count({
-        where: { courseId: course.id },
-      }),
+    const [invoice, ratingsAgg] = await Promise.all([
+      this.revenueService.buildInvoice(
+        { courseId: course.id, ...query },
+        [{ id: course.id, name: course.name }],
+      ),
       this.prisma.courseRating.aggregate({
         where: {
           courseId: course.id,
@@ -793,13 +796,15 @@ export class CourseService {
     const discountPercentage = Number(course.courseDiscountPercentage ?? 0);
     const discountedPrice = Math.max(0, basePrice - (basePrice * discountPercentage) / 100);
 
-    const grossRevenue = Number(subscriptionsAgg._sum.finalPrice ?? 0);
+    const grossRevenue = invoice.summary.totalRevenues;
     const teacherPercentage = Number(course.teacherPercentage ?? 0);
     const platformPercentage = Math.max(0, 100 - teacherPercentage);
 
     const requesterType = user?.type;
     const myPercentage = requesterType === 'TEACHER' ? teacherPercentage : platformPercentage;
-    const netRevenue = (grossRevenue * myPercentage) / 100;
+    const netRevenue = requesterType === 'TEACHER'
+      ? invoice.summary.teacherRevenue
+      : invoice.summary.platformRevenue;
 
     return {
       course: {
@@ -815,7 +820,7 @@ export class CourseService {
         hasDiscount: discountPercentage > 0,
       },
       subscriptions: {
-        count: subscriptionsCount,
+        count: invoice.summary.totalSubscribers,
       },
       rating: {
         outOf: 5,
@@ -834,6 +839,7 @@ export class CourseService {
       context: {
         role: requesterType,
       },
+      invoice,
     };
   }
 

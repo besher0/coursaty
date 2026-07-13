@@ -146,32 +146,53 @@ describe('FinancialsService subscription expiry', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       studentSubscription: { upsert: jest.fn().mockResolvedValue({ id: 'subscription-1' }) },
+      revenueTransaction: { create: jest.fn().mockResolvedValue({ id: 'revenue-1' }) },
     };
     const prisma = {
       user: { findUnique: jest.fn().mockResolvedValue({ userableId: 'student-1' }) },
-      student: { findUnique: jest.fn().mockResolvedValue({ id: 'student-1', universityNumber: null }) },
+      student: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'student-1',
+          name: 'Student One',
+          universityNumber: null,
+        }),
+      },
       code: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'code-1',
           codeGroupId: 'group-1',
           status: 'ACTIVE',
           createdAt: new Date(),
-          validForDays: 60,
+          validForDays: 10,
           validUntil: null,
           allowedUniversityNumber: null,
           usageLimit: null,
           usageCount: 0,
         }),
       },
-      codeGroup: { findUnique: jest.fn().mockResolvedValue({ courseId: 'course-1', discountPercentage: 0 }) },
+      codeGroup: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'group-1',
+          courseId: 'course-1',
+          discountPercentage: 0,
+        }),
+      },
       studentSubscription: { findUnique: jest.fn().mockResolvedValue({ expiresAt: existingExpiry }) },
       course: {
         findUnique: jest.fn().mockResolvedValue({
+          id: 'course-1',
+          name: 'Course One',
+          teacherId: 'teacher-1',
+          universityId: 'university-1',
+          collegeId: 'college-1',
           price: 50,
           courseDiscountPercentage: 0,
+          teacherPercentage: 40,
           expiresAt: null,
           status: 'APPROVED',
-          teacher: { isVisibleToStudents: true },
+          teacher: { id: 'teacher-1', name: 'Teacher One', isVisibleToStudents: true },
+          university: { id: 'university-1', name: 'University One' },
+          college: { id: 'college-1', name: 'College One' },
         }),
       },
       $transaction: jest.fn((callback) => callback(tx)),
@@ -191,5 +212,191 @@ describe('FinancialsService subscription expiry', () => {
         }),
       }),
     );
+
+    expect(tx.revenueTransaction.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: 'RENEWAL',
+        studentId: 'student-1',
+        studentName: 'Student One',
+        courseId: 'course-1',
+        courseName: 'Course One',
+        teacherId: 'teacher-1',
+        teacherName: 'Teacher One',
+        universityId: 'university-1',
+        universityName: 'University One',
+        collegeId: 'college-1',
+        collegeName: 'College One',
+        codeId: 'code-1',
+        codeGroupId: 'group-1',
+        currency: 'SYP',
+        coursePrice: 50,
+        courseDiscountPercentage: 0,
+        courseDiscountAmount: 0,
+        codeDiscountPercentage: 0,
+        codeDiscountAmount: 0,
+        finalPrice: 50,
+        teacherPercentage: 40,
+        teacherRevenue: 20,
+        platformRevenue: 30,
+      }),
+    });
+  });
+
+  it('records sequential discounts and revenue shares for an initial activation', async () => {
+    const tx = {
+      code: {
+        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      studentSubscription: { upsert: jest.fn().mockResolvedValue({ id: 'subscription-1' }) },
+      revenueTransaction: { create: jest.fn().mockResolvedValue({ id: 'revenue-1' }) },
+    };
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue({ userableId: 'student-1' }) },
+      student: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'student-1',
+          name: 'Student One',
+          universityNumber: null,
+        }),
+      },
+      code: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'code-1',
+          codeGroupId: 'group-1',
+          status: 'ACTIVE',
+          createdAt: new Date(),
+          validForDays: 60,
+          validUntil: null,
+          allowedUniversityNumber: null,
+          usageLimit: null,
+          usageCount: 0,
+        }),
+      },
+      codeGroup: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'group-1',
+          courseId: 'course-1',
+          discountPercentage: 20,
+        }),
+      },
+      studentSubscription: { findUnique: jest.fn().mockResolvedValue(null) },
+      course: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'course-1',
+          name: 'Course One',
+          teacherId: 'teacher-1',
+          universityId: null,
+          collegeId: null,
+          price: 100,
+          courseDiscountPercentage: 10,
+          teacherPercentage: 25,
+          expiresAt: null,
+          status: 'APPROVED',
+          teacher: { id: 'teacher-1', name: 'Teacher One', isVisibleToStudents: true },
+          university: null,
+          college: null,
+        }),
+      },
+      $transaction: jest.fn((callback) => callback(tx)),
+    };
+    const service = createService(prisma);
+
+    await service.subscribeWithCodeValue(
+      { userId: 'user-1', type: 'STUDENT' },
+      'abc12345',
+    );
+
+    expect(tx.revenueTransaction.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: 'INITIAL',
+        universityId: null,
+        universityName: null,
+        collegeId: null,
+        collegeName: null,
+        coursePrice: 100,
+        courseDiscountPercentage: 10,
+        courseDiscountAmount: 10,
+        codeDiscountPercentage: 20,
+        codeDiscountAmount: 18,
+        finalPrice: 72,
+        teacherPercentage: 25,
+        teacherRevenue: 18,
+        platformRevenue: 54,
+      }),
+    });
+  });
+
+  it('propagates a ledger failure from the same transaction as code consumption and upsert', async () => {
+    const ledgerError = new Error('ledger write failed');
+    const tx = {
+      code: {
+        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      studentSubscription: { upsert: jest.fn().mockResolvedValue({ id: 'subscription-1' }) },
+      revenueTransaction: { create: jest.fn().mockRejectedValue(ledgerError) },
+    };
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue({ userableId: 'student-1' }) },
+      student: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'student-1',
+          name: 'Student One',
+          universityNumber: null,
+        }),
+      },
+      code: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'code-1',
+          codeGroupId: 'group-1',
+          status: 'ACTIVE',
+          createdAt: new Date(),
+          validForDays: 60,
+          validUntil: null,
+          allowedUniversityNumber: null,
+          usageLimit: null,
+          usageCount: 0,
+        }),
+      },
+      codeGroup: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'group-1',
+          courseId: 'course-1',
+          discountPercentage: 0,
+        }),
+      },
+      studentSubscription: { findUnique: jest.fn().mockResolvedValue(null) },
+      course: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'course-1',
+          name: 'Course One',
+          teacherId: 'teacher-1',
+          universityId: null,
+          collegeId: null,
+          price: 50,
+          courseDiscountPercentage: 0,
+          teacherPercentage: 40,
+          expiresAt: null,
+          status: 'APPROVED',
+          teacher: { id: 'teacher-1', name: 'Teacher One', isVisibleToStudents: true },
+          university: null,
+          college: null,
+        }),
+      },
+      $transaction: jest.fn((callback) => callback(tx)),
+    };
+    const service = createService(prisma);
+
+    await expect(
+      service.subscribeWithCodeValue(
+        { userId: 'user-1', type: 'STUDENT' },
+        'abc12345',
+      ),
+    ).rejects.toBe(ledgerError);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.studentSubscription.upsert).toHaveBeenCalledTimes(1);
+    expect(tx.revenueTransaction.create).toHaveBeenCalledTimes(1);
   });
 });

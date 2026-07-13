@@ -43,6 +43,12 @@ enum CourseStatus {
   REJECTED
 }
 
+enum RevenueTransactionType {
+  INITIAL
+  RENEWAL
+  BACKFILL
+}
+
 model User {
   id           String   @id @default(uuid())
   phone        String   @unique
@@ -620,6 +626,42 @@ model StudentSubscription {
   @@index([courseId])
   @@index([createdAt])
 }
+
+model RevenueTransaction {
+  id                       String                 @id @default(uuid())
+  type                     RevenueTransactionType
+  studentId                String
+  studentName              String
+  courseId                 String
+  courseName               String
+  teacherId                String
+  teacherName              String
+  universityId             String?
+  universityName           String?
+  collegeId                String?
+  collegeName              String?
+  codeId                   String?
+  codeGroupId              String?
+  purchasedAt              DateTime               @default(now())
+  currency                 String                 @default("SYP")
+  coursePrice              Decimal                @db.Decimal(10, 2)
+  courseDiscountPercentage Decimal                @db.Decimal(5, 2)
+  courseDiscountAmount     Decimal                @db.Decimal(10, 2)
+  codeDiscountPercentage   Decimal                @db.Decimal(5, 2)
+  codeDiscountAmount       Decimal                @db.Decimal(10, 2)
+  finalPrice               Decimal                @db.Decimal(10, 2)
+  teacherPercentage        Decimal                @db.Decimal(5, 2)
+  teacherRevenue           Decimal                @db.Decimal(10, 2)
+  platformRevenue          Decimal                @db.Decimal(10, 2)
+
+  @@index([purchasedAt])
+  @@index([studentId, purchasedAt])
+  @@index([courseId, purchasedAt])
+  @@index([teacherId, purchasedAt])
+  @@index([universityId, purchasedAt])
+  @@index([collegeId, purchasedAt])
+}
+
 model PointOfSale {
   id           String   @id @default(uuid())
   provinceId  String

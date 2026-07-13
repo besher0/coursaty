@@ -1,5 +1,15 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiExtraModels,
+  ApiOkResponse,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CourseService } from '../services/course.service';
 import { CreateCourseDto } from '../dtos/create-course.dto';
@@ -16,9 +26,14 @@ import { CompleteTusVideoUploadDto } from '../../lectures/dtos/complete-tus-vide
 import { RefreshTusVideoUploadDto } from '../../lectures/dtos/refresh-tus-video-upload.dto';
 import { BUNNY_STREAM_RESOLUTIONS } from '@/shared/bunny/bunny-resolution.constants';
 import { OptionalJwtAuthGuard } from '@/modules/auth/guards/optional-jwt-auth.guard';
+import {
+  RevenueInvoiceDto,
+  RevenuePeriodQueryDto,
+} from '../../revenues/dtos';
 
 @ApiTags('courses')
 @ApiBearerAuth()
+@ApiExtraModels(RevenueInvoiceDto)
 @Controller('courses')
 export class CourseController {
   constructor(private readonly courseService: CourseService) {}
@@ -116,18 +131,41 @@ export class CourseController {
 
   @Get(':id/admin-details/revenue')
   @ApiOperation({ summary: 'Get admin course revenues section only' })
+  @ApiOkResponse({
+    description: 'Legacy course revenue fields with the analytical invoice',
+    schema: {
+      type: 'object',
+      properties: { invoice: { $ref: getSchemaPath(RevenueInvoiceDto) } },
+      additionalProperties: true,
+    },
+  })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  async getAdminCourseRevenue(@Param('id', ParseUUIDPipe) id: string) {
-    return this.courseService.getAdminCourseRevenue(id);
+  async getAdminCourseRevenue(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: RevenuePeriodQueryDto,
+  ) {
+    return this.courseService.getAdminCourseRevenue(id, query);
   }
 
   @Get(':id/statistics')
   @ApiOperation({ summary: 'Get course statistics for admin or course owner teacher' })
+  @ApiOkResponse({
+    description: 'Legacy course statistics with the analytical invoice',
+    schema: {
+      type: 'object',
+      properties: { invoice: { $ref: getSchemaPath(RevenueInvoiceDto) } },
+      additionalProperties: true,
+    },
+  })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN', 'TEACHER')
-  async getCourseStatistics(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
-    return this.courseService.getCourseStatistics(id, req.user);
+  async getCourseStatistics(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Req() req: any,
+    @Query() query: RevenuePeriodQueryDto,
+  ) {
+    return this.courseService.getCourseStatistics(id, req.user, query);
   }
 
   @Get()

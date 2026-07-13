@@ -497,8 +497,10 @@ export class FinancialsService {
       where: { id: courseId },
       include: {
         teacher: {
-          select: { isVisibleToStudents: true },
+          select: { id: true, name: true, isVisibleToStudents: true },
         },
+        university: { select: { id: true, name: true } },
+        college: { select: { id: true, name: true } },
       },
     });
     if (!course) throw new NotFoundException('الكورس غير موجود');
@@ -521,6 +523,9 @@ export class FinancialsService {
     const codeDiscountPct = Number(group.discountPercentage);
     const codeDiscountAmount = Number(((priceAfterCourseDiscount * codeDiscountPct) / 100).toFixed(2));
     const finalPrice = Number((priceAfterCourseDiscount - codeDiscountAmount).toFixed(2));
+    const teacherPercentage = Number(course.teacherPercentage ?? 0);
+    const teacherRevenue = Number(((finalPrice * teacherPercentage) / 100).toFixed(2));
+    const platformRevenue = Number((finalPrice - teacherRevenue).toFixed(2));
 
     const newSubscriptionExpiry = this.getSubscriptionExpiryFromCode(
       now,
@@ -586,7 +591,7 @@ export class FinancialsService {
         });
       }
 
-      return tx.studentSubscription.upsert({
+      const updatedSubscription = await tx.studentSubscription.upsert({
         where: { studentId_courseId: { studentId, courseId } },
         create: {
           studentId,
@@ -598,6 +603,37 @@ export class FinancialsService {
           createdAt: now,
         },
       });
+
+      await tx.revenueTransaction.create({
+        data: {
+          type: existing ? 'RENEWAL' : 'INITIAL',
+          studentId,
+          studentName: student.name,
+          courseId,
+          courseName: course.name,
+          teacherId: course.teacherId,
+          teacherName: course.teacher.name,
+          universityId: course.universityId,
+          universityName: course.university?.name ?? null,
+          collegeId: course.collegeId,
+          collegeName: course.college?.name ?? null,
+          codeId: code.id,
+          codeGroupId: group.id,
+          purchasedAt: now,
+          currency: 'SYP',
+          coursePrice: basePrice as any,
+          courseDiscountPercentage: courseDiscountPct as any,
+          courseDiscountAmount: courseDiscountAmount as any,
+          codeDiscountPercentage: codeDiscountPct as any,
+          codeDiscountAmount: codeDiscountAmount as any,
+          finalPrice: finalPrice as any,
+          teacherPercentage: teacherPercentage as any,
+          teacherRevenue: teacherRevenue as any,
+          platformRevenue: platformRevenue as any,
+        },
+      });
+
+      return updatedSubscription;
     });
 
     return subscription;

@@ -1,5 +1,14 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards, Req } from '@nestjs/common';
-import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiExtraModels,
+  ApiOkResponse,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { AdminsService } from '../services/admins.service';
 import { AdminDashboardService } from '../services/admin-dashboard.service';
 import { CreateAdminDto } from '../dtos/create-admin.dto';
@@ -13,8 +22,13 @@ import { ResetStudentPasswordDto } from '../dtos/reset-student-password.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/modules/auth/guards/roles.guard';
 import { Roles } from '@/modules/auth/roles.decorator';
+import {
+  AdminRevenueQueryDto,
+  RevenueInvoiceDto,
+} from '../../revenues/dtos';
 
 @ApiTags('admins')
+@ApiExtraModels(RevenueInvoiceDto)
 @Controller('admins')
 export class AdminsController {
   constructor(
@@ -508,30 +522,19 @@ export class AdminsController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Get revenue statistics with university/college/year/month filters' })
-  @ApiQuery({ name: 'universityId', required: false, description: 'Filter by university (UUID)' })
-  @ApiQuery({ name: 'collegeId', required: false, description: 'Filter by college (UUID)' })
-  @ApiQuery({ name: 'year', required: false, description: 'Filter by year (e.g. 2026)' })
-  @ApiQuery({ name: 'month', required: false, description: 'Filter by month (1-12)' })
-  @ApiQuery({ name: 'dateFrom', required: false, description: 'Filter start date (YYYY-MM-DD)' })
-  @ApiQuery({ name: 'dateTo', required: false, description: 'Filter end date (YYYY-MM-DD)' })
-  @ApiOkResponse({ description: 'Revenue statistics' })
-  async getRevenue(
-    @Query('universityId') universityId?: string,
-    @Query('collegeId') collegeId?: string,
-    @Query('year') year?: string,
-    @Query('month') month?: string,
-    @Query('dateFrom') dateFrom?: string,
-    @Query('dateTo') dateTo?: string,
-  ) {
-    return this.admins.getRevenue(
-      universityId,
-      collegeId,
-      year ? Number(year) : undefined,
-      month ? Number(month) : undefined,
-      dateFrom,
-      dateTo,
-    );
+  @ApiOperation({
+    summary: 'Get revenue statistics with course, university, college, or period filters',
+  })
+  @ApiOkResponse({
+    description: 'Legacy admin revenue fields with the analytical invoice',
+    schema: {
+      type: 'object',
+      properties: { invoice: { $ref: getSchemaPath(RevenueInvoiceDto) } },
+      additionalProperties: true,
+    },
+  })
+  async getRevenue(@Query() query: AdminRevenueQueryDto) {
+    return this.admins.getRevenue(query);
   }
 
   @Get('users-directory')

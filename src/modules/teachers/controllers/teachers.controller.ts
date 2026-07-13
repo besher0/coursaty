@@ -2,11 +2,13 @@ import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Query, Req, 
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiExtraModels,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
   ApiQuery,
   ApiTags,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { TeachersService } from '../services/teachers.service';
 import { CreateTeacherDto } from '../dtos/create-teacher.dto';
@@ -17,8 +19,13 @@ import { TeacherSummaryDto } from '../dtos/teacher-summary.dto';
 import { TeacherSubjectPermissionsDto } from '../dtos/teacher-subject-permissions.dto';
 import { TeacherAffiliationDto } from '../dtos/teacher-affiliation.dto';
 import { RecordTeacherWithdrawalDto } from '../dtos/record-teacher-withdrawal.dto';
+import {
+  RevenueInvoiceDto,
+  RevenuePeriodQueryDto,
+} from '../../revenues/dtos';
 
 @ApiTags('teachers')
+@ApiExtraModels(RevenueInvoiceDto)
 @Controller('teachers')
 export class TeachersController {
   constructor(private readonly teachers: TeachersService) {}
@@ -182,10 +189,18 @@ export class TeachersController {
   @Get('me/revenue')
   @ApiOperation({ summary: 'Get teacher revenues for all courses (teacher only)' })
   @ApiBearerAuth()
+  @ApiOkResponse({
+    description: 'Legacy teacher revenue fields with the analytical invoice',
+    schema: {
+      type: 'object',
+      properties: { invoice: { $ref: getSchemaPath(RevenueInvoiceDto) } },
+      additionalProperties: true,
+    },
+  })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER')
-  getMyRevenue(@Req() req: any) {
-    return this.teachers.getMyCoursesRevenue(req.user);
+  getMyRevenue(@Req() req: any, @Query() query: RevenuePeriodQueryDto) {
+    return this.teachers.getMyCoursesRevenue(req.user, query);
   }
 
   @Get('me/withdrawals')
@@ -209,19 +224,36 @@ export class TeachersController {
   @Get(':id/revenue')
   @ApiOperation({ summary: 'Get teacher revenues for all courses (admin only)' })
   @ApiBearerAuth()
+  @ApiOkResponse({
+    description: 'Legacy teacher revenue fields with the analytical invoice',
+    schema: {
+      type: 'object',
+      properties: { invoice: { $ref: getSchemaPath(RevenueInvoiceDto) } },
+      additionalProperties: true,
+    },
+  })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  getTeacherRevenue(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
-    return this.teachers.getTeacherCoursesRevenue(id);
+  getTeacherRevenue(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Query() query: RevenuePeriodQueryDto,
+  ) {
+    return this.teachers.getTeacherCoursesRevenue(id, query);
   }
 
   @Get(':id/revenue-by-period')
-  @ApiOperation({ summary: 'Get teacher revenue grouped by year and month (admin only)' })
+  @ApiOperation({
+    summary: 'Get teacher revenue grouped by year and month (legacy, admin only)',
+    deprecated: true,
+  })
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  getTeacherRevenueByPeriod(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
-    return this.teachers.getTeacherRevenueByPeriod(id);
+  getTeacherRevenueByPeriod(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Query() query: RevenuePeriodQueryDto,
+  ) {
+    return this.teachers.getTeacherRevenueByPeriod(id, query);
   }
 
   @Get(':id/withdrawals')
