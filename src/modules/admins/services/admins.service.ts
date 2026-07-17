@@ -195,14 +195,19 @@ export class AdminsService {
     return this.usersService.updateUserStatus(userId, status);
   }
 
-  async updateUserPassword(userId: string, password: string) {
+  async updateUserPassword(userNumber: string, password: string) {
+    const normalizedUserNumber = userNumber?.trim();
+    if (!normalizedUserNumber) {
+      throw new BadRequestException('User number is required');
+    }
+
     const resolvedPassword = password?.trim();
     if (!resolvedPassword || resolvedPassword.length < 8) {
       throw new BadRequestException('Password must be at least 8 characters');
     }
 
     const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+      where: { phone: normalizedUserNumber },
       select: {
         id: true,
       },

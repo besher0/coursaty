@@ -572,16 +572,16 @@ export class AdminsController {
     return this.admins.updateUserStatus(userId, 'deleted');
   }
 
-  @Patch('users/:userId/password')
+  @Patch('users/:userNumber/password')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'Update any user password by user id (admin only)' })
+  @ApiOperation({ summary: 'Update any user password by user number/phone (admin only)' })
   @ApiOkResponse({ description: 'User password updated' })
   async updateUserPassword(
-    @Param('userId', new ParseUUIDPipe({ version: '4' })) userId: string,
+    @Param('userNumber') userNumber: string,
     @Body() dto: UpdateUserPasswordDto,
   ) {
-    return this.admins.updateUserPassword(userId, dto.password);
+    return this.admins.updateUserPassword(userNumber, dto.password);
   }
 }
