@@ -1,7 +1,7 @@
 -- Align Advertisement table with Prisma model target scopes.
 ALTER TABLE "Advertisement"
-ADD COLUMN IF NOT EXISTS "universityId" TEXT,
-ADD COLUMN IF NOT EXISTS "departmentId" TEXT;
+ADD COLUMN IF NOT EXISTS "universityId" BIGINT,
+ADD COLUMN IF NOT EXISTS "departmentId" BIGINT;
 
 -- Allow global and university-level ads without a required college.
 ALTER TABLE "Advertisement"

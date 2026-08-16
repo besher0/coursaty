@@ -1,10 +1,10 @@
 -- Create table to persist guest browsing preferences by device id.
 CREATE TABLE IF NOT EXISTS "GuestPreference" (
   "id" TEXT NOT NULL,
-  "deviceId" TEXT NOT NULL,
-  "universityId" TEXT NOT NULL,
-  "collegeId" TEXT NOT NULL,
-  "departmentId" TEXT,
+  "deviceId" BIGINT NOT NULL,
+  "universityId" BIGINT NOT NULL,
+  "collegeId" BIGINT NOT NULL,
+  "departmentId" BIGINT,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL,
   CONSTRAINT "GuestPreference_pkey" PRIMARY KEY ("id")

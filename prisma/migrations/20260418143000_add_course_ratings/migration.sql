@@ -1,8 +1,8 @@
 -- Add table for direct course ratings by subscribed students.
 CREATE TABLE IF NOT EXISTS "CourseRating" (
   "id" TEXT NOT NULL,
-  "courseId" TEXT NOT NULL,
-  "studentId" TEXT NOT NULL,
+  "courseId" BIGINT NOT NULL,
+  "studentId" BIGINT NOT NULL,
   "rating" INTEGER NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL,

@@ -1,6 +1,6 @@
 -- Add optional university targeting to notifications
 ALTER TABLE "Notification"
-ADD COLUMN IF NOT EXISTS "universityId" TEXT;
+ADD COLUMN IF NOT EXISTS "universityId" BIGINT;
 
 ALTER TABLE "Notification"
 ALTER COLUMN "collegeId" DROP NOT NULL;
@@ -24,7 +24,7 @@ END $$;
 
 -- Add optional guest selected year
 ALTER TABLE "GuestPreference"
-ADD COLUMN IF NOT EXISTS "collegeYearId" TEXT;
+ADD COLUMN IF NOT EXISTS "collegeYearId" BIGINT;
 
 CREATE INDEX IF NOT EXISTS "GuestPreference_collegeYearId_idx"
 ON "GuestPreference"("collegeYearId");
