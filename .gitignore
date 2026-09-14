@@ -12,3 +12,4 @@ pnpm-debug.log*
 .vscode
 coverage
 .prisma
+.env

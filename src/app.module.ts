@@ -33,7 +33,7 @@ import { ProvincesModule } from './modules/provinces/provinces.module';
     CacheModule.registerAsync({
       isGlobal: true,
       useFactory: async () => ({
-        store: await redisStore({ url: 'redis://localhost:6379' }),
+        store: await redisStore({ url: process.env.REDIS_URL || 'redis://localhost:6379' }),
         ttl: 60,
       }),
     }),
