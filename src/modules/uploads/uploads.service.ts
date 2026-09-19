@@ -9,6 +9,23 @@ import { RefreshUploadVideoTusDto } from './dtos/refresh-upload-video-tus.dto';
 
 @Injectable()
 export class UploadsService {
+  /** Allowed payment-proof formats with their magic byte signatures. */
+  private static readonly RECEIPT_ALLOWED_TYPES = [
+    { mime: 'image/jpeg', extension: '.jpg', signature: [0xff, 0xd8, 0xff] },
+    { mime: 'image/png', extension: '.png', signature: [0x89, 0x50, 0x4e, 0x47] },
+    {
+      mime: 'image/webp',
+      extension: '.webp',
+      // RIFF....WEBP
+      signature: [0x52, 0x49, 0x46, 0x46],
+      signatureOffsetMatch: { offset: 8, bytes: [0x57, 0x45, 0x42, 0x50] },
+    },
+    { mime: 'application/pdf', extension: '.pdf', signature: [0x25, 0x50, 0x44, 0x46] },
+  ] as const;
+
+  /** 5 MB — consistent with typical payment-proof image/PDF sizes. */
+  private static readonly RECEIPT_MAX_SIZE_BYTES = 5 * 1024 * 1024;
+
   constructor(
     private readonly bunny: BunnyService,
     private readonly prisma: PrismaService,
@@ -24,6 +41,66 @@ export class UploadsService {
       fileName,
       fileUrl: url,
     };
+  }
+
+  /**
+   * Secure payment-proof upload: validates MIME/extension against the actual
+   * file bytes (magic numbers) and the size limit BEFORE uploading. The
+   * returned URL is the only accepted value when creating a subscription
+   * request. Uploading alone never grants any course access.
+   */
+  async uploadSubscriptionReceipt(file: any) {
+    if (!file?.buffer || !Buffer.isBuffer(file.buffer) || !file.buffer.length) {
+      throw new BadRequestException('ملف إثبات الدفع مطلوب');
+    }
+
+    const detected = this.detectReceiptType(file.buffer);
+    if (!detected) {
+      throw new BadRequestException(
+        'صيغة إثبات الدفع غير مدعومة. الصيغ المسموحة: JPG أو PNG أو WebP أو PDF',
+      );
+    }
+
+    if (file.buffer.length > UploadsService.RECEIPT_MAX_SIZE_BYTES) {
+      throw new BadRequestException(
+        `حجم ملف إثبات الدفع يتجاوز الحد المسموح (${UploadsService.RECEIPT_MAX_SIZE_BYTES / (1024 * 1024)} ميغابايت)`,
+      );
+    }
+
+    // Keep the storage extension aligned with the DETECTED type, never the
+    // client-provided file name.
+    const fileName = `${randomUUID()}${detected.extension}`;
+    const storagePath = `uploads/subscription-receipts/${fileName}`;
+    const url = await this.bunny.uploadImage(storagePath, file);
+
+    return {
+      fileName,
+      fileUrl: url,
+      storagePath,
+      mimeType: detected.mime,
+      sizeBytes: file.buffer.length,
+    };
+  }
+
+  private detectReceiptType(buffer: Buffer) {
+    for (const type of UploadsService.RECEIPT_ALLOWED_TYPES) {
+      const signature = type.signature as readonly number[];
+      if (buffer.length < signature.length) continue;
+      const headMatches = signature.every((byte, index) => buffer[index] === byte);
+      if (!headMatches) continue;
+
+      if ('signatureOffsetMatch' in type && type.signatureOffsetMatch) {
+        const { offset, bytes } = type.signatureOffsetMatch;
+        if (buffer.length < offset + bytes.length) continue;
+        const tailMatches = (bytes as readonly number[]).every(
+          (byte, index) => buffer[offset + index] === byte,
+        );
+        if (!tailMatches) continue;
+      }
+
+      return { mime: type.mime, extension: type.extension };
+    }
+    return null;
   }
 
   async uploadVideo(file: any, options?: { title?: string; preferredResolution?: string }) {

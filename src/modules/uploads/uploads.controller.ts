@@ -50,6 +50,27 @@ export class UploadsController {
     return this.uploads.uploadFile(file);
   }
 
+  @Post('subscription-receipts')
+  @ApiOperation({
+    summary:
+      'Upload subscription payment proof (JPG/PNG/WebP/PDF, max 5MB). Returns the URL required by the subscription request endpoint. Upload alone never grants access.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('STUDENT', 'ADMIN')
+  uploadSubscriptionReceipt(@UploadedFile() file: any) {
+    return this.uploads.uploadSubscriptionReceipt(file);
+  }
+
   @Post('videos')
   @ApiOperation({ summary: 'Upload video to Bunny Stream' })
   @ApiConsumes('multipart/form-data')

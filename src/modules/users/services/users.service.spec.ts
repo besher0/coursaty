@@ -28,7 +28,10 @@ describe('UsersService soft delete', () => {
     };
 
     return {
-      service: new UsersService(prisma as any),
+      service: new UsersService(prisma as any, {
+        getActiveEnrollment: jest.fn().mockResolvedValue(null),
+        changeAcademicProfile: jest.fn().mockResolvedValue({}),
+      } as any),
       tx,
     };
   }

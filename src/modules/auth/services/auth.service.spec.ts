@@ -30,6 +30,10 @@ describe('AuthService complete registration', () => {
     const admins = {
       create: jest.fn().mockResolvedValue({ id: 'admin-1', name: 'Admin' }),
     };
+    const enrollments = {
+      createInitialEnrollment: jest.fn().mockResolvedValue({ id: 'enrollment-1' }),
+      changeAcademicProfile: jest.fn().mockResolvedValue({ id: 'enrollment-1' }),
+    };
 
     return {
       service: new AuthService(
@@ -38,6 +42,7 @@ describe('AuthService complete registration', () => {
         students as any,
         teachers as any,
         admins as any,
+        enrollments as any,
       ),
       prisma,
       tx,

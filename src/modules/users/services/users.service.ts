@@ -5,12 +5,16 @@ import { UpdateProfileDto } from '../dtos/update-profile.dto';
 import { UpdateUserProfileDto } from '../dtos/update-user-profile.dto';
 import { UpdateStudentProfileDto } from '../dtos/update-student-profile.dto';
 import { ChangePasswordDto } from '../dtos/change-password.dto';
+import { EnrollmentsService } from '@/modules/students/services/enrollments.service';
 import * as bcrypt from 'bcryptjs';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly enrollments: EnrollmentsService,
+  ) {}
 
   async updateFcmToken(id: string, fcmToken: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
@@ -138,6 +142,23 @@ export class UsersService {
           college: true,
           university: true,
           province: true,
+          // Current academic profile lives on the active enrollment.
+          enrollments: {
+            where: { isActive: true },
+            take: 1,
+            include: {
+              university: { select: { id: true, name: true } },
+              college: { select: { id: true, name: true } },
+              department: { select: { id: true, name: true } },
+              collegeYear: {
+                include: {
+                  academicYear: {
+                    select: { id: true, yearName: true, yearNumber: true },
+                  },
+                },
+              },
+            },
+          },
         },
       });
     } else if (user.userableType === 'TEACHER') {
@@ -244,24 +265,44 @@ export class UsersService {
       throw new ForbiddenException('المستخدم ليس طالبا');
     }
 
-    const updateData: any = {};
-    if (dto.name !== undefined) updateData.name = dto.name;
-    if (dto.universityId !== undefined) {
-      const university = await this.prisma.university.findUnique({
-        where: { id: String(dto.universityId) },
+    if (dto.name !== undefined) {
+      await this.prisma.student.update({
+        where: { id: user.userableId },
+        data: { name: dto.name },
       });
-      if (!university) throw new NotFoundException('الجامعة غير موجودة');
-      updateData.universityId = String(dto.universityId);
-      updateData.provinceId = university.provinceId;
     }
-    if (dto.collegeId !== undefined) updateData.collegeId = String(dto.collegeId);
-    if (dto.departmentId !== undefined) updateData.departmentId = String(dto.departmentId);
-    if (dto.collegeYearId !== undefined) updateData.collegeYearId = String(dto.collegeYearId);
 
-    await this.prisma.student.update({
-      where: { id: user.userableId },
-      data: updateData,
-    });
+    // Academic changes go through the active StudentEnrollment: the whole
+    // hierarchy is validated, the previous active enrollment is closed
+    // (endedAt set) and a new one is created inside a single transaction.
+    // Legacy Student academic fields are synchronized by the same transaction.
+    const hasAcademicChange =
+      dto.universityId !== undefined ||
+      dto.collegeId !== undefined ||
+      dto.departmentId !== undefined ||
+      dto.collegeYearId !== undefined;
+
+    if (hasAcademicChange) {
+      const current = await this.enrollments.getActiveEnrollment(user.userableId);
+      if (!current) {
+        throw new NotFoundException('لا يوجد تسجيل أكاديمي فعال لهذا الطالب');
+      }
+
+      // Unprovided fields keep their current active-enrollment values.
+      await this.enrollments.changeAcademicProfile(user.userableId, {
+        universityId: dto.universityId !== undefined ? String(dto.universityId) : current.universityId,
+        collegeId: dto.collegeId !== undefined ? String(dto.collegeId) : current.collegeId,
+        departmentId:
+          dto.departmentId !== undefined
+            ? String(dto.departmentId)
+            : current.departmentId,
+        collegeYearId:
+          dto.collegeYearId !== undefined
+            ? String(dto.collegeYearId)
+            : current.collegeYearId,
+        universityNumber: current.universityNumber,
+      });
+    }
 
     return this.getProfile(userId);
   }
