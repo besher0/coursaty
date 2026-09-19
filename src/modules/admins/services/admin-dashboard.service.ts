@@ -81,11 +81,31 @@ export class AdminDashboardService {
       this.prisma.student.count({
         where: {
           createdAt: { gte: monthStart, lte: monthEnd },
-          ...(universityId ? { universityId } : {}),
+          ...(universityId
+            ? {
+                enrollments: {
+                  some: {
+                    isActive: true,
+                    universityId,
+                  },
+                },
+              }
+            : {}),
         },
       }),
       this.prisma.student.count({
-        ...(universityId ? { where: { universityId } } : {}),
+        ...(universityId
+          ? {
+              where: {
+                enrollments: {
+                  some: {
+                    isActive: true,
+                    universityId,
+                  },
+                },
+              },
+            }
+          : {}),
       }),
       this.prisma.course.count({
         where: {

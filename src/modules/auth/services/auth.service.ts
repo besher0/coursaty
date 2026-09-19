@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
 import { RegisterCompleteDto } from '../dtos/register-complete.dto';
 import { StudentsService } from '@/modules/students/services/students.service';
+import { EnrollmentsService } from '@/modules/students/services/enrollments.service';
 import { TeachersService } from '@/modules/teachers/services/teachers.service';
 import { AdminsService } from '@/modules/admins/services/admins.service';
 
@@ -25,6 +26,7 @@ export class AuthService {
     private readonly studentsService: StudentsService,
     private readonly teachersService: TeachersService,
     private readonly adminsService: AdminsService,
+    private readonly enrollments: EnrollmentsService,
   ) {}
 
   async register(dto: RegisterDto, requester?: { userId: string | number; type: string }) {
@@ -355,15 +357,19 @@ export class AuthService {
       }
     }
 
-    await this.prisma.student.update({
-      where: { id: studentId },
-      data: {
-        universityId: university.id,
-        provinceId: university.provinceId,
-        collegeId: college.id,
-        departmentId,
-        ...(collegeYearId ? { collegeYearId } : {}),
-      },
+    // Apply the guest preference through the active enrollment. The current
+    // universityNumber and collegeYear are preserved from the active
+    // enrollment — Student has no academic columns anymore.
+    const activeEnrollment = await this.enrollments.getActiveEnrollment(studentId);
+
+    await this.enrollments.changeAcademicProfile(studentId, {
+      universityId: university.id,
+      collegeId: college.id,
+      departmentId,
+      collegeYearId: collegeYearId
+        ? collegeYearId
+        : activeEnrollment?.collegeYearId,
+      universityNumber: activeEnrollment?.universityNumber ?? null,
     });
 
     await guestPreferenceRepo.delete({ where: { deviceId } });

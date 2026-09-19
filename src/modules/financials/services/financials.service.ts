@@ -4,6 +4,10 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { UpdateCodeGroupDto } from '../dtos/update-code-group.dto';
 import { UpdateCodeDto } from '../dtos/update-code.dto';
 import { CreateBulkCodesDto } from '../dtos/create-bulk-codes.dto';
+import { CreateSubscriptionRequestDto } from '../dtos/create-subscription-request.dto';
+import { ListSubscriptionRequestsQueryDto } from '../dtos/list-subscription-requests-query.dto';
+import { ReviewSubscriptionRequestDto } from '../dtos/review-subscription-request.dto';
+import { RejectSubscriptionRequestDto } from '../dtos/reject-subscription-request.dto';
 import { randomInt } from 'crypto';
 
 @Injectable()
@@ -134,6 +138,122 @@ export class FinancialsService {
     },
   } satisfies Prisma.StudentSubscriptionInclude;
 
+  private readonly subscriptionRequestInclude = {
+    student: {
+      select: {
+        id: true,
+        name: true,
+        // Academic fields are exposed from the active enrollment.
+        enrollments: {
+          where: { isActive: true },
+          take: 1,
+          select: {
+            universityId: true,
+            collegeId: true,
+            departmentId: true,
+            collegeYearId: true,
+            universityNumber: true,
+            university: { select: { id: true, name: true } },
+            college: { select: { id: true, name: true } },
+            department: { select: { id: true, name: true } },
+            collegeYear: {
+              select: {
+                id: true,
+                academicYear: { select: { id: true, yearName: true, yearNumber: true } },
+              },
+            },
+          },
+        },
+      },
+    },
+    course: {
+      select: {
+        id: true,
+        name: true,
+        imageUrl: true,
+        price: true,
+        courseDiscountPercentage: true,
+        expiresAt: true,
+        status: true,
+        teacher: { select: { id: true, name: true, image: true } },
+      },
+    },
+    reviewedBy: {
+      select: {
+        id: true,
+        name: true,
+      },
+    },
+  } satisfies Prisma.SubscriptionRequestInclude;
+
+  /**
+   * API compatibility: academic fields used to live on Student, so responses
+   * expose them flat on `student`. Now they are mapped from the student's
+   * active enrollment.
+   */
+  private mapSubscriptionRequestStudent<
+    T extends { student: { id: string; name: string; enrollments?: Array<Record<string, any>> } | null },
+  >(request: T) {
+    const student = request.student;
+    if (!student) return request;
+
+    const enrollment = student.enrollments?.[0] ?? null;
+    return {
+      ...request,
+      student: {
+        id: student.id,
+        name: student.name,
+        universityId: enrollment?.universityId ?? null,
+        collegeId: enrollment?.collegeId ?? null,
+        departmentId: enrollment?.departmentId ?? null,
+        collegeYearId: enrollment?.collegeYearId ?? null,
+        universityNumber: enrollment?.universityNumber ?? null,
+        university: enrollment?.university ?? null,
+        college: enrollment?.college ?? null,
+        department: enrollment?.department ?? null,
+        collegeYear: enrollment?.collegeYear ?? null,
+      },
+    };
+  }
+
+  /**
+   * Price snapshot captured when a payment request is created. Approval must
+   * use these stored values — never the course's current price.
+   */
+  private computePriceSnapshot(course: {
+    price: Prisma.Decimal | number | string;
+    courseDiscountPercentage?: Prisma.Decimal | number | string | null;
+  }) {
+    const basePrice = Number(course.price);
+    const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
+    const courseDiscountAmount = Number(((basePrice * courseDiscountPct) / 100).toFixed(2));
+    const finalAmount = Number((basePrice - courseDiscountAmount).toFixed(2));
+
+    return {
+      basePrice,
+      courseDiscountPct,
+      courseDiscountAmount,
+      finalAmount,
+    };
+  }
+
+  /**
+   * Verifies a receipt URL actually points at the secure receipt storage path
+   * created by POST /uploads/subscription-receipts. Arbitrary external URLs
+   * are rejected so students cannot attach unrelated files.
+   */
+  private assertReceiptUrlFromSecureUpload(receiptUrl: string) {
+    let pathname: string;
+    try {
+      pathname = new URL(receiptUrl).pathname;
+    } catch {
+      throw new BadRequestException('رابط إثبات الدفع غير صالح');
+    }
+    if (!pathname.includes('/uploads/subscription-receipts/')) {
+      throw new BadRequestException('يجب رفع إثبات الدفع عبر رفع الفواتير المخصص');
+    }
+  }
+
   private mapSubscribedCourseDetails(
     subscription: Prisma.StudentSubscriptionGetPayload<{ include: { course: true } }>,
   ) {
@@ -165,6 +285,13 @@ export class FinancialsService {
     if (!student) throw new NotFoundException('الطالب غير موجود');
 
     return { studentId: student.id, student };
+  }
+
+  private async getAdminIdFromUser(user?: { userId: string | number; type: string }) {
+    if (!user || user.type !== 'ADMIN') throw new ForbiddenException('صلاحية مدير مطلوبة');
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
+    if (!dbUser || dbUser.userableType !== 'ADMIN') throw new BadRequestException('المدير غير موجود');
+    return dbUser.userableId;
   }
 
   // CodeGroups
@@ -479,8 +606,16 @@ export class FinancialsService {
     }
 
     if (code.allowedUniversityNumber) {
-      if (!student.universityNumber) throw new BadRequestException('الرقم الجامعي للطالب غير محدد');
-      if (code.allowedUniversityNumber !== student.universityNumber) {
+      const studentUniversityNumber = (
+        await this.prisma.studentEnrollment.findFirst({
+          where: { studentId, isActive: true },
+          select: { universityNumber: true },
+        })
+      )?.universityNumber ?? null;
+      if (!studentUniversityNumber) {
+        throw new BadRequestException('الرقم الجامعي للطالب غير محدد');
+      }
+      if (code.allowedUniversityNumber !== studentUniversityNumber) {
         throw new BadRequestException('هذا الكود ليس مخصصا لك');
       }
     }
@@ -650,6 +785,333 @@ export class FinancialsService {
         student: true,
       },
     });
+  }
+
+  async createSubscriptionRequest(
+    user: { userId: string | number; type: string } | undefined,
+    dto: CreateSubscriptionRequestDto,
+  ) {
+    const { studentId } = await this.resolveStudentContext(user);
+    const now = new Date();
+
+    const course = await this.prisma.course.findUnique({
+      where: { id: dto.courseId },
+      include: {
+        teacher: {
+          select: { id: true, name: true, isVisibleToStudents: true },
+        },
+      },
+    });
+    if (!course) throw new NotFoundException('الكورس غير موجود');
+    if (!course.teacher.isVisibleToStudents) throw new NotFoundException('الكورس غير موجود');
+    if (course.status !== 'APPROVED') throw new BadRequestException('الكورس غير معتمد');
+    if (course.expiresAt && course.expiresAt.getTime() <= now.getTime()) {
+      throw new BadRequestException('انتهى الكورس ولا يمكن الاشتراك به');
+    }
+
+    // The receipt must come from the secure receipt-specific upload endpoint.
+    this.assertReceiptUrlFromSecureUpload(dto.receiptUrl);
+
+    const activeSubscription = await this.prisma.studentSubscription.findUnique({
+      where: { studentId_courseId: { studentId, courseId: course.id } },
+      select: { expiresAt: true },
+    });
+    if (
+      activeSubscription &&
+      (!activeSubscription.expiresAt || activeSubscription.expiresAt.getTime() > now.getTime())
+    ) {
+      throw new BadRequestException('أنت مشترك بهذا الكورس بالفعل');
+    }
+
+    const pendingRequest = await this.prisma.subscriptionRequest.findFirst({
+      where: {
+        studentId,
+        courseId: course.id,
+        status: 'PENDING',
+      },
+    });
+    if (pendingRequest) throw new BadRequestException('يوجد طلب اشتراك معلق لهذا الكورس');
+
+    // Snapshot the CURRENT effective price. Approval later uses these stored
+    // values so later price/discount changes cannot rewrite history.
+    const snapshot = this.computePriceSnapshot(course);
+
+    try {
+      const createdRequest = await this.prisma.subscriptionRequest.create({
+        data: {
+          studentId,
+          courseId: course.id,
+          receiptUrl: dto.receiptUrl,
+          receiptFileName: dto.receiptFileName ?? null,
+          receiptMimeType: dto.receiptMimeType ?? null,
+          receiptSizeBytes: dto.receiptSizeBytes ?? null,
+          basePrice: snapshot.basePrice as any,
+          courseDiscountPercentage: snapshot.courseDiscountPct as any,
+          courseDiscountAmount: snapshot.courseDiscountAmount as any,
+          finalAmount: snapshot.finalAmount as any,
+          note: dto.note,
+        },
+        include: this.subscriptionRequestInclude,
+      });
+      return this.mapSubscriptionRequestStudent(createdRequest);
+    } catch (err) {
+      // P2002 on the partial unique index: a concurrent request already created
+      // a PENDING request for the same student+course.
+      if (this.isUniqueConstraintError(err) && String(err.meta?.target ?? '').includes('pending')) {
+        throw new BadRequestException('يوجد طلب اشتراك معلق لهذا الكورس');
+      }
+      throw err;
+    }
+  }
+
+  async listMySubscriptionRequests(
+    user: { userId: string | number; type: string } | undefined,
+    status?: $Enums.SubscriptionRequestStatus,
+  ) {
+    const { studentId } = await this.resolveStudentContext(user);
+
+    const requests = await this.prisma.subscriptionRequest.findMany({
+      where: {
+        studentId,
+        status,
+      },
+      include: this.subscriptionRequestInclude,
+      orderBy: { createdAt: 'desc' },
+    });
+    return requests.map((request) => this.mapSubscriptionRequestStudent(request));
+  }
+
+  async listSubscriptionRequests(query: ListSubscriptionRequestsQueryDto) {
+    const requests = await this.prisma.subscriptionRequest.findMany({
+      where: {
+        status: query.status,
+        studentId: query.studentId,
+        courseId: query.courseId,
+      },
+      include: this.subscriptionRequestInclude,
+      orderBy: { createdAt: 'desc' },
+    });
+    return requests.map((request) => this.mapSubscriptionRequestStudent(request));
+  }
+
+  /**
+   * Single request detail for admins.
+   */
+  async getSubscriptionRequestDetail(id: string) {
+    const request = await this.prisma.subscriptionRequest.findUnique({
+      where: { id },
+      include: this.subscriptionRequestInclude,
+    });
+    if (!request) throw new NotFoundException('طلب الاشتراك غير موجود');
+    return this.mapSubscriptionRequestStudent(request);
+  }
+
+  /**
+   * Single request detail for the owning student. Students can only ever see
+   * their own requests; another student's request id returns Not Found.
+   */
+  async getMySubscriptionRequestDetail(
+    user: { userId: string | number; type: string } | undefined,
+    id: string,
+  ) {
+    const { studentId } = await this.resolveStudentContext(user);
+
+    const request = await this.prisma.subscriptionRequest.findUnique({
+      where: { id },
+      include: this.subscriptionRequestInclude,
+    });
+    if (!request || request.studentId !== studentId) {
+      throw new NotFoundException('طلب الاشتراك غير موجود');
+    }
+    return this.mapSubscriptionRequestStudent(request);
+  }
+
+  async approveSubscriptionRequest(
+    id: string,
+    user: { userId: string | number; type: string } | undefined,
+    dto: ReviewSubscriptionRequestDto,
+  ) {
+    const adminId = await this.getAdminIdFromUser(user);
+    const now = new Date();
+
+    const request = await this.prisma.subscriptionRequest.findUnique({
+      where: { id },
+      include: {
+        student: true,
+        course: {
+          include: {
+            teacher: {
+              select: { id: true, name: true, isVisibleToStudents: true },
+            },
+            university: { select: { id: true, name: true } },
+            college: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+    if (!request) throw new NotFoundException('طلب الاشتراك غير موجود');
+    if (request.status !== 'PENDING') throw new BadRequestException('تمت مراجعة هذا الطلب مسبقا');
+    if (!request.course.teacher.isVisibleToStudents) throw new NotFoundException('الكورس غير موجود');
+    if (request.course.status !== 'APPROVED') throw new BadRequestException('الكورس غير معتمد');
+    if (request.course.expiresAt && request.course.expiresAt.getTime() <= now.getTime()) {
+      throw new BadRequestException('انتهى الكورس ولا يمكن الاشتراك به');
+    }
+
+    const existing = await this.prisma.studentSubscription.findUnique({
+      where: {
+        studentId_courseId: {
+          studentId: request.studentId,
+          courseId: request.courseId,
+        },
+      },
+    });
+
+    // Use the SNAPSHOT captured when the request was created, not the course's
+    // current price (prices/discounts can change between request and review).
+    // Legacy rows created before the snapshot columns existed default to 0;
+    // fall back to the current course price only in that case.
+    const hasSnapshot = Number(request.finalAmount) > 0 || Number(request.basePrice) > 0;
+    const snapshot = hasSnapshot
+      ? {
+          basePrice: Number(request.basePrice),
+          courseDiscountPct: Number(request.courseDiscountPercentage),
+          courseDiscountAmount: Number(request.courseDiscountAmount),
+          finalAmount: Number(request.finalAmount),
+        }
+      : this.computePriceSnapshot(request.course);
+
+    const teacherPercentage = Number(request.course.teacherPercentage ?? 0);
+    const teacherRevenue = Number(((snapshot.finalAmount * teacherPercentage) / 100).toFixed(2));
+    const platformRevenue = Number((snapshot.finalAmount - teacherRevenue).toFixed(2));
+
+    // Expiration snapshot: computed once at approval time from the course's
+    // current end date, then persisted on the subscription. Later course edits
+    // never modify this stored value.
+    const expiresAt = this.getRenewedSubscriptionExpiry(
+      existing?.expiresAt,
+      request.course.expiresAt ?? null,
+      request.course.expiresAt ?? null,
+    );
+
+    return this.prisma.$transaction(async (tx) => {
+      const marked = await tx.subscriptionRequest.updateMany({
+        where: { id, status: 'PENDING' },
+        data: {
+          status: 'APPROVED',
+          adminNote: dto.adminNote,
+          reviewedById: adminId,
+          reviewedAt: now,
+        },
+      });
+      if (marked.count === 0) throw new BadRequestException('تمت مراجعة هذا الطلب مسبقا');
+
+      const subscription = await tx.studentSubscription.upsert({
+        where: {
+          studentId_courseId: {
+            studentId: request.studentId,
+            courseId: request.courseId,
+          },
+        },
+        create: {
+          studentId: request.studentId,
+          courseId: request.courseId,
+          basePrice: snapshot.basePrice as any,
+          courseDiscountAmount: snapshot.courseDiscountAmount as any,
+          codeDiscountAmount: 0 as any,
+          finalPrice: snapshot.finalAmount as any,
+          expiresAt,
+        },
+        update: {
+          basePrice: snapshot.basePrice as any,
+          courseDiscountAmount: snapshot.courseDiscountAmount as any,
+          codeDiscountAmount: 0 as any,
+          finalPrice: snapshot.finalAmount as any,
+          expiresAt,
+          createdAt: now,
+        },
+      });
+
+      await tx.revenueTransaction.create({
+        data: {
+          type: existing ? 'RENEWAL' : 'INITIAL',
+          studentId: request.studentId,
+          studentName: request.student.name,
+          courseId: request.courseId,
+          courseName: request.course.name,
+          teacherId: request.course.teacherId,
+          teacherName: request.course.teacher.name,
+          universityId: request.course.universityId,
+          universityName: request.course.university?.name ?? null,
+          collegeId: request.course.collegeId,
+          collegeName: request.course.college?.name ?? null,
+          codeId: null,
+          codeGroupId: null,
+          purchasedAt: now,
+          currency: 'SYP',
+          coursePrice: snapshot.basePrice as any,
+          courseDiscountPercentage: snapshot.courseDiscountPct as any,
+          courseDiscountAmount: snapshot.courseDiscountAmount as any,
+          codeDiscountPercentage: 0 as any,
+          codeDiscountAmount: 0 as any,
+          finalPrice: snapshot.finalAmount as any,
+          teacherPercentage: teacherPercentage as any,
+          teacherRevenue: teacherRevenue as any,
+          platformRevenue: platformRevenue as any,
+        },
+      });
+
+      const reviewedRequest = await tx.subscriptionRequest.findUnique({
+        where: { id },
+        include: this.subscriptionRequestInclude,
+      });
+
+      return {
+        request: reviewedRequest
+          ? this.mapSubscriptionRequestStudent(reviewedRequest)
+          : null,
+        subscription,
+      };
+    });
+  }
+
+  async rejectSubscriptionRequest(
+    id: string,
+    user: { userId: string | number; type: string } | undefined,
+    dto: RejectSubscriptionRequestDto,
+  ) {
+    const adminId = await this.getAdminIdFromUser(user);
+
+    // Mandatory non-empty reason (also enforced by the DTO, this protects
+    // internal callers).
+    const reason = dto.adminNote?.trim();
+    if (!reason) throw new BadRequestException('سبب الرفض مطلوب');
+
+    const request = await this.prisma.subscriptionRequest.findUnique({ where: { id } });
+    if (!request) throw new NotFoundException('طلب الاشتراك غير موجود');
+    if (request.status !== 'PENDING') throw new BadRequestException('تمت مراجعة هذا الطلب مسبقا');
+
+    // Concurrency-safe atomic claim: only a request still PENDING transitions
+    // to REJECTED. Two admins racing on the same request: exactly one wins.
+    const marked = await this.prisma.subscriptionRequest.updateMany({
+      where: { id, status: 'PENDING' },
+      data: {
+        status: 'REJECTED',
+        adminNote: reason,
+        reviewedById: adminId,
+        reviewedAt: new Date(),
+      },
+    });
+    if (marked.count === 0) {
+      throw new BadRequestException('تمت مراجعة هذا الطلب مسبقا');
+    }
+
+    const rejectedRequest = await this.prisma.subscriptionRequest.findUnique({
+      where: { id },
+      include: this.subscriptionRequestInclude,
+    });
+    return rejectedRequest
+      ? this.mapSubscriptionRequestStudent(rejectedRequest)
+      : null;
   }
 
   private generateRandom(length: number) {

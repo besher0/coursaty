@@ -331,7 +331,12 @@ export class AdminsService {
     const where = {
       ...(query.universityId
         ? {
-            universityId: query.universityId,
+            enrollments: {
+              some: {
+                isActive: true,
+                universityId: query.universityId,
+              },
+            },
           }
         : {}),
       ...(search
@@ -344,9 +349,14 @@ export class AdminsService {
                 },
               },
               {
-                universityNumber: {
-                  contains: search,
-                  mode: 'insensitive' as const,
+                enrollments: {
+                  some: {
+                    isActive: true,
+                    universityNumber: {
+                      contains: search,
+                      mode: 'insensitive' as const,
+                    },
+                  },
                 },
               },
               ...(studentPhoneMatchedIds.length
@@ -369,16 +379,22 @@ export class AdminsService {
       select: {
         id: true,
         name: true,
-        university: {
+        enrollments: {
+          where: { isActive: true },
+          take: 1,
           select: {
-            id: true,
-            name: true,
-          },
-        },
-        department: {
-          select: {
-            id: true,
-            name: true,
+            university: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            department: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
           },
         },
       },
@@ -400,21 +416,26 @@ export class AdminsService {
 
     return {
       type: UsersDirectoryType.STUDENT,
-      items: students.map((student) => ({
-        id: student.id,
-        name: student.name,
-        status: statusByStudentId.get(student.id) ?? null,
-        university: {
-          id: student.university.id,
-          name: student.university.name,
-        },
-        department: student.department
-          ? {
-              id: student.department.id,
-              name: student.department.name,
-            }
-          : null,
-      })),
+      items: students.map((student) => {
+        const enrollment = student.enrollments?.[0] ?? null;
+        return {
+          id: student.id,
+          name: student.name,
+          status: statusByStudentId.get(student.id) ?? null,
+          university: enrollment?.university
+            ? {
+                id: enrollment.university.id,
+                name: enrollment.university.name,
+              }
+            : null,
+          department: enrollment?.department
+            ? {
+                id: enrollment.department.id,
+                name: enrollment.department.name,
+              }
+            : null,
+        };
+      }),
     };
   }
 
@@ -498,9 +519,14 @@ export class AdminsService {
       where: {
         OR: [
           {
-            universityNumber: {
-              contains: searchQuery,
-              mode: 'insensitive',
+            enrollments: {
+              some: {
+                isActive: true,
+                universityNumber: {
+                  contains: searchQuery,
+                  mode: 'insensitive',
+                },
+              },
             },
           },
           {
@@ -514,33 +540,39 @@ export class AdminsService {
       select: {
         id: true,
         name: true,
-        universityNumber: true,
-        university: {
+        enrollments: {
+          where: { isActive: true },
+          take: 1,
           select: {
-            id: true,
-            name: true,
-          },
-        },
-        college: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        department: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        collegeYear: {
-          select: {
-            id: true,
-            academicYear: {
+            universityNumber: true,
+            university: {
               select: {
                 id: true,
-                yearName: true,
-                yearNumber: true,
+                name: true,
+              },
+            },
+            college: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            department: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            collegeYear: {
+              select: {
+                id: true,
+                academicYear: {
+                  select: {
+                    id: true,
+                    yearName: true,
+                    yearNumber: true,
+                  },
+                },
               },
             },
           },
@@ -576,33 +608,39 @@ export class AdminsService {
       select: {
         id: true,
         name: true,
-        universityNumber: true,
-        university: {
+        enrollments: {
+          where: { isActive: true },
+          take: 1,
           select: {
-            id: true,
-            name: true,
-          },
-        },
-        college: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        department: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        collegeYear: {
-          select: {
-            id: true,
-            academicYear: {
+            universityNumber: true,
+            university: {
               select: {
                 id: true,
-                yearName: true,
-                yearNumber: true,
+                name: true,
+              },
+            },
+            college: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            department: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            collegeYear: {
+              select: {
+                id: true,
+                academicYear: {
+                  select: {
+                    id: true,
+                    yearName: true,
+                    yearNumber: true,
+                  },
+                },
               },
             },
           },
@@ -613,7 +651,43 @@ export class AdminsService {
     // Merge results and remove duplicates
     const combined = [...students, ...phoneSearchResults];
     const uniqueMap = new Map(combined.map((s) => [s.id, s]));
-    return Array.from(uniqueMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    return Array.from(uniqueMap.values())
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((student) => this.mapStudentWithActiveEnrollment(student));
+  }
+
+  /**
+   * API compatibility: academic fields used to live on Student. Responses
+   * expose them flat, mapped from the student's active enrollment.
+   */
+  private mapStudentWithActiveEnrollment<
+    T extends {
+      id: string;
+      name: string;
+      enrollments?:
+        | Array<{
+            universityNumber: string | null;
+            university: { id: string; name: string } | null;
+            college: { id: string; name: string } | null;
+            department: { id: string; name: string } | null;
+            collegeYear?: {
+              id: string;
+              academicYear: { id: string; yearName: string; yearNumber: number } | null;
+            } | null;
+          }>
+        | null;
+    },
+  >(student: T) {
+    const enrollment = student.enrollments?.[0] ?? null;
+    return {
+      ...student,
+      enrollments: undefined,
+      universityNumber: enrollment?.universityNumber ?? null,
+      university: enrollment?.university ?? null,
+      college: enrollment?.college ?? null,
+      department: enrollment?.department ?? null,
+      collegeYear: enrollment?.collegeYear ?? null,
+    };
   }
 
   async getSubjectsByCollegeId(collegeId: string) {
@@ -1137,22 +1211,53 @@ export class AdminsService {
   }
 
   async getStudentsByUniversityId(universityId: string) {
-    return this.prisma.student.findMany({
-      where: { universityId },
+    const students = await this.prisma.student.findMany({
+      where: {
+        enrollments: {
+          some: {
+            isActive: true,
+            universityId,
+          },
+        },
+      },
       select: {
         id: true,
         name: true,
-        universityNumber: true,
-        department: {
+        enrollments: {
+          where: { isActive: true },
+          take: 1,
           select: {
-            id: true,
-            name: true,
-          },
-        },
-        college: {
-          select: {
-            id: true,
-            name: true,
+            universityNumber: true,
+            university: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            college: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            department: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            collegeYear: {
+              select: {
+                id: true,
+                academicYear: {
+                  select: {
+                    id: true,
+                    yearName: true,
+                    yearNumber: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -1160,6 +1265,8 @@ export class AdminsService {
         name: 'asc',
       },
     });
+
+    return students.map((student) => this.mapStudentWithActiveEnrollment(student));
   }
 
   async getTeachersByCollegeId(collegeId: string) {
@@ -1461,9 +1568,22 @@ export class AdminsService {
   async getCoursesOfStudent(studentId: string) {
     const student = await this.prisma.student.findUnique({
       where: { id: studentId },
-      select: { id: true, name: true, universityNumber: true, college: { select: { id: true, name: true } } },
+      select: {
+        id: true,
+        name: true,
+        enrollments: {
+          where: { isActive: true },
+          take: 1,
+          select: {
+            universityNumber: true,
+            college: { select: { id: true, name: true } },
+          },
+        },
+      },
     });
     if (!student) throw new NotFoundException('ط§ظ„ط·ط§ظ„ط¨ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
+
+    const enrollment = student.enrollments?.[0] ?? null;
 
     const subs = await this.prisma.studentSubscription.findMany({
       where: { studentId },
@@ -1486,7 +1606,12 @@ export class AdminsService {
     const coursesWithDurations = await this.withCourseDurations(subs.map((subscription) => subscription.course));
 
     return {
-      student: { id: student.id, name: student.name, universityNumber: student.universityNumber ?? null, college: student.college },
+      student: {
+        id: student.id,
+        name: student.name,
+        universityNumber: enrollment?.universityNumber ?? null,
+        college: enrollment?.college ?? null,
+      },
       courses: subs.map((s, index) => ({
         ...this.buildCourseCardWithTeacher(coursesWithDurations[index]),
         subscribedAt: s.createdAt,
@@ -1910,30 +2035,46 @@ export class AdminsService {
 
     const student = await this.prisma.student.findFirst({
       where: {
-        OR: [{ id: studentIdOrUniversityNumber }, { universityNumber: studentIdOrUniversityNumber }],
+        OR: [
+          { id: studentIdOrUniversityNumber },
+          {
+            enrollments: {
+              some: {
+                isActive: true,
+                universityNumber: studentIdOrUniversityNumber,
+              },
+            },
+          },
+        ],
       },
       select: {
         id: true,
         name: true,
-        universityNumber: true,
         createdAt: true,
-        college: {
+        enrollments: {
+          where: { isActive: true },
+          take: 1,
           select: {
-            id: true,
-            name: true,
-          },
-        },
-        department: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        collegeYear: {
-          select: {
-            id: true,
-            academicYear: {
-              select: { id: true, yearName: true, yearNumber: true },
+            universityNumber: true,
+            college: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            department: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            collegeYear: {
+              select: {
+                id: true,
+                academicYear: {
+                  select: { id: true, yearName: true, yearNumber: true },
+                },
+              },
             },
           },
         },
@@ -2047,11 +2188,13 @@ export class AdminsService {
       };
     });
 
-    const studentYear = student.collegeYear?.academicYear
+    const activeEnrollment = student.enrollments?.[0] ?? null;
+
+    const studentYear = activeEnrollment?.collegeYear?.academicYear
       ? {
-          id: student.collegeYear.academicYear.id,
-          name: student.collegeYear.academicYear.yearName,
-          number: student.collegeYear.academicYear.yearNumber,
+          id: activeEnrollment.collegeYear.academicYear.id,
+          name: activeEnrollment.collegeYear.academicYear.yearName,
+          number: activeEnrollment.collegeYear.academicYear.yearNumber,
         }
       : null;
 
@@ -2060,9 +2203,9 @@ export class AdminsService {
         id: student.id,
         userId: studentUser?.id ?? null,
         name: student.name,
-        college: student.college,
-        department: student.department,
-        universityNumber: student.universityNumber ?? null,
+        college: activeEnrollment?.college ?? null,
+        department: activeEnrollment?.department ?? null,
+        universityNumber: activeEnrollment?.universityNumber ?? null,
         phone: studentUser?.phone ?? null,
         password: null,
         passwordHash: studentUser?.password ?? null,
@@ -2096,15 +2239,33 @@ export class AdminsService {
   ) {
     const student = await this.prisma.student.findFirst({
       where: {
-        OR: [{ id: studentIdOrUniversityNumber }, { universityNumber: studentIdOrUniversityNumber }],
+        OR: [
+          { id: studentIdOrUniversityNumber },
+          {
+            enrollments: {
+              some: {
+                isActive: true,
+                universityNumber: studentIdOrUniversityNumber,
+              },
+            },
+          },
+        ],
       },
       select: {
         id: true,
-        universityNumber: true,
+        enrollments: {
+          where: { isActive: true },
+          take: 1,
+          select: {
+            universityNumber: true,
+          },
+        },
       },
     });
 
     if (!student) throw new NotFoundException('Student not found');
+
+    const enrollment = student.enrollments?.[0] ?? null;
 
     const studentUser = await this.prisma.user.findFirst({
       where: {
@@ -2133,7 +2294,7 @@ export class AdminsService {
 
     return {
       studentId: student.id,
-      universityNumber: student.universityNumber ?? null,
+      universityNumber: enrollment?.universityNumber ?? null,
       userId: studentUser.id,
       phone: studentUser.phone ?? null,
       password: resolvedPassword,

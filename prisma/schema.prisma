@@ -74,23 +74,13 @@ model User {
 }
 
 model Student {
-  id               String   @id @default(uuid())
-  name             String
-  // Legacy academic fields. Kept temporarily during the StudentEnrollment
-  // transition; they are kept synchronized with the active enrollment.
-  universityNumber String?
-  universityId     String
-  provinceId       String
-  collegeId        String
-  departmentId     String?
-  collegeYearId    String
-  createdAt        DateTime @default(now())
+  id         String   @id @default(uuid())
+  name       String
+  provinceId String
+  createdAt  DateTime @default(now())
 
-  university           University            @relation(fields: [universityId], references: [id])
+  // Academic identity lives ONLY on the active StudentEnrollment.
   province             Province              @relation(fields: [provinceId], references: [id])
-  college              College               @relation(fields: [collegeId], references: [id])
-  department           Department?           @relation(fields: [departmentId], references: [id])
-  collegeYear          CollegeYear           @relation(fields: [collegeYearId], references: [id])
   enrollments          StudentEnrollment[]
   subscriptions        StudentSubscription[]
   subscriptionRequests SubscriptionRequest[]
@@ -98,11 +88,7 @@ model Student {
   teacherLikes         TeacherLike[]
   usedCodes            Code[]                @relation("UsedCodes")
 
-  @@index([universityNumber])
-  @@index([universityId])
   @@index([provinceId])
-  @@index([collegeId])
-  @@index([collegeYearId])
 }
 
 model Teacher {
@@ -155,7 +141,6 @@ model University {
   province            Province             @relation(fields: [provinceId], references: [id])
   colleges            College[]
   courses             Course[]
-  students            Student[]
   studentEnrollments  StudentEnrollment[]
   teacherAffiliations TeacherAffiliation[]
   guestPreferences    GuestPreference[]
@@ -172,7 +157,7 @@ model Province {
 
   universities  University[]
   pointsOfSales PointOfSale[]
-  students      Student[]
+  Student       Student[]
 }
 
 model College {
@@ -187,7 +172,6 @@ model College {
   courses             Course[]
   advertisements      Advertisement[]
   notifications       Notification[]
-  students            Student[]
   studentEnrollments  StudentEnrollment[]
   teacherAffiliations TeacherAffiliation[]
   guestPreferences    GuestPreference[]
@@ -272,7 +256,6 @@ model Department {
   college             College              @relation(fields: [collegeId], references: [id])
   collegeYears        CollegeYear[]
   subjects            Subject[]
-  students            Student[]
   studentEnrollments  StudentEnrollment[]
   notifications       Notification[]
   teacherAffiliations TeacherAffiliation[]
@@ -322,7 +305,6 @@ model CollegeYear {
   college            College             @relation(fields: [collegeId], references: [id])
   department         Department?         @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   academicYear       AcademicYear        @relation(fields: [academicYearId], references: [id])
-  students           Student[]
   studentEnrollments StudentEnrollment[]
   courses            Course[]
   subjects           Subject[]

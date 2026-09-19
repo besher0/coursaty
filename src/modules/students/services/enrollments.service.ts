@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -18,14 +19,11 @@ export type AcademicProfileInput = {
 /**
  * Student academic enrollment lifecycle.
  *
- * - The source of truth for a student's CURRENT academic profile is the single
+ * - The source of truth for a student's academic identity is the single
  *   active `StudentEnrollment` row (enforced by a partial unique index in the
- *   database).
- * - Legacy academic fields on `Student` are kept (transition period) and are
- *   synchronized with the active enrollment on every create/switch, because
- *   several read paths (admin searches, notifications, dashboards, code
- *   activation allowedUniversityNumber check) still read them. When all reads
- *   are migrated, the synchronization calls in this service can be removed.
+ *   database). All academic reads MUST go through the active enrollment —
+ *   use `getActiveEnrollment` / `requireActiveEnrollment` / the relation
+ *   filter helpers instead of any Student academic field.
  * - Changing academic info keeps the same Student id and only closes the old
  *   enrollment (endedAt + isActive=false); it never touches subscriptions,
  *   ratings, likes, used codes, etc.
@@ -33,6 +31,78 @@ export type AcademicProfileInput = {
 @Injectable()
 export class EnrollmentsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Prisma `where` fragment: a Student whose ACTIVE enrollment matches the
+   * given academic scope. The single shared way to filter/search/group
+   * students by academic identity (replaces the removed Student columns).
+   */
+  static activeEnrollmentWhere(scope: {
+    universityId?: string;
+    collegeId?: string;
+    departmentId?: string | null;
+    collegeYearId?: string;
+    universityNumber?: string;
+  }) {
+    const enrollmentWhere: Record<string, unknown> = { isActive: true };
+    if (scope.universityId !== undefined) enrollmentWhere.universityId = scope.universityId;
+    if (scope.collegeId !== undefined) enrollmentWhere.collegeId = scope.collegeId;
+    if (scope.departmentId !== undefined) {
+      enrollmentWhere.departmentId = scope.departmentId;
+    }
+    if (scope.collegeYearId !== undefined) enrollmentWhere.collegeYearId = scope.collegeYearId;
+    if (scope.universityNumber !== undefined) {
+      enrollmentWhere.universityNumber = scope.universityNumber;
+    }
+    return { enrollments: { some: enrollmentWhere } };
+  }
+
+  /**
+   * Prisma `include`/`select` fragment for the active enrollment with its
+   * academic relations, for API responses that must keep exposing the
+   * academic fields after the legacy Student columns are removed.
+   */
+  static activeEnrollmentInclude() {
+    return {
+      enrollments: {
+        where: { isActive: true },
+        take: 1,
+        include: {
+          university: { select: { id: true, name: true } },
+          college: { select: { id: true, name: true, universityId: true } },
+          department: { select: { id: true, name: true } },
+          collegeYear: {
+            include: {
+              academicYear: {
+                select: { id: true, yearName: true, yearNumber: true },
+              },
+            },
+          },
+        },
+      },
+    } satisfies Prisma.StudentInclude;
+  }
+
+  /**
+   * Flattens the active enrollment into the academic payload shape that API
+   * responses exposed when the fields lived on Student. Used to keep response
+   * contracts unchanged (Phase 4 API compatibility).
+   */
+  static toAcademicPayload(enrollment: {
+    universityId: string;
+    collegeId: string;
+    departmentId: string | null;
+    collegeYearId: string;
+    universityNumber: string | null;
+  } | null | undefined) {
+    return {
+      universityId: enrollment?.universityId ?? null,
+      collegeId: enrollment?.collegeId ?? null,
+      departmentId: enrollment?.departmentId ?? null,
+      collegeYearId: enrollment?.collegeYearId ?? null,
+      universityNumber: enrollment?.universityNumber ?? null,
+    };
+  }
 
   /**
    * Validates the complete academic hierarchy:
@@ -131,15 +201,25 @@ export class EnrollmentsService {
       },
     });
 
-    await this.syncLegacyFields(client, studentId, {
-      universityId: hierarchy.university.id,
-      provinceId: hierarchy.provinceId,
-      collegeId: hierarchy.college.id,
-      departmentId: hierarchy.departmentId,
-      collegeYearId: hierarchy.collegeYearId,
-      universityNumber: input.universityNumber ?? null,
-    });
+    return enrollment;
+  }
 
+  /**
+   * Returns the active enrollment or throws a clear application error.
+   * NEVER falls back to a historical/inactive enrollment.
+   */
+  async requireActiveEnrollment(
+    studentId: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const enrollment = await client.studentEnrollment.findFirst({
+      where: { studentId, isActive: true },
+    });
+    if (!enrollment) {
+      throw new ServiceUnavailableException(
+        'لا يوجد تسجيل أكاديمي فعال لهذا الطالب. يجب إكمال ترحيل التسجيلات الأكاديمية أولا',
+      );
+    }
     return enrollment;
   }
 
@@ -168,8 +248,12 @@ export class EnrollmentsService {
    * Switches a student's academic profile:
    * 1. validates the new academic hierarchy,
    * 2. inside one transaction: closes the previous active enrollment
-   *    (isActive=false + endedAt), creates the new active enrollment and
-   *    synchronizes the legacy Student fields still used by old code paths.
+   *    (isActive=false + endedAt) and creates the new active enrollment.
+   *
+   * Only StudentEnrollment is written. No academic field is copied back into
+   * Student. Student ids and all related records (subscriptions, ratings,
+   * likes, used codes, requests) are untouched; old enrollment rows stay as
+   * history.
    *
    * The student keeps the same id and all related records (subscriptions,
    * ratings, likes, used codes, requests) are untouched. Old enrollment rows
@@ -235,15 +319,6 @@ export class EnrollmentsService {
           },
         });
 
-        await this.syncLegacyFields(tx, studentId, {
-          universityId: hierarchy.university.id,
-          provinceId: hierarchy.provinceId,
-          collegeId: hierarchy.college.id,
-          departmentId: hierarchy.departmentId,
-          collegeYearId: hierarchy.collegeYearId,
-          universityNumber: input.universityNumber ?? null,
-        });
-
         return created;
       });
 
@@ -261,37 +336,5 @@ export class EnrollmentsService {
     }
   }
 
-  /**
-   * Transition-period synchronization: keeps the legacy Student academic
-   * columns aligned with the active enrollment because they are still read by:
-   * - code activation (allowedUniversityNumber check)
-   * - admin students directory/search & profile views
-   * - notifications scoping
-   * - dashboards / guest preference flows
-   * Once all reads migrate to StudentEnrollment, remove the call sites.
-   */
-  private async syncLegacyFields(
-    client: Prisma.TransactionClient | PrismaService,
-    studentId: string,
-    fields: {
-      universityId: string;
-      provinceId: string;
-      collegeId: string;
-      departmentId: string | null;
-      collegeYearId: string;
-      universityNumber: string | null;
-    },
-  ) {
-    await client.student.update({
-      where: { id: studentId },
-      data: {
-        universityId: fields.universityId,
-        provinceId: fields.provinceId,
-        collegeId: fields.collegeId,
-        departmentId: fields.departmentId,
-        collegeYearId: fields.collegeYearId,
-        universityNumber: fields.universityNumber,
-      },
-    });
-  }
 }
+

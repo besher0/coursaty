@@ -149,7 +149,7 @@ describe('EnrollmentsService academic hierarchy validation', () => {
 });
 
 describe('EnrollmentsService initial enrollment', () => {
-  it('creates the initial active enrollment and syncs legacy fields', async () => {
+  it('creates the initial active enrollment WITHOUT writing legacy Student academic fields', async () => {
     const tx = fullTx();
     const service = createService();
 
@@ -166,14 +166,8 @@ describe('EnrollmentsService initial enrollment', () => {
         isActive: true,
       }),
     });
-    expect(tx.student.update).toHaveBeenCalledWith({
-      where: { id: 'student-1' },
-      data: expect.objectContaining({
-        universityId: 'uni-1',
-        collegeId: 'col-1',
-        universityNumber: '12345',
-      }),
-    });
+    // No legacy synchronization: Student academic columns are gone.
+    expect(tx.student.update).not.toHaveBeenCalled();
     expect(enrollment).toEqual({ id: 'enrollment-2' });
   });
 });
@@ -225,8 +219,8 @@ describe('EnrollmentsService changeAcademicProfile', () => {
         collegeId: 'col-2',
       }),
     });
-    // legacy fields synced
-    expect(tx.student.update).toHaveBeenCalled();
+    // NO legacy sync — Student is not touched.
+    expect(tx.student.update).not.toHaveBeenCalled();
     expect(result).toEqual({ id: 'enrollment-2' });
   });
 
@@ -278,7 +272,7 @@ describe('EnrollmentsService changeAcademicProfile', () => {
     expect(tx.studentEnrollment.create).toHaveBeenCalledTimes(1);
   });
 
-  it('writes only the enrollment rows and the legacy sync during a switch', async () => {
+  it('writes only the enrollment rows during a switch (no legacy Student writes)', async () => {
     const tx = fullTx({
       activeEnrollment: {
         id: 'enrollment-old',
@@ -308,11 +302,11 @@ describe('EnrollmentsService changeAcademicProfile', () => {
       collegeYearId: 'year-9',
     });
 
-    // Exactly one close + one create + one legacy-field sync. No other writes
-    // exist on the tx mock, so any accidental write to another model would
-    // throw "Cannot read properties of undefined" and fail this test.
+    // Exactly one close + one create. No other writes exist on the tx mock, so
+    // any accidental write to another model (including Student) would throw
+    // "Cannot read properties of undefined" and fail this test.
     expect(tx.studentEnrollment.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.studentEnrollment.create).toHaveBeenCalledTimes(1);
-    expect(tx.student.update).toHaveBeenCalledTimes(1);
+    expect(tx.student.update).not.toHaveBeenCalled();
   });
 });

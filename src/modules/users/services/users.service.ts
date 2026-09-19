@@ -134,33 +134,34 @@ export class UsersService {
 
     // Fetch the related Student or Teacher data based on userableType
     if (user.userableType === 'STUDENT') {
-      userableData = await this.prisma.student.findUnique({
+      const student = await this.prisma.student.findUnique({
         where: { id: user.userableId },
         include: {
-          collegeYear: { include: { academicYear: true } },
-          department: true,
-          college: true,
-          university: true,
           province: true,
-          // Current academic profile lives on the active enrollment.
-          enrollments: {
-            where: { isActive: true },
-            take: 1,
-            include: {
-              university: { select: { id: true, name: true } },
-              college: { select: { id: true, name: true } },
-              department: { select: { id: true, name: true } },
-              collegeYear: {
-                include: {
-                  academicYear: {
-                    select: { id: true, yearName: true, yearNumber: true },
-                  },
-                },
-              },
-            },
-          },
+          // Academic identity comes from the active StudentEnrollment only.
+          ...EnrollmentsService.activeEnrollmentInclude(),
         },
       });
+
+      // API compatibility: clients still receive the academic fields at the
+      // top level of the student object, mapped from the active enrollment.
+      if (student) {
+        const activeEnrollment = student.enrollments?.[0] ?? null;
+        const academic = EnrollmentsService.toAcademicPayload(activeEnrollment);
+        const collegeYear = activeEnrollment?.collegeYear ?? null;
+        userableData = {
+          ...student,
+          enrollments: undefined,
+          ...academic,
+          university: activeEnrollment?.university ?? null,
+          college: activeEnrollment?.college ?? null,
+          department: activeEnrollment?.department ?? null,
+          collegeYear,
+          academicYear: collegeYear?.academicYear ?? null,
+        };
+      } else {
+        userableData = null;
+      }
     } else if (user.userableType === 'TEACHER') {
       userableData = await this.prisma.teacher.findUnique({
         where: { id: user.userableId },
@@ -275,7 +276,7 @@ export class UsersService {
     // Academic changes go through the active StudentEnrollment: the whole
     // hierarchy is validated, the previous active enrollment is closed
     // (endedAt set) and a new one is created inside a single transaction.
-    // Legacy Student academic fields are synchronized by the same transaction.
+    // Only StudentEnrollment is written.
     const hasAcademicChange =
       dto.universityId !== undefined ||
       dto.collegeId !== undefined ||

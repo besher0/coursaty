@@ -1,5 +1,6 @@
-﻿import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+﻿import { Injectable, NotFoundException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { EnrollmentsService } from '@/modules/students/services/enrollments.service';
 
 type DashboardGuestFilter = {
   deviceId?: string;
@@ -109,6 +110,12 @@ export class DashboardService {
     };
   }
 
+  private async resolveCollegeById(collegeId: string) {
+    const college = await this.prisma.college.findUnique({ where: { id: collegeId } });
+    if (!college) throw new ServiceUnavailableException('لا يوجد تسجيل أكاديمي فعال لهذا الطالب');
+    return college;
+  }
+
   private async getStudentCollege(
     user?: { userId: string | number; type: string },
     guestFilter?: DashboardGuestFilter,
@@ -120,20 +127,23 @@ export class DashboardService {
 
       const student = await this.prisma.student.findUnique({
         where: { id: dbUser.userableId },
-        include: {
-          college: true,
-          collegeYear: { include: { academicYear: true } },
-        },
+        include: EnrollmentsService.activeEnrollmentInclude(),
       });
       if (!student) throw new NotFoundException('الطالب غير موجود');
 
+      const enrollment = student.enrollments?.[0];
+      if (!enrollment) {
+        throw new ServiceUnavailableException('لا يوجد تسجيل أكاديمي فعال لهذا الطالب');
+      }
+
+      const college = enrollment.college ?? (await this.resolveCollegeById(enrollment.collegeId));
+
       return {
-        collegeId: student.collegeId,
-        college: student.college,
-        departmentId: student.departmentId,
-        collegeYearId: student.collegeYearId,
-      };
-    }
+        collegeId: enrollment.collegeId,
+        college,
+        departmentId: enrollment.departmentId,
+        collegeYearId: enrollment.collegeYearId,
+      };    }
   }
     const resolvedGuestFilter = await this.resolveGuestFilter(guestFilter);
 

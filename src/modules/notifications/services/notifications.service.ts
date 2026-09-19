@@ -1,5 +1,6 @@
-﻿import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+﻿import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { EnrollmentsService } from '@/modules/students/services/enrollments.service';
 import { CreateNotificationDto } from '../dtos/create-notification.dto';
 import { FirebaseService } from '@/shared/firebase/firebase.service';
 
@@ -8,6 +9,12 @@ type TokenUser = { userId: string | number; type: string };
 type NotificationTarget = {
   universityId: string | null;
   collegeId: string | null;
+  departmentId: string | null;
+};
+
+type StudentAcademicScope = {
+  universityId: string;
+  collegeId: string;
   departmentId: string | null;
 };
 
@@ -47,15 +54,22 @@ export class NotificationsService {
 
       const student = await this.prisma.student.findUnique({
         where: { id: dbUser.userableId },
-        select: { universityId: true, collegeId: true, departmentId: true },
+        include: EnrollmentsService.activeEnrollmentInclude(),
       });
       if (!student) throw new BadRequestException('الطالب غير موجود');
 
+      const enrollment = student.enrollments?.[0];
+      if (!enrollment) {
+        throw new ServiceUnavailableException(
+          'لا يوجد تسجيل أكاديمي فعال لهذا الطالب',
+        );
+      }
+
       return {
-        universityId: student.universityId,
-        collegeId: student.collegeId,
-        departmentId: student.departmentId,
-      };
+        universityId: enrollment.universityId,
+        collegeId: enrollment.collegeId,
+        departmentId: enrollment.departmentId,
+      } satisfies StudentAcademicScope;
     }
 
     const normalizedDeviceId = String(deviceId ?? '')
@@ -242,26 +256,24 @@ export class NotificationsService {
       collegeId: string | null;
       departmentId: string | null;
     },
-    student: {
-      universityId: string;
-      collegeId: string;
-      departmentId: string | null;
-    },
+    // The student's ACTIVE ENROLLMENT (not a Student row — Student has no
+    // academic columns anymore).
+    activeEnrollment: StudentAcademicScope,
   ) {
     if (notification.status !== 'APPROVED') return false;
 
-    if (notification.universityId && notification.universityId === student.universityId) {
+    if (notification.universityId && notification.universityId === activeEnrollment.universityId) {
       return true;
     }
 
-    if (notification.collegeId === student.collegeId && notification.departmentId === null) {
+    if (notification.collegeId === activeEnrollment.collegeId && notification.departmentId === null) {
       return true;
     }
 
     if (
-      student.departmentId &&
-      notification.collegeId === student.collegeId &&
-      notification.departmentId === student.departmentId
+      activeEnrollment.departmentId &&
+      notification.collegeId === activeEnrollment.collegeId &&
+      notification.departmentId === activeEnrollment.departmentId
     ) {
       return true;
     }
@@ -396,11 +408,18 @@ export class NotificationsService {
     if (dbUser.userableType === 'STUDENT') {
       const student = await this.prisma.student.findUnique({
         where: { id: dbUser.userableId },
-        select: { universityId: true, collegeId: true, departmentId: true },
+        include: EnrollmentsService.activeEnrollmentInclude(),
       });
       if (!student) throw new BadRequestException('الطالب غير موجود');
 
-      if (!this.isNotificationVisibleToStudent(notification, student)) {
+      const enrollment = student.enrollments?.[0];
+      if (!enrollment) {
+        throw new ServiceUnavailableException(
+          'لا يوجد تسجيل أكاديمي فعال لهذا الطالب',
+        );
+      }
+
+      if (!this.isNotificationVisibleToStudent(notification, enrollment)) {
         throw new NotFoundException('الإشعار غير موجود');
       }
     }
@@ -485,18 +504,22 @@ export class NotificationsService {
     title: string;
     description: string;
   }) {
-    const where: any = {};
+    // Student academic identity lives on the active StudentEnrollment, so the
+    // audience is resolved through the enrollments relation.
+    const where: any = {
+      ...(notification.departmentId && notification.collegeId
+        ? EnrollmentsService.activeEnrollmentWhere({
+            collegeId: notification.collegeId,
+            departmentId: notification.departmentId,
+          })
+        : notification.collegeId
+        ? EnrollmentsService.activeEnrollmentWhere({ collegeId: notification.collegeId })
+        : notification.universityId
+        ? EnrollmentsService.activeEnrollmentWhere({ universityId: notification.universityId })
+        : {}),
+    };
 
-    if (notification.departmentId && notification.collegeId) {
-      where.collegeId = notification.collegeId;
-      where.departmentId = notification.departmentId;
-    } else if (notification.collegeId) {
-      where.collegeId = notification.collegeId;
-    } else if (notification.universityId) {
-      where.universityId = notification.universityId;
-    } else {
-      return;
-    }
+    if (Object.keys(where).length === 0) return;
 
     const students = await this.prisma.student.findMany({
       where,
