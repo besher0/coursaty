@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { FinancialsService } from '../services/financials.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -8,12 +9,18 @@ import { CreateSubscriptionRequestDto } from '../dtos/create-subscription-reques
 import { ListSubscriptionRequestsQueryDto } from '../dtos/list-subscription-requests-query.dto';
 import { ReviewSubscriptionRequestDto } from '../dtos/review-subscription-request.dto';
 import { RejectSubscriptionRequestDto } from '../dtos/reject-subscription-request.dto';
+import { CreateSubscriptionRequestWithReceiptDto } from '../dtos/create-subscription-request-with-receipt.dto';
+import { ResubmitSubscriptionRequestWithReceiptDto } from '../dtos/resubmit-subscription-request-with-receipt.dto';
+import { UploadsService } from '../../uploads/uploads.service';
 
 @ApiTags('financials')
 @ApiBearerAuth()
 @Controller('financials/subscription-requests')
 export class SubscriptionRequestsController {
-  constructor(private readonly financials: FinancialsService) {}
+  constructor(
+    private readonly financials: FinancialsService,
+    private readonly uploads: UploadsService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Request course subscription with a payment receipt' })
@@ -22,6 +29,42 @@ export class SubscriptionRequestsController {
   @Roles('STUDENT')
   create(@Body() body: CreateSubscriptionRequestDto, @Req() req: any) {
     return this.financials.createSubscriptionRequest(req.user, body);
+  }
+
+  @Post('with-receipt')
+  @ApiOperation({ summary: 'Upload payment receipt and create subscription request in one call' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['courseId', 'file'],
+      properties: {
+        courseId: { type: 'string', format: 'uuid' },
+        note: { type: 'string' },
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiOkResponse({ description: 'Receipt uploaded and subscription request created' })
+  @UseInterceptors(FileInterceptor('file'))
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('STUDENT')
+  async createWithReceipt(
+    @UploadedFile() file: any,
+    @Body() body: CreateSubscriptionRequestWithReceiptDto,
+    @Req() req: any,
+  ) {
+    if (!file) throw new BadRequestException('صورة إيصال الدفع مطلوبة');
+
+    const receipt = await this.uploads.uploadSubscriptionReceipt(file);
+    return this.financials.createSubscriptionRequest(req.user, {
+      courseId: body.courseId,
+      receiptUrl: receipt.fileUrl,
+      receiptFileName: receipt.fileName,
+      receiptMimeType: receipt.mimeType,
+      receiptSizeBytes: receipt.sizeBytes,
+      note: body.note,
+    });
   }
 
   @Get('me')
@@ -69,6 +112,40 @@ export class SubscriptionRequestsController {
     @Req() req: any,
   ) {
     return this.financials.approveSubscriptionRequest(id, req.user, body);
+  }
+
+  @Patch(':id/resubmit')
+  @ApiOperation({ summary: 'Resubmit a rejected subscription request with a new payment receipt' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        note: { type: 'string' },
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('STUDENT')
+  async resubmit(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @UploadedFile() file: any,
+    @Body() body: ResubmitSubscriptionRequestWithReceiptDto,
+    @Req() req: any,
+  ) {
+    if (!file) throw new BadRequestException('صورة إيصال الدفع مطلوبة');
+
+    const receipt = await this.uploads.uploadSubscriptionReceipt(file);
+    return this.financials.resubmitSubscriptionRequest(id, req.user, {
+      receiptUrl: receipt.fileUrl,
+      receiptFileName: receipt.fileName,
+      receiptMimeType: receipt.mimeType,
+      receiptSizeBytes: receipt.sizeBytes,
+      note: body.note,
+    });
   }
 
   @Patch(':id/reject')
