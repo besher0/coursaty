@@ -281,7 +281,8 @@ export class UsersService {
       dto.universityId !== undefined ||
       dto.collegeId !== undefined ||
       dto.departmentId !== undefined ||
-      dto.collegeYearId !== undefined;
+      dto.collegeYearId !== undefined ||
+      dto.universityNumber !== undefined;
 
     if (hasAcademicChange) {
       const current = await this.enrollments.getActiveEnrollment(user.userableId);
@@ -301,7 +302,10 @@ export class UsersService {
           dto.collegeYearId !== undefined
             ? String(dto.collegeYearId)
             : current.collegeYearId,
-        universityNumber: current.universityNumber,
+        universityNumber:
+          dto.universityNumber !== undefined
+            ? dto.universityNumber
+            : current.universityNumber,
       });
     }
 
