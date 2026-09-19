@@ -724,6 +724,128 @@ describe('FinancialsService manual payment requests', () => {
     ).rejects.toThrow(new BadRequestException('تمت مراجعة هذا الطلب مسبقا'));
   });
 
+  it('resubmits an owned rejected request with a new receipt and resets admin review fields', async () => {
+    const rejectedRequest = {
+      id: 'request-1',
+      status: 'REJECTED',
+      studentId: 'student-1',
+      courseId: 'course-1',
+      note: 'old note',
+      course: {
+        status: 'APPROVED',
+        expiresAt: new Date('2027-01-30T00:00:00.000Z'),
+        teacher: { isVisibleToStudents: true },
+      },
+    };
+    const pendingRequest = {
+      ...rejectedRequest,
+      status: 'PENDING',
+      receiptUrl: 'https://cdn.example.com/uploads/subscription-receipts/new.jpg',
+      student: { id: 'student-1', name: 'Student One', enrollments: [] },
+    };
+    const prisma = basePrisma();
+    prisma.subscriptionRequest.findUnique = jest
+      .fn()
+      .mockResolvedValueOnce(rejectedRequest)
+      .mockResolvedValueOnce(pendingRequest);
+    prisma.subscriptionRequest.findFirst = jest.fn().mockResolvedValue(null);
+    prisma.subscriptionRequest.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const service = createPaymentService(prisma);
+
+    const result: any = await service.resubmitSubscriptionRequest(
+      'request-1',
+      studentUser as any,
+      {
+        receiptUrl: 'https://cdn.example.com/uploads/subscription-receipts/new.jpg',
+        receiptFileName: 'new.jpg',
+        receiptMimeType: 'image/jpeg',
+        receiptSizeBytes: 2048,
+        note: 'new receipt',
+      } as any,
+    );
+
+    expect(prisma.subscriptionRequest.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'request-1',
+        studentId: 'student-1',
+        status: 'REJECTED',
+      },
+      data: expect.objectContaining({
+        status: 'PENDING',
+        receiptUrl: 'https://cdn.example.com/uploads/subscription-receipts/new.jpg',
+        receiptFileName: 'new.jpg',
+        receiptMimeType: 'image/jpeg',
+        receiptSizeBytes: 2048,
+        note: 'new receipt',
+        adminNote: null,
+        reviewedById: null,
+        reviewedAt: null,
+      }),
+    });
+    expect(result.status).toBe('PENDING');
+  });
+
+  it('does not allow resubmitting a request that is not rejected', async () => {
+    const prisma = basePrisma({
+      existingRequest: {
+        id: 'request-1',
+        status: 'PENDING',
+        studentId: 'student-1',
+        courseId: 'course-1',
+      },
+    });
+    const service = createPaymentService(prisma);
+
+    await expect(
+      service.resubmitSubscriptionRequest('request-1', studentUser as any, receiptDto as any),
+    ).rejects.toThrow(new BadRequestException('يمكن إعادة إرسال الطلبات المرفوضة فقط'));
+
+    expect(prisma.subscriptionRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('does not allow a student to resubmit another student request', async () => {
+    const prisma = basePrisma({
+      existingRequest: {
+        id: 'request-1',
+        status: 'REJECTED',
+        studentId: 'student-OTHER',
+        courseId: 'course-1',
+      },
+    });
+    const service = createPaymentService(prisma);
+
+    await expect(
+      service.resubmitSubscriptionRequest('request-1', studentUser as any, receiptDto as any),
+    ).rejects.toThrow(new NotFoundException('طلب الاشتراك غير موجود'));
+
+    expect(prisma.subscriptionRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('does not resubmit when another pending request exists for the same course', async () => {
+    const rejectedRequest = {
+      id: 'request-1',
+      status: 'REJECTED',
+      studentId: 'student-1',
+      courseId: 'course-1',
+      course: {
+        status: 'APPROVED',
+        expiresAt: new Date('2027-01-30T00:00:00.000Z'),
+        teacher: { isVisibleToStudents: true },
+      },
+    };
+    const prisma = basePrisma({
+      existingRequest: rejectedRequest,
+      pendingRequest: { id: 'request-2' },
+    });
+    const service = createPaymentService(prisma);
+
+    await expect(
+      service.resubmitSubscriptionRequest('request-1', studentUser as any, receiptDto as any),
+    ).rejects.toThrow(new BadRequestException('يوجد طلب اشتراك معلق لهذا الكورس'));
+
+    expect(prisma.subscriptionRequest.updateMany).not.toHaveBeenCalled();
+  });
+
   it('students cannot view another student request', async () => {
     const prisma = basePrisma({
       existingRequest: { id: 'request-1', status: 'PENDING', studentId: 'student-OTHER' },
