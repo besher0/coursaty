@@ -5,9 +5,10 @@ import { CodeGroupsController } from './controllers/code-groups.controller';
 import { CodesController } from './controllers/codes.controller';
 import { SubscriptionsController } from './controllers/subscriptions.controller';
 import { SubscriptionRequestsController } from './controllers/subscription-requests.controller';
+import { UploadsModule } from '../uploads/uploads.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, UploadsModule],
   providers: [FinancialsService],
   controllers: [CodeGroupsController, CodesController, SubscriptionsController, SubscriptionRequestsController],
   exports: [FinancialsService],
