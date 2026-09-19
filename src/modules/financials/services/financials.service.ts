@@ -864,6 +864,121 @@ export class FinancialsService {
     }
   }
 
+  async resubmitSubscriptionRequest(
+    id: string,
+    user: { userId: string | number; type: string } | undefined,
+    dto: Pick<
+      CreateSubscriptionRequestDto,
+      'receiptUrl' | 'receiptFileName' | 'receiptMimeType' | 'receiptSizeBytes' | 'note'
+    >,
+  ) {
+    const { studentId } = await this.resolveStudentContext(user);
+    const now = new Date();
+
+    const request = await this.prisma.subscriptionRequest.findUnique({
+      where: { id },
+      include: {
+        course: {
+          include: {
+            teacher: {
+              select: { isVisibleToStudents: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!request || request.studentId !== studentId) {
+      throw new NotFoundException('طلب الاشتراك غير موجود');
+    }
+    if (request.status !== 'REJECTED') {
+      throw new BadRequestException('يمكن إعادة إرسال الطلبات المرفوضة فقط');
+    }
+    if (!request.course.teacher.isVisibleToStudents) {
+      throw new NotFoundException('الكورس غير موجود');
+    }
+    if (request.course.status !== 'APPROVED') {
+      throw new BadRequestException('الكورس غير معتمد');
+    }
+    if (request.course.expiresAt && request.course.expiresAt.getTime() <= now.getTime()) {
+      throw new BadRequestException('انتهى الكورس ولا يمكن الاشتراك به');
+    }
+
+    const activeSubscription = await this.prisma.studentSubscription.findUnique({
+      where: {
+        studentId_courseId: {
+          studentId,
+          courseId: request.courseId,
+        },
+      },
+      select: { expiresAt: true },
+    });
+    if (
+      activeSubscription &&
+      (!activeSubscription.expiresAt || activeSubscription.expiresAt.getTime() > now.getTime())
+    ) {
+      throw new BadRequestException('أنت مشترك بهذا الكورس بالفعل');
+    }
+
+    const otherPending = await this.prisma.subscriptionRequest.findFirst({
+      where: {
+        studentId,
+        courseId: request.courseId,
+        status: 'PENDING',
+        id: { not: id },
+      },
+      select: { id: true },
+    });
+    if (otherPending) {
+      throw new BadRequestException('يوجد طلب اشتراك معلق لهذا الكورس');
+    }
+
+    this.assertReceiptUrlFromSecureUpload(dto.receiptUrl);
+
+    try {
+      const marked = await this.prisma.subscriptionRequest.updateMany({
+        where: {
+          id,
+          studentId,
+          status: 'REJECTED',
+        },
+        data: {
+          status: 'PENDING',
+          receiptUrl: dto.receiptUrl,
+          receiptFileName: dto.receiptFileName ?? null,
+          receiptMimeType: dto.receiptMimeType ?? null,
+          receiptSizeBytes: dto.receiptSizeBytes ?? null,
+          note: dto.note ?? request.note,
+          adminNote: null,
+          reviewedById: null,
+          reviewedAt: null,
+        },
+      });
+
+      if (marked.count === 0) {
+        throw new BadRequestException('تعذر إعادة إرسال الطلب، حدّث الصفحة وحاول مرة أخرى');
+      }
+
+      const pendingRequest = await this.prisma.subscriptionRequest.findUnique({
+        where: { id },
+        include: this.subscriptionRequestInclude,
+      });
+
+      if (!pendingRequest) {
+        throw new NotFoundException('طلب الاشتراك غير موجود');
+      }
+
+      // Keep the original price snapshot; resubmission only replaces the proof
+      // and starts a new review cycle for the same request.
+      return this.mapSubscriptionRequestStudent(pendingRequest);
+    } catch (err) {
+      if (this.isUniqueConstraintError(err)) {
+        throw new BadRequestException('يوجد طلب اشتراك معلق لهذا الكورس');
+      }
+      throw err;
+    }
+  }
+
   async listMySubscriptionRequests(
     user: { userId: string | number; type: string } | undefined,
     status?: $Enums.SubscriptionRequestStatus,
