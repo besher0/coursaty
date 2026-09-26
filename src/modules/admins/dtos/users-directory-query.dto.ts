@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export enum UsersDirectoryType {
   TEACHER = 'teacher',
@@ -25,4 +26,19 @@ export class UsersDirectoryQueryDto {
   @IsOptional()
   @IsUUID()
   universityId?: string;
+
+  @ApiPropertyOptional({ type: Number, minimum: 1, default: 1, description: 'Page number' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ type: Number, minimum: 1, maximum: 50, default: 20, description: 'Items per page' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  limit?: number = 20;
 }

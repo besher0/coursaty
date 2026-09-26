@@ -121,6 +121,34 @@ export class AdminsService {
     }));
   }
 
+  private normalizePagination(page?: number, limit?: number) {
+    const normalizedPage = Number.isFinite(page) && page! > 0 ? Math.floor(page!) : 1;
+    const normalizedLimit = Number.isFinite(limit) && limit! > 0
+      ? Math.min(50, Math.floor(limit!))
+      : 20;
+    const skip = (normalizedPage - 1) * normalizedLimit;
+
+    return {
+      page: normalizedPage,
+      limit: normalizedLimit,
+      skip,
+      take: normalizedLimit,
+    };
+  }
+
+  private buildPagination(page: number, limit: number, total: number) {
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+
+    return {
+      page,
+      limit,
+      total,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPreviousPage: page > 1,
+    };
+  }
+
   async create(dto: CreateAdminDto, tx?: Prisma.TransactionClient) {
     const client = tx ?? this.prisma;
     return client.admin.create({
@@ -233,9 +261,10 @@ export class AdminsService {
 
   async getUsersDirectory(query: UsersDirectoryQueryDto) {
     const search = query.search?.trim();
+    const pagination = this.normalizePagination(query.page, query.limit);
 
     if (query.type === UsersDirectoryType.TEACHER) {
-      const where = {
+      const where: Prisma.TeacherWhereInput = {
         ...(search
           ? {
               name: {
@@ -255,21 +284,26 @@ export class AdminsService {
           : {}),
       };
 
-      const teachers = await this.prisma.teacher.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          name: true,
-          image: true,
-          likesCount: true,
-          _count: {
-            select: {
-              courses: true,
+      const [teachers, total] = await Promise.all([
+        this.prisma.teacher.findMany({
+          where,
+          skip: pagination.skip,
+          take: pagination.take,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            name: true,
+            image: true,
+            likesCount: true,
+            _count: {
+              select: {
+                courses: true,
+              },
             },
           },
-        },
-      });
+        }),
+        this.prisma.teacher.count({ where }),
+      ]);
 
       const teacherIds = teachers.map((teacher) => teacher.id);
       const users = await this.prisma.user.findMany({
@@ -301,6 +335,7 @@ export class AdminsService {
 
       return {
         type: UsersDirectoryType.TEACHER,
+        pagination: this.buildPagination(pagination.page, pagination.limit, total),
         items: teachers.map((teacher) => ({
           id: teacher.id,
           name: teacher.name,
@@ -328,7 +363,7 @@ export class AdminsService {
         })
       : [];
 
-    const where = {
+    const where: Prisma.StudentWhereInput = {
       ...(query.universityId
         ? {
             enrollments: {
@@ -373,32 +408,37 @@ export class AdminsService {
         : {}),
     };
 
-    const students = await this.prisma.student.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        name: true,
-        enrollments: {
-          where: { isActive: true },
-          take: 1,
-          select: {
-            university: {
-              select: {
-                id: true,
-                name: true,
+    const [students, total] = await Promise.all([
+      this.prisma.student.findMany({
+        where,
+        skip: pagination.skip,
+        take: pagination.take,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          enrollments: {
+            where: { isActive: true },
+            take: 1,
+            select: {
+              university: {
+                select: {
+                  id: true,
+                  name: true,
+                },
               },
-            },
-            department: {
-              select: {
-                id: true,
-                name: true,
+              department: {
+                select: {
+                  id: true,
+                  name: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      }),
+      this.prisma.student.count({ where }),
+    ]);
 
     const studentIds = students.map((student) => student.id);
     const users = await this.prisma.user.findMany({
@@ -416,6 +456,7 @@ export class AdminsService {
 
     return {
       type: UsersDirectoryType.STUDENT,
+      pagination: this.buildPagination(pagination.page, pagination.limit, total),
       items: students.map((student) => {
         const enrollment = student.enrollments?.[0] ?? null;
         return {
@@ -1346,7 +1387,10 @@ export class AdminsService {
   async getDashboardSubjectCourses(
     subjectId?: string,
     universityId?: string,
+    page?: number,
+    limit?: number,
   ) {
+    const pagination = this.normalizePagination(page, limit);
     let subject: { id: string; name: string } | null = null;
     if (subjectId) {
       const foundSubject = await this.prisma.subject.findFirst({
@@ -1368,30 +1412,35 @@ export class AdminsService {
       };
     }
 
-    const where = {
+    const where: Prisma.CourseWhereInput = {
       ...(universityId ? { universityId } : {}),
       subject: {
         isProgram: false,
         ...(subjectId ? { id: subjectId } : {}),
       },
-    } as any;
+    };
 
-    const courses = await this.prisma.course.findMany({
-      where,
-      include: {
-        subject: {
-          select: {
-            id: true,
-            subjectName: true,
+    const [courses, total] = await Promise.all([
+      this.prisma.course.findMany({
+        where,
+        skip: pagination.skip,
+        take: pagination.take,
+        include: {
+          subject: {
+            select: {
+              id: true,
+              subjectName: true,
+            },
           },
+          collegeYear: { include: { academicYear: true } },
+          season: true,
+          teacher: true,
+          _count: { select: { subscriptions: true } },
         },
-        collegeYear: { include: { academicYear: true } },
-        season: true,
-        teacher: true,
-        _count: { select: { subscriptions: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.course.count({ where }),
+    ]);
     const coursesWithDurations = await this.withCourseDurations(courses);
 
     return {
@@ -1406,6 +1455,7 @@ export class AdminsService {
               }
             : null,
         })),
+        pagination: this.buildPagination(pagination.page, pagination.limit, total),
       },
     };
   }
@@ -1413,7 +1463,10 @@ export class AdminsService {
   async getDashboardProgramCourses(
     programId?: string,
     universityId?: string,
+    page?: number,
+    limit?: number,
   ) {
+    const pagination = this.normalizePagination(page, limit);
     let program: { id: string; name: string } | null = null;
     if (programId) {
       const foundProgram = await this.prisma.subject.findFirst({
@@ -1435,30 +1488,35 @@ export class AdminsService {
       };
     }
 
-    const where = {
+    const where: Prisma.CourseWhereInput = {
       ...(universityId ? { universityId } : {}),
       subject: {
         isProgram: true,
         ...(programId ? { id: programId } : {}),
       },
-    } as any;
+    };
 
-    const courses = await this.prisma.course.findMany({
-      where,
-      include: {
-        subject: {
-          select: {
-            id: true,
-            subjectName: true,
+    const [courses, total] = await Promise.all([
+      this.prisma.course.findMany({
+        where,
+        skip: pagination.skip,
+        take: pagination.take,
+        include: {
+          subject: {
+            select: {
+              id: true,
+              subjectName: true,
+            },
           },
+          collegeYear: { include: { academicYear: true } },
+          season: true,
+          teacher: true,
+          _count: { select: { subscriptions: true } },
         },
-        collegeYear: { include: { academicYear: true } },
-        season: true,
-        teacher: true,
-        _count: { select: { subscriptions: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.course.count({ where }),
+    ]);
     const coursesWithDurations = await this.withCourseDurations(courses);
 
     return {
@@ -1473,6 +1531,7 @@ export class AdminsService {
               }
             : null,
         })),
+        pagination: this.buildPagination(pagination.page, pagination.limit, total),
       },
     };
   }
@@ -1536,15 +1595,35 @@ export class AdminsService {
     };
   }
 
-  async getCoursesOfTeacher(teacherId: string) {
+  async getCoursesOfTeacher(
+    teacherId: string,
+    status?: 'active' | 'expired',
+  ) {
     const teacher = await this.prisma.teacher.findUnique({
       where: { id: teacherId },
       select: { id: true, name: true },
     });
     if (!teacher) throw new NotFoundException('ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
 
+    const now = new Date();
+    const statusFilter: Prisma.CourseWhereInput =
+      status === 'active'
+        ? {
+            status: 'APPROVED',
+            OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
+          }
+        : status === 'expired'
+          ? {
+              status: 'APPROVED',
+              expiresAt: { lt: now },
+            }
+          : {};
+
     const courses = await this.prisma.course.findMany({
-      where: { teacherId },
+      where: {
+        teacherId,
+        ...statusFilter,
+      },
       include: {
         teacher: { select: { id: true, name: true, image: true, telegramUrl: true, instagramUrl: true } },
         subject: { select: { id: true, subjectName: true, isProgram: true } },
@@ -1561,7 +1640,13 @@ export class AdminsService {
 
     return {
       teacher: { id: teacher.id, name: teacher.name },
-      courses: coursesWithDurations.map((course) => this.buildCourseCardWithTeacher(course)),
+      filters: {
+        status: status ?? null,
+      },
+      courses: coursesWithDurations.map((course) => ({
+        ...this.buildCourseCardWithTeacher(course),
+        approverAt: course.approvedAt ?? null,
+      })),
     };
   }
 

@@ -123,6 +123,25 @@ export class AdminsController {
     return this.admins.getDashboardSubjectCourses(
       query.subjectId,
       query.universityId,
+      query.page,
+      query.limit,
+    );
+  }
+
+  @Get('dashboard/courses/subject')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary: 'Get subject courses for admin (singular path alias)',
+  })
+  @ApiOkResponse({ description: 'Subject courses' })
+  async getDashboardSubjectCoursesAlias(@Query() query: DashboardCoursesQueryDto) {
+    return this.admins.getDashboardSubjectCourses(
+      query.subjectId,
+      query.universityId,
+      query.page,
+      query.limit,
     );
   }
 
@@ -138,6 +157,8 @@ export class AdminsController {
     return this.admins.getDashboardProgramCourses(
       query.programId,
       query.universityId,
+      query.page,
+      query.limit,
     );
   }
 
@@ -444,10 +465,17 @@ export class AdminsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Get courses created by a teacher' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['active', 'expired'],
+    description: 'Filter teacher courses by active or expired approved courses',
+  })
   async getCoursesOfTeacher(
     @Param('teacherId', new ParseUUIDPipe({ version: '4' })) teacherId: string,
+    @Query('status') status?: 'active' | 'expired',
   ) {
-    return this.admins.getCoursesOfTeacher(teacherId);
+    return this.admins.getCoursesOfTeacher(teacherId, status);
   }
 
   @Get('students/:studentId/courses')
