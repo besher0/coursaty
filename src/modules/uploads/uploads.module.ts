@@ -7,5 +7,6 @@ import { BunnyModule } from '../../shared/bunny/bunny.module';
   imports: [BunnyModule],
   controllers: [UploadsController],
   providers: [UploadsService],
+  exports: [UploadsService],
 })
 export class UploadsModule {}

@@ -646,8 +646,10 @@ model StudentEnrollment {
   department  Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   collegeYear CollegeYear @relation(fields: [collegeYearId], references: [id])
 
-  // universityNumber is unique per university + college (not globally).
-  @@unique([universityId, collegeId, universityNumber])
+  // Active universityNumber uniqueness is enforced by a partial PostgreSQL
+  // unique index in migrations: (universityId, collegeId, universityNumber)
+  // WHERE isActive = true AND universityNumber IS NOT NULL.
+  // Historical inactive enrollments may reuse the same number.
   @@index([studentId])
   @@index([isActive])
   @@index([universityId])
