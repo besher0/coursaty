@@ -149,13 +149,18 @@ export class CourseService {
       departmentId = dto.departmentId ? String(dto.departmentId) : null;
     }
 
+    const courseDiscountPercentage = this.resolveCourseDiscountPercentage(
+      dto.price,
+      this.getDiscountedPriceInput(dto),
+    );
+
     return this.prisma.course.create({
       data: {
         name: dto.name,
         description: dto.description,
         imageUrl: dto.imageUrl,
         price: dto.price,
-        courseDiscountPercentage: dto.courseDiscountPercentage ?? 0,
+        courseDiscountPercentage,
         duration: 0,
         isFree: dto.isFree,
         isCompleted: dto.isCompleted ?? false,
@@ -256,11 +261,27 @@ export class CourseService {
 
     await this.assertCourseOwnership(user, id);
     const data: any = {};
+    const discountedPriceInput = this.getDiscountedPriceInput(dto);
+    const needsCurrentPrice = discountedPriceInput !== undefined && dto.price === undefined;
+    const currentPricing = needsCurrentPrice
+      ? await this.prisma.course.findUnique({
+          where: { id: String(id) },
+          select: { price: true },
+        })
+      : null;
+    if (needsCurrentPrice && !currentPricing) throw new NotFoundException('الكورس غير موجود');
+    const resolvedPrice = dto.price !== undefined ? dto.price : Number(currentPricing?.price ?? 0);
+
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl;
     if (dto.price !== undefined) data.price = dto.price as any;
-    if (dto.courseDiscountPercentage !== undefined) data.courseDiscountPercentage = dto.courseDiscountPercentage as any;
+    if (discountedPriceInput !== undefined) {
+      data.courseDiscountPercentage = this.resolveCourseDiscountPercentage(
+        resolvedPrice,
+        discountedPriceInput,
+      ) as any;
+    }
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
     if (dto.isCompleted !== undefined) data.isCompleted = dto.isCompleted;
     if (dto.expiresAt !== undefined) data.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
@@ -1298,6 +1319,35 @@ export class CourseService {
     });
 
     if (!affiliation) throw new BadRequestException('المدرس غير منتسب للنطاق المحدد');
+  }
+
+  private getDiscountedPriceInput(dto: {
+    discountedPrice?: number;
+    courseDiscountPercentage?: number;
+  }) {
+    return dto.discountedPrice ?? dto.courseDiscountPercentage;
+  }
+
+  private resolveCourseDiscountPercentage(price: number, discountedPrice?: number) {
+    const basePrice = Number(price);
+    if (!Number.isFinite(basePrice) || basePrice < 0) {
+      throw new BadRequestException('سعر الكورس يجب أن يكون أكبر أو يساوي صفر');
+    }
+
+    if (discountedPrice === undefined || discountedPrice === null) return 0;
+
+    const finalPrice = Number(discountedPrice);
+    if (!Number.isFinite(finalPrice) || finalPrice < 0) {
+      throw new BadRequestException('سعر الكورس بعد الحسم يجب أن يكون أكبر أو يساوي صفر');
+    }
+
+    if (finalPrice > basePrice) {
+      throw new BadRequestException('سعر الكورس بعد الحسم لا يمكن أن يكون أكبر من سعر الكورس');
+    }
+
+    if (basePrice === 0) return 0;
+
+    return Number((((basePrice - finalPrice) * 100) / basePrice).toFixed(2));
   }
 
 

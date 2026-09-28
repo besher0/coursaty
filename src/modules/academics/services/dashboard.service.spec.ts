@@ -88,7 +88,48 @@ describe('DashboardService unified courses filters', () => {
     );
   });
 
-  it('does not apply the active home season when all years are requested', async () => {
+  it('applies the admin active home season when all years are requested', async () => {
+    const prisma = {
+      collegeYear: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'year-1',
+            academicYear: {
+              yearName: 'First year',
+              yearNumber: 1,
+            },
+          },
+        ]),
+      },
+      course: {
+        count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const service = new DashboardService(prisma as any);
+
+    jest.spyOn(service as any, 'getStudentCollege').mockResolvedValue({
+      collegeId: 'college-1',
+      college: {
+        id: 'college-1',
+        name: 'Medicine',
+        universityId: 'university-1',
+      },
+      collegeYearId: 'student-year',
+    });
+    jest.spyOn(service as any, 'getActiveHomeSeasonId').mockResolvedValue('active-season');
+    await service.getCoursesByYear(user, 1, 10, guestFilter, undefined, true);
+
+    expect(prisma.collegeYear.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { collegeId: 'college-1' },
+      }),
+    );
+    const courseWhereClauses = prisma.course.count.mock.calls.map(([query]) => query.where);
+    expect(JSON.stringify(courseWhereClauses)).toContain('active-season');
+  });
+
+  it('does not fall back to other seasons when the admin active home season has no courses', async () => {
     const prisma = {
       collegeYear: {
         findMany: jest.fn().mockResolvedValue([
@@ -119,15 +160,12 @@ describe('DashboardService unified courses filters', () => {
     });
     jest.spyOn(service as any, 'getActiveHomeSeasonId').mockResolvedValue('active-season');
 
-    await service.getCoursesByYear(user, 1, 10, guestFilter, undefined, true);
+    const result = await service.getCoursesByYear(user, 1, 10, guestFilter, undefined, true);
 
-    expect(prisma.collegeYear.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { collegeId: 'college-1' },
-      }),
-    );
     const courseWhereClauses = prisma.course.count.mock.calls.map(([query]) => query.where);
-    expect(JSON.stringify(courseWhereClauses)).not.toContain('active-season');
+    expect(JSON.stringify(courseWhereClauses)).toContain('active-season');
+    expect(prisma.collegeYear.findMany).toHaveBeenCalledTimes(1);
+    expect(result.years[0].courses).toEqual([]);
   });
 
   it('returns only teachers whose user account is active in student college info', async () => {

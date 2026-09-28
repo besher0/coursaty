@@ -25,6 +25,74 @@ describe('CourseService academic identity immutability', () => {
     ).rejects.toThrow(DomainException);
   });
 
+  it('stores a discounted final price as the internal discount percentage on create', async () => {
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue({ userableId: 'teacher-1' }) },
+      courseCategory: { findUnique: jest.fn().mockResolvedValue({ id: 'category-1', requiresAcademicLinks: false }) },
+      university: { findUnique: jest.fn().mockResolvedValue({ id: 'university-1' }) },
+      college: { findUnique: jest.fn().mockResolvedValue({ id: 'college-1', universityId: 'university-1' }) },
+      teacherAffiliation: { findFirst: jest.fn().mockResolvedValue({ id: 'affiliation-1' }) },
+      course: { create: jest.fn().mockResolvedValue({ id: 'course-1' }) },
+    };
+    const service = new CourseService(prisma as any, {} as any, {} as any);
+
+    await service.createCourse(
+      {
+        name: 'Course',
+        categoryId: 'category-1',
+        universityId: 'university-1',
+        collegeId: 'college-1',
+        price: 400,
+        discountedPrice: 300,
+      } as any,
+      { userId: 'user-1', type: 'TEACHER' },
+    );
+
+    expect(prisma.course.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          price: 400,
+          courseDiscountPercentage: 25,
+        }),
+      }),
+    );
+  });
+
+  it('treats the legacy courseDiscountPercentage input as discounted final price on update', async () => {
+    const tx = {
+      course: { update: jest.fn().mockResolvedValue({ id: 'course-1' }) },
+      studentSubscription: { updateMany: jest.fn() },
+    };
+    const prisma = {
+      $transaction: jest.fn((callback) => callback(tx)),
+    } as any;
+    const service = new CourseService(prisma, {} as any, {} as any);
+    jest.spyOn(service as any, 'assertCourseOwnership').mockResolvedValue(undefined);
+    jest.spyOn(service, 'getCourseDetails').mockResolvedValue({} as any);
+
+    await service.updateCourse(
+      'course-1',
+      { price: 400, courseDiscountPercentage: 300 } as any,
+      { userId: 'admin-1', type: 'ADMIN' },
+    );
+
+    expect(tx.course.update).toHaveBeenCalledWith({
+      where: { id: 'course-1' },
+      data: expect.objectContaining({
+        price: 400,
+        courseDiscountPercentage: 25,
+      }),
+    });
+  });
+
+  it('rejects a discounted final price greater than the course price', async () => {
+    const service = new CourseService({} as any, {} as any, {} as any);
+
+    expect(() =>
+      (service as any).resolveCourseDiscountPercentage(400, 500),
+    ).toThrow('سعر الكورس بعد الحسم لا يمكن أن يكون أكبر من سعر الكورس');
+  });
+
   it('caps existing subscriptions when a course expiry is set', async () => {
     const tx = {
       course: {

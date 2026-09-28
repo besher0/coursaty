@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsDateString, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, Max } from 'class-validator';
+import { IsBoolean, IsDateString, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
 
 export class CreateCourseDto {
   @ApiProperty()
@@ -58,14 +58,23 @@ export class CreateCourseDto {
 
   @ApiProperty()
   @IsNumber()
+  @Min(0)
   price: number;
 
-  @ApiPropertyOptional({ description: 'Course discount percentage (0-100)' })
+  @ApiPropertyOptional({
+    description: 'Final course price after discount. Kept under the legacy name for API compatibility.',
+    example: 300,
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)
-  @Max(100)
   courseDiscountPercentage?: number;
+
+  @ApiPropertyOptional({ description: 'Final course price after discount', example: 300 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  discountedPrice?: number;
 
   @ApiPropertyOptional({ default: 0, description: 'Deprecated input. Course duration is auto-calculated from videos in seconds.' })
   @IsOptional()

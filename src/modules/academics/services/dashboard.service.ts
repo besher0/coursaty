@@ -1887,7 +1887,6 @@ export class DashboardService {
     const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
     const scopedCollegeYearId = includeAllYears ? null : collegeYearId;
     const activeSeasonId = await this.getActiveHomeSeasonId();
-    const shouldApplyActiveSeason = !includeAllYears;
 
     const years = await this.prisma.collegeYear.findMany({
       where: {
@@ -1912,7 +1911,7 @@ export class DashboardService {
                   collegeId,
                   collegeYearId: year.id,
                   categoryId: category.id,
-                  ...(shouldApplyActiveSeason && activeSeasonId ? { seasonId: activeSeasonId } : {}),
+                  ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
                 },
                 isFree,
               ),
@@ -1979,6 +1978,7 @@ export class DashboardService {
   ) {
     const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
     const scopedCollegeYearId = includeAllYears ? null : collegeYearId;
+    const activeSeasonId = await this.getActiveHomeSeasonId();
 
     const years = await this.prisma.collegeYear.findMany({
       where: {
@@ -1997,6 +1997,7 @@ export class DashboardService {
               collegeId,
               collegeYearId: year.id,
               subscriptions: { some: {} },
+              ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
             },
             isFree,
           ),
@@ -2045,6 +2046,7 @@ export class DashboardService {
             collegeId,
             collegeYearId: null,
             subscriptions: { some: {} },
+            ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
           },
           isFree,
         ),
@@ -2102,7 +2104,6 @@ export class DashboardService {
     const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
     const scopedCollegeYearId = includeAllYears ? null : collegeYearId;
     const activeSeasonId = await this.getActiveHomeSeasonId();
-    const shouldApplyActiveSeason = !includeAllYears;
 
     const years = await this.prisma.collegeYear.findMany({
       where: {
@@ -2120,7 +2121,7 @@ export class DashboardService {
             {
               collegeId,
               collegeYearId: year.id,
-              ...(shouldApplyActiveSeason && activeSeasonId ? { seasonId: activeSeasonId } : {}),
+              ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
             },
             isFree,
           ),
@@ -2203,6 +2204,19 @@ export class DashboardService {
     const hasCoursesInScopedFilters = yearsWithCourses.some((yearEntry) => yearEntry.courses.length > 0);
 
     if (!hasCoursesInScopedFilters) {
+      if (activeSeasonId) {
+        const activeSeasonNoYearEntry = await getNoYearCoursesEntry(true);
+
+        return {
+          college: {
+            id: college.id,
+            name: college.name,
+            universityId: college.universityId,
+          },
+          years: activeSeasonNoYearEntry ? [...yearsWithCourses, activeSeasonNoYearEntry] : yearsWithCourses,
+        };
+      }
+
       const fallbackYears = await this.prisma.collegeYear.findMany({
         where: {
           collegeId,
@@ -2265,7 +2279,7 @@ export class DashboardService {
       };
     }
 
-    const noYearEntry = await getNoYearCoursesEntry(includeAllYears ? false : true);
+    const noYearEntry = await getNoYearCoursesEntry(Boolean(activeSeasonId));
 
     return {
       college: {
@@ -2301,6 +2315,16 @@ export class DashboardService {
       );
 
       if (matched && !hasCoursesInScopedFilters) {
+        const activeSeasonId = await this.getActiveHomeSeasonId();
+        if (activeSeasonId) {
+          return {
+            college: result.college,
+            mode: 'category',
+            category: matched.category,
+            years: matched.years,
+          };
+        }
+
         const { collegeId } = await this.getStudentCollege(user, guestFilter);
         const fallbackCourses = await this.prisma.course.findMany({
           where: this.withActiveCourseFilter(
