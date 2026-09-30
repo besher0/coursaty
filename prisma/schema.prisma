@@ -48,6 +48,11 @@ enum CourseStatus {
   REJECTED
 }
 
+enum CourseInterestSource {
+  QR_SCREENSHOT
+  MANUAL
+}
+
 enum RevenueTransactionType {
   INITIAL
   RENEWAL
@@ -84,6 +89,7 @@ model Student {
   enrollments          StudentEnrollment[]
   subscriptions        StudentSubscription[]
   subscriptionRequests SubscriptionRequest[]
+  courseInterests      StudentCourseInterest[]
   courseRatings        CourseRating[]
   teacherLikes         TeacherLike[]
   usedCodes            Code[]                @relation("UsedCodes")
@@ -368,6 +374,7 @@ model Course {
   expiresAt                DateTime?
   introVideoUrl            String?
   discussionGroupUrl       String?
+  paymentQrUrl             String?
   status                   CourseStatus @default(PENDING)
   teacherPercentage        Decimal      @default(0.0)
   approvedById             String?
@@ -387,6 +394,7 @@ model Course {
   codeGroups           CodeGroup[]
   subscriptions        StudentSubscription[]
   subscriptionRequests SubscriptionRequest[]
+  interests            StudentCourseInterest[]
   courseRatings        CourseRating[]
 
   @@index([teacherId])
@@ -624,6 +632,22 @@ model StudentSubscription {
   @@unique([studentId, courseId])
   @@index([courseId])
   @@index([createdAt])
+}
+
+model StudentCourseInterest {
+  id        String               @id @default(uuid())
+  studentId String
+  courseId  String
+  source    CourseInterestSource
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  course  Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, courseId])
+  @@index([studentId, createdAt])
+  @@index([courseId])
 }
 
 model StudentEnrollment {

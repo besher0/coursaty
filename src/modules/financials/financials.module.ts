@@ -6,9 +6,10 @@ import { CodesController } from './controllers/codes.controller';
 import { SubscriptionsController } from './controllers/subscriptions.controller';
 import { SubscriptionRequestsController } from './controllers/subscription-requests.controller';
 import { UploadsModule } from '../uploads/uploads.module';
+import { FirebaseModule } from '@/shared/firebase/firebase.module';
 
 @Module({
-  imports: [PrismaModule, UploadsModule],
+  imports: [PrismaModule, UploadsModule, FirebaseModule],
   providers: [FinancialsService],
   controllers: [CodeGroupsController, CodesController, SubscriptionsController, SubscriptionRequestsController],
   exports: [FinancialsService],

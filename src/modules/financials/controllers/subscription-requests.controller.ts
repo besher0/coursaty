@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { FinancialsService } from '../services/financials.service';
@@ -12,6 +12,7 @@ import { RejectSubscriptionRequestDto } from '../dtos/reject-subscription-reques
 import { CreateSubscriptionRequestWithReceiptDto } from '../dtos/create-subscription-request-with-receipt.dto';
 import { ResubmitSubscriptionRequestWithReceiptDto } from '../dtos/resubmit-subscription-request-with-receipt.dto';
 import { UploadsService } from '../../uploads/uploads.service';
+import { ApiCodeException } from '@/common/errors/api-code.exception';
 
 @ApiTags('financials')
 @ApiBearerAuth()
@@ -54,10 +55,12 @@ export class SubscriptionRequestsController {
     @Body() body: CreateSubscriptionRequestWithReceiptDto,
     @Req() req: any,
   ) {
-    if (!file) throw new BadRequestException('صورة إيصال الدفع مطلوبة');
+    if (!file) {
+      throw new ApiCodeException(HttpStatus.BAD_REQUEST, 'INVALID_RECEIPT_FILE', 'صورة إيصال الدفع مطلوبة');
+    }
 
     const receipt = await this.uploads.uploadSubscriptionReceipt(file);
-    return this.financials.createSubscriptionRequest(req.user, {
+    const subscriptionRequest = await this.financials.createSubscriptionRequest(req.user, {
       courseId: body.courseId,
       receiptUrl: receipt.fileUrl,
       receiptFileName: receipt.fileName,
@@ -65,6 +68,7 @@ export class SubscriptionRequestsController {
       receiptSizeBytes: receipt.sizeBytes,
       note: body.note,
     });
+    return { subscriptionRequest };
   }
 
   @Get('me')

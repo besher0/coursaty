@@ -174,6 +174,37 @@ export class CourseController {
     return this.courseService.listCourses();
   }
 
+  @Patch(':id/payment-qr')
+  @ApiOperation({ summary: 'Upload or replace course payment QR image' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  updateCoursePaymentQr(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @UploadedFile() file: any,
+    @Req() req: any,
+  ) {
+    return this.courseService.updateCoursePaymentQr(id, file, req.user);
+  }
+
+  @Delete(':id/payment-qr')
+  @ApiOperation({ summary: 'Delete course payment QR image' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('TEACHER', 'ADMIN')
+  deleteCoursePaymentQr(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Req() req: any) {
+    return this.courseService.deleteCoursePaymentQr(id, req.user);
+  }
+
   @Patch(':id')
   @ApiOperation({ summary: 'Update course' })
   @UseGuards(JwtAuthGuard, RolesGuard)

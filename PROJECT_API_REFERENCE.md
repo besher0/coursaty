@@ -85,6 +85,9 @@ Base path: `/students`
 | Method | Endpoint | Role | الوصف | أهم البيانات |
 |---|---|---|---|---|
 | POST | `/students` | عام/إداري حسب التدفق | إنشاء طالب | بيانات الطالب وربطه بالمستخدم |
+| POST | `/students/me/course-interests/:courseId` | STUDENT | حفظ اهتمام دفع لكورس | `source = QR_SCREENSHOT أو MANUAL` |
+| GET | `/students/me/course-interests` | STUDENT | قائمة اهتمامات الطالب مع الطلب المعلق إن وجد | من الـ token |
+| DELETE | `/students/me/course-interests/:courseId` | STUDENT | حذف اهتمام قبل رفع الإيصال | يرفض إذا يوجد طلب PENDING |
 
 ## Teachers
 
@@ -124,6 +127,8 @@ Base path: `/courses`
 | DELETE | `/courses/categories/:id` | ADMIN | حذف تصنيف | `id` |
 | GET | `/courses/:id` | محمي/عام حسب الكنترولر | جلب كورس مختصر | `id` |
 | GET | `/courses/:id/details` | محمي | تفاصيل كورس للطالب/المستخدم | `id` |
+| PATCH | `/courses/:id/payment-qr` | TEACHER/ADMIN | رفع/استبدال QR الدفع للكورس | multipart file JPG/PNG/WebP حتى 5MB |
+| DELETE | `/courses/:id/payment-qr` | TEACHER/ADMIN | حذف QR الدفع للكورس | `id` |
 | GET | `/courses/:id/admin-details` | ADMIN/TEACHER | تفاصيل كاملة للإدارة | `id` |
 | GET | `/courses/:id/admin-details/info` | ADMIN/TEACHER | معلومات إدارية للكورس | `id` |
 | GET | `/courses/:id/admin-details/lectures` | ADMIN/TEACHER | محاضرات الكورس للإدارة | `id` |
@@ -744,6 +749,7 @@ npm run prisma:generate
 | `Code` | كود اشتراك/خصم |
 | `StudentSubscription` | اشتراك طالب بكورس |
 | `SubscriptionRequest` | طلب اشتراك مع إيصال |
+| `StudentCourseInterest` | اهتمام الطالب بكورس بعد عرض QR وقبل/أثناء مراجعة الإيصال |
 | `RevenueTransaction` | snapshot مالي لكل عملية |
 | `TeacherWithdrawal` | سحب أرباح أستاذ |
 
@@ -756,6 +762,7 @@ npm run prisma:generate
   - `courseDiscountAmount`
   - `finalAmount`
 - قبول طلب الاشتراك يجب أن يستخدم snapshot الطلب وليس سعر الكورس الحالي.
+- `StudentCourseInterest` فريد على `[studentId, courseId]` ويحذف عند قبول أو رفض طلب الاشتراك.
 - `RevenueTransaction` هو سجل مالي تاريخي، لا تغير قيمه القديمة بسبب تعديل سعر الكورس.
 - `Code.status` يأخذ `ACTIVE`, `USED`, `INACTIVE`.
 
@@ -903,12 +910,14 @@ Teacher.isVisibleToStudents
 - خزن السعر الحالي كـ snapshot.
 - خزن الحسم والمبلغ النهائي في `SubscriptionRequest`.
 - لا تعتمد عند الموافقة على السعر الحالي للكورس إذا تغير بعد الطلب.
+- في تدفق QR يجب أن يملك الكورس `paymentQrUrl`، وأن يبقى `StudentCourseInterest` موجودا بعد رفع الإيصال.
 
 عند قبول طلب:
 
 - أنشئ أو حدث `StudentSubscription`.
 - سجل `RevenueTransaction` إذا كان هذا هو نمط السيرفس الحالي.
 - انتبه من duplicate subscription بسبب unique `[studentId, courseId]`.
+- احذف `StudentCourseInterest` المطابق داخل نفس transaction عند القبول أو الرفض.
 
 عند استخدام كود:
 

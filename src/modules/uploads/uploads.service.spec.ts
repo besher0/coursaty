@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { ApiCodeException } from '@/common/errors/api-code.exception';
 import { UploadsService } from './uploads.service';
 
 describe('UploadsService payment receipt validation', () => {
@@ -34,22 +34,16 @@ describe('UploadsService payment receipt validation', () => {
     Buffer.alloc(64, 0x44),
   ]);
 
-  it('accepts a PDF by magic bytes and returns the receipt metadata', async () => {
+  it('rejects PDF files for the QR receipt flow', async () => {
     const { service, bunny } = createService();
 
-    const result = await service.uploadSubscriptionReceipt({
+    await expect(service.uploadSubscriptionReceipt({
       originalname: 'receipt.exe', // hostile extension is ignored
       mimetype: 'application/octet-stream', // lying mimetype is ignored
       buffer: pdf,
-    });
+    })).rejects.toBeInstanceOf(ApiCodeException);
 
-    expect(bunny.uploadImage).toHaveBeenCalledWith(
-      expect.stringMatching(/^uploads\/subscription-receipts\/.+\.pdf$/),
-      expect.anything(),
-    );
-    expect(result.mimeType).toBe('application/pdf');
-    expect(result.sizeBytes).toBe(pdf.length);
-    expect(result.fileUrl).toContain('uploads/subscription-receipts/');
+    expect(bunny.uploadImage).not.toHaveBeenCalled();
   });
 
   it('accepts JPG, PNG and WebP images', async () => {
@@ -79,7 +73,7 @@ describe('UploadsService payment receipt validation', () => {
         mimetype: 'image/jpeg',
         buffer: fake,
       }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toBeInstanceOf(ApiCodeException);
   });
 
   it('rejects an empty payload', async () => {
@@ -87,16 +81,16 @@ describe('UploadsService payment receipt validation', () => {
 
     await expect(
       service.uploadSubscriptionReceipt({ originalname: 'a.jpg', mimetype: 'image/jpeg', buffer: Buffer.alloc(0) }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toBeInstanceOf(ApiCodeException);
   });
 
   it('rejects files above the 5MB limit even when the type is valid', async () => {
     const { service, bunny } = createService();
-    const bigPdf = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(5 * 1024 * 1024, 0x44)]);
+    const bigJpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(5 * 1024 * 1024, 0x44)]);
 
     await expect(
-      service.uploadSubscriptionReceipt({ originalname: 'big.pdf', mimetype: 'application/pdf', buffer: bigPdf }),
-    ).rejects.toThrow(BadRequestException);
+      service.uploadSubscriptionReceipt({ originalname: 'big.jpg', mimetype: 'image/jpeg', buffer: bigJpeg }),
+    ).rejects.toThrow(ApiCodeException);
     expect(bunny.uploadImage).not.toHaveBeenCalled();
   });
 });

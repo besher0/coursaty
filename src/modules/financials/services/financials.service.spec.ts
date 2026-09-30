@@ -493,11 +493,12 @@ describe('FinancialsService manual payment requests', () => {
       teacherPercentage: 40,
       expiresAt: new Date('2027-01-30T00:00:00.000Z'),
       status: 'APPROVED',
+      paymentQrUrl: 'https://cdn.example.com/uploads/payment-qr/course-1.webp',
       teacher: { id: 'teacher-1', name: 'Teacher One', isVisibleToStudents: true },
       university: null,
       college: null,
     };
-    return {
+    const prisma: any = {
       user: {
         findUnique: jest.fn().mockImplementation(({ where }: any) =>
           Promise.resolve(
@@ -520,8 +521,16 @@ describe('FinancialsService manual payment requests', () => {
         create: jest.fn().mockResolvedValue(overrides.createdRequest ?? { id: 'request-1' }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      studentCourseInterest: {
+        upsert: jest.fn().mockResolvedValue({ id: 'interest-1' }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       ...overrides.extra,
     };
+    if (!prisma.$transaction) {
+      prisma.$transaction = jest.fn((cb: any) => cb(prisma));
+    }
+    return prisma;
   }
 
   const receiptDto = {
@@ -620,6 +629,7 @@ describe('FinancialsService manual payment requests', () => {
       },
       studentSubscription: { upsert: jest.fn().mockResolvedValue({ id: 'subscription-1' }) },
       revenueTransaction: { create: jest.fn().mockResolvedValue({ id: 'revenue-1' }) },
+      studentCourseInterest: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     const prisma = basePrisma({
       extra: {
@@ -733,6 +743,7 @@ describe('FinancialsService manual payment requests', () => {
       note: 'old note',
       course: {
         status: 'APPROVED',
+        paymentQrUrl: 'https://cdn.example.com/uploads/payment-qr/course-1.webp',
         expiresAt: new Date('2027-01-30T00:00:00.000Z'),
         teacher: { isVisibleToStudents: true },
       },
@@ -829,6 +840,7 @@ describe('FinancialsService manual payment requests', () => {
       courseId: 'course-1',
       course: {
         status: 'APPROVED',
+        paymentQrUrl: 'https://cdn.example.com/uploads/payment-qr/course-1.webp',
         expiresAt: new Date('2027-01-30T00:00:00.000Z'),
         teacher: { isVisibleToStudents: true },
       },

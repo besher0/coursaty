@@ -1,6 +1,9 @@
 ﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { $Enums, Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import { HttpStatus } from '@nestjs/common';
+import { ApiCodeException } from '@/common/errors/api-code.exception';
+import { FirebaseService } from '@/shared/firebase/firebase.service';
 import { UpdateCodeGroupDto } from '../dtos/update-code-group.dto';
 import { UpdateCodeDto } from '../dtos/update-code.dto';
 import { CreateBulkCodesDto } from '../dtos/create-bulk-codes.dto';
@@ -16,7 +19,10 @@ export class FinancialsService {
   private static readonly CODE_PATTERN = /^[a-z0-9]{8}$/;
   private static readonly CODE_MAX_LIFETIME_MONTHS = 6;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly firebase?: FirebaseService,
+  ) {}
 
   private readonly subscriptionCourseInclude = {
     course: {
@@ -173,6 +179,7 @@ export class FinancialsService {
         imageUrl: true,
         price: true,
         courseDiscountPercentage: true,
+        paymentQrUrl: true,
         expiresAt: true,
         status: true,
         teacher: { select: { id: true, name: true, image: true } },
@@ -648,7 +655,6 @@ export class FinancialsService {
     if (course.expiresAt && course.expiresAt.getTime() <= now.getTime()) {
       throw new BadRequestException('انتهى الكورس ولا يمكن الاشتراك به');
     }
-
     // Calculate prices with sequential discounts
     const basePrice = Number(course.price);
     const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
@@ -805,8 +811,22 @@ export class FinancialsService {
     if (!course) throw new NotFoundException('الكورس غير موجود');
     if (!course.teacher.isVisibleToStudents) throw new NotFoundException('الكورس غير موجود');
     if (course.status !== 'APPROVED') throw new BadRequestException('الكورس غير معتمد');
+    if (course.isFree) {
+      throw new ApiCodeException(
+        HttpStatus.FORBIDDEN,
+        'COURSE_NOT_AVAILABLE_FOR_SUBSCRIPTION',
+        'الكورس غير متاح للاشتراك',
+      );
+    }
     if (course.expiresAt && course.expiresAt.getTime() <= now.getTime()) {
       throw new BadRequestException('انتهى الكورس ولا يمكن الاشتراك به');
+    }
+    if (!course.paymentQrUrl) {
+      throw new ApiCodeException(
+        HttpStatus.BAD_REQUEST,
+        'COURSE_PAYMENT_QR_MISSING',
+        'لا يوجد QR قابل للدفع للكورس',
+      );
     }
 
     // The receipt must come from the secure receipt-specific upload endpoint.
@@ -820,7 +840,11 @@ export class FinancialsService {
       activeSubscription &&
       (!activeSubscription.expiresAt || activeSubscription.expiresAt.getTime() > now.getTime())
     ) {
-      throw new BadRequestException('أنت مشترك بهذا الكورس بالفعل');
+      throw new ApiCodeException(
+        HttpStatus.CONFLICT,
+        'ACTIVE_SUBSCRIPTION_EXISTS',
+        'أنت مشترك بهذا الكورس بالفعل',
+      );
     }
 
     const pendingRequest = await this.prisma.subscriptionRequest.findFirst({
@@ -830,35 +854,55 @@ export class FinancialsService {
         status: 'PENDING',
       },
     });
-    if (pendingRequest) throw new BadRequestException('يوجد طلب اشتراك معلق لهذا الكورس');
+    if (pendingRequest) {
+      throw new ApiCodeException(
+        HttpStatus.CONFLICT,
+        'SUBSCRIPTION_REQUEST_ALREADY_PENDING',
+        'يوجد طلب اشتراك معلق لهذا الكورس',
+      );
+    }
 
     // Snapshot the CURRENT effective price. Approval later uses these stored
     // values so later price/discount changes cannot rewrite history.
     const snapshot = this.computePriceSnapshot(course);
 
     try {
-      const createdRequest = await this.prisma.subscriptionRequest.create({
-        data: {
-          studentId,
-          courseId: course.id,
-          receiptUrl: dto.receiptUrl,
-          receiptFileName: dto.receiptFileName ?? null,
-          receiptMimeType: dto.receiptMimeType ?? null,
-          receiptSizeBytes: dto.receiptSizeBytes ?? null,
-          basePrice: snapshot.basePrice as any,
-          courseDiscountPercentage: snapshot.courseDiscountPct as any,
-          courseDiscountAmount: snapshot.courseDiscountAmount as any,
-          finalAmount: snapshot.finalAmount as any,
-          note: dto.note,
-        },
-        include: this.subscriptionRequestInclude,
+      const createdRequest = await this.prisma.$transaction(async (tx) => {
+        const request = await tx.subscriptionRequest.create({
+          data: {
+            studentId,
+            courseId: course.id,
+            receiptUrl: dto.receiptUrl,
+            receiptFileName: dto.receiptFileName ?? null,
+            receiptMimeType: dto.receiptMimeType ?? null,
+            receiptSizeBytes: dto.receiptSizeBytes ?? null,
+            basePrice: snapshot.basePrice as any,
+            courseDiscountPercentage: snapshot.courseDiscountPct as any,
+            courseDiscountAmount: snapshot.courseDiscountAmount as any,
+            finalAmount: snapshot.finalAmount as any,
+            note: dto.note,
+          },
+          include: this.subscriptionRequestInclude,
+        });
+
+        await tx.studentCourseInterest.upsert({
+          where: { studentId_courseId: { studentId, courseId: course.id } },
+          create: { studentId, courseId: course.id, source: 'MANUAL' },
+          update: {},
+        });
+
+        return request;
       });
       return this.mapSubscriptionRequestStudent(createdRequest);
     } catch (err) {
       // P2002 on the partial unique index: a concurrent request already created
       // a PENDING request for the same student+course.
       if (this.isUniqueConstraintError(err) && String(err.meta?.target ?? '').includes('pending')) {
-        throw new BadRequestException('يوجد طلب اشتراك معلق لهذا الكورس');
+        throw new ApiCodeException(
+          HttpStatus.CONFLICT,
+          'SUBSCRIPTION_REQUEST_ALREADY_PENDING',
+          'يوجد طلب اشتراك معلق لهذا الكورس',
+        );
       }
       throw err;
     }
@@ -900,6 +944,20 @@ export class FinancialsService {
     if (request.course.status !== 'APPROVED') {
       throw new BadRequestException('الكورس غير معتمد');
     }
+    if (request.course.isFree) {
+      throw new ApiCodeException(
+        HttpStatus.FORBIDDEN,
+        'COURSE_NOT_AVAILABLE_FOR_SUBSCRIPTION',
+        'الكورس غير متاح للاشتراك',
+      );
+    }
+    if (!request.course.paymentQrUrl) {
+      throw new ApiCodeException(
+        HttpStatus.BAD_REQUEST,
+        'COURSE_PAYMENT_QR_MISSING',
+        'لا يوجد QR قابل للدفع للكورس',
+      );
+    }
     if (request.course.expiresAt && request.course.expiresAt.getTime() <= now.getTime()) {
       throw new BadRequestException('انتهى الكورس ولا يمكن الاشتراك به');
     }
@@ -917,7 +975,11 @@ export class FinancialsService {
       activeSubscription &&
       (!activeSubscription.expiresAt || activeSubscription.expiresAt.getTime() > now.getTime())
     ) {
-      throw new BadRequestException('أنت مشترك بهذا الكورس بالفعل');
+      throw new ApiCodeException(
+        HttpStatus.CONFLICT,
+        'ACTIVE_SUBSCRIPTION_EXISTS',
+        'أنت مشترك بهذا الكورس بالفعل',
+      );
     }
 
     const otherPending = await this.prisma.subscriptionRequest.findFirst({
@@ -930,7 +992,11 @@ export class FinancialsService {
       select: { id: true },
     });
     if (otherPending) {
-      throw new BadRequestException('يوجد طلب اشتراك معلق لهذا الكورس');
+      throw new ApiCodeException(
+        HttpStatus.CONFLICT,
+        'SUBSCRIPTION_REQUEST_ALREADY_PENDING',
+        'يوجد طلب اشتراك معلق لهذا الكورس',
+      );
     }
 
     this.assertReceiptUrlFromSecureUpload(dto.receiptUrl);
@@ -959,6 +1025,12 @@ export class FinancialsService {
         throw new BadRequestException('تعذر إعادة إرسال الطلب، حدّث الصفحة وحاول مرة أخرى');
       }
 
+      await this.prisma.studentCourseInterest.upsert({
+        where: { studentId_courseId: { studentId, courseId: request.courseId } },
+        create: { studentId, courseId: request.courseId, source: 'MANUAL' },
+        update: {},
+      });
+
       const pendingRequest = await this.prisma.subscriptionRequest.findUnique({
         where: { id },
         include: this.subscriptionRequestInclude,
@@ -973,7 +1045,11 @@ export class FinancialsService {
       return this.mapSubscriptionRequestStudent(pendingRequest);
     } catch (err) {
       if (this.isUniqueConstraintError(err)) {
-        throw new BadRequestException('يوجد طلب اشتراك معلق لهذا الكورس');
+        throw new ApiCodeException(
+          HttpStatus.CONFLICT,
+          'SUBSCRIPTION_REQUEST_ALREADY_PENDING',
+          'يوجد طلب اشتراك معلق لهذا الكورس',
+        );
       }
       throw err;
     }
@@ -1108,7 +1184,7 @@ export class FinancialsService {
       request.course.expiresAt ?? null,
     );
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const marked = await tx.subscriptionRequest.updateMany({
         where: { id, status: 'PENDING' },
         data: {
@@ -1175,6 +1251,13 @@ export class FinancialsService {
         },
       });
 
+      await tx.studentCourseInterest.deleteMany({
+        where: {
+          studentId: request.studentId,
+          courseId: request.courseId,
+        },
+      });
+
       const reviewedRequest = await tx.subscriptionRequest.findUnique({
         where: { id },
         include: this.subscriptionRequestInclude,
@@ -1187,6 +1270,16 @@ export class FinancialsService {
         subscription,
       };
     });
+
+    await this.sendSubscriptionRequestReviewedPush(
+      request.studentId,
+      request.courseId,
+      request.id,
+      'APPROVED',
+      dto.adminNote ?? null,
+    );
+
+    return result;
   }
 
   async rejectSubscriptionRequest(
@@ -1207,23 +1300,41 @@ export class FinancialsService {
 
     // Concurrency-safe atomic claim: only a request still PENDING transitions
     // to REJECTED. Two admins racing on the same request: exactly one wins.
-    const marked = await this.prisma.subscriptionRequest.updateMany({
-      where: { id, status: 'PENDING' },
-      data: {
-        status: 'REJECTED',
-        adminNote: reason,
-        reviewedById: adminId,
-        reviewedAt: new Date(),
-      },
-    });
-    if (marked.count === 0) {
-      throw new BadRequestException('تمت مراجعة هذا الطلب مسبقا');
-    }
+    const rejectedRequest = await this.prisma.$transaction(async (tx) => {
+      const marked = await tx.subscriptionRequest.updateMany({
+        where: { id, status: 'PENDING' },
+        data: {
+          status: 'REJECTED',
+          adminNote: reason,
+          reviewedById: adminId,
+          reviewedAt: new Date(),
+        },
+      });
+      if (marked.count === 0) {
+        throw new BadRequestException('تمت مراجعة هذا الطلب مسبقا');
+      }
 
-    const rejectedRequest = await this.prisma.subscriptionRequest.findUnique({
-      where: { id },
-      include: this.subscriptionRequestInclude,
+      await tx.studentCourseInterest.deleteMany({
+        where: {
+          studentId: request.studentId,
+          courseId: request.courseId,
+        },
+      });
+
+      return tx.subscriptionRequest.findUnique({
+        where: { id },
+        include: this.subscriptionRequestInclude,
+      });
     });
+
+    await this.sendSubscriptionRequestReviewedPush(
+      request.studentId,
+      request.courseId,
+      request.id,
+      'REJECTED',
+      reason,
+    );
+
     return rejectedRequest
       ? this.mapSubscriptionRequestStudent(rejectedRequest)
       : null;
@@ -1357,6 +1468,40 @@ export class FinancialsService {
     return courseExpiresAt
       ? new Date(Math.min(renewedExpiry, courseExpiresAt.getTime()))
       : new Date(renewedExpiry);
+  }
+
+  private async sendSubscriptionRequestReviewedPush(
+    studentId: string,
+    courseId: string,
+    requestId: string,
+    status: 'APPROVED' | 'REJECTED',
+    adminNote?: string | null,
+  ) {
+    if (!this.firebase) return;
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        userableType: 'STUDENT',
+        userableId: studentId,
+        fcmToken: { not: null },
+      },
+      select: { fcmToken: true },
+    });
+    if (!user?.fcmToken) return;
+
+    const approved = status === 'APPROVED';
+    await this.firebase.sendPush(
+      user.fcmToken,
+      approved ? 'تم قبول طلب الاشتراك' : 'تم رفض طلب الاشتراك',
+      approved ? 'تم قبول الإيصال وتفعيل الاشتراك' : adminNote || 'تم رفض الإيصال',
+      {
+        type: 'SUBSCRIPTION_REQUEST_REVIEWED',
+        courseId,
+        requestId,
+        status,
+        adminNote: adminNote ?? '',
+      },
+    );
   }
 
   async getActiveCoursesByUser(user?: { userId: string | number; type: string }) {
