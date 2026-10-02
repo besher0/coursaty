@@ -447,8 +447,6 @@ export class BunnyService {
     return `https://${this.storagePublicHost}/${path}`;
   }
 
-<<<<<<< HEAD
-=======
   async deleteStorageFile(path: string): Promise<void> {
     const normalizedPath = String(path || '').replace(/^\/+/, '');
     if (!normalizedPath) return;
@@ -462,7 +460,6 @@ export class BunnyService {
     });
   }
 
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
   async verifyStorageCredentials() {
     if (!this.storageZone || !this.storageHost || !this.storageApiKey) {
       throw new BadGatewayException('Missing Bunny Storage config (BUNNY_STORAGE_ZONE/BUNNY_STORAGE_HOST/BUNNY_STORAGE_API_KEY)');

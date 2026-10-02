@@ -130,6 +130,8 @@ export class CourseInterestsService {
     price: Prisma.Decimal | number | string;
     courseDiscountPercentage?: Prisma.Decimal | number | string | null;
     paymentQrUrl?: string | null;
+    isFree?: boolean;
+    expiresAt?: Date | null;
   }) {
     const basePrice = Number(course.price);
     const discountPct = Number(course.courseDiscountPercentage ?? 0);
@@ -144,6 +146,9 @@ export class CourseInterestsService {
       basePrice,
       discountedPrice,
       paymentQrUrl: course.paymentQrUrl ?? null,
+      isFree: course.isFree ?? false,
+      expiresAt: course.expiresAt ?? null,
+      isExpired: Boolean(course.expiresAt && course.expiresAt.getTime() <= Date.now()),
     };
   }
 
@@ -165,7 +170,16 @@ export class CourseInterestsService {
     course: Awaited<ReturnType<CourseInterestsService['findSubscribableCourse']>>,
   ) {
     const now = Date.now();
-    if (course.status !== 'APPROVED' || course.isFree || (course.expiresAt && course.expiresAt.getTime() <= now)) {
+    const basePrice = Number(course.price);
+    const discountPercentage = Number(course.courseDiscountPercentage ?? 0);
+    const finalPrice = basePrice - (basePrice * discountPercentage) / 100;
+    if (
+      course.status !== 'APPROVED' ||
+      course.isFree ||
+      !Number.isFinite(finalPrice) ||
+      finalPrice <= 0 ||
+      (course.expiresAt && course.expiresAt.getTime() <= now)
+    ) {
       throw new ApiCodeException(
         HttpStatus.FORBIDDEN,
         'COURSE_NOT_AVAILABLE_FOR_SUBSCRIPTION',
@@ -190,6 +204,18 @@ export class CourseInterestsService {
         HttpStatus.CONFLICT,
         'ACTIVE_SUBSCRIPTION_EXISTS',
         'الطالب مشترك بهذا الكورس بالفعل',
+      );
+    }
+
+    const pendingRequest = await this.prisma.subscriptionRequest.findFirst({
+      where: { studentId, courseId: course.id, status: 'PENDING' },
+      select: { id: true },
+    });
+    if (pendingRequest) {
+      throw new ApiCodeException(
+        HttpStatus.CONFLICT,
+        'SUBSCRIPTION_REQUEST_ALREADY_PENDING',
+        'يوجد طلب اشتراك معلق لهذا الكورس',
       );
     }
   }

@@ -1,9 +1,3 @@
-<<<<<<< HEAD
-import { Body, Controller, Post } from '@nestjs/common';
-import { ApiCreatedResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { StudentsService } from '../services/students.service';
-import { CreateStudentDto } from '../dtos/create-student.dto';
-=======
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiCreatedResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { StudentsService } from '../services/students.service';
@@ -13,19 +7,14 @@ import { SaveCourseInterestDto } from '../dtos/course-interest.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/modules/auth/guards/roles.guard';
 import { Roles } from '@/modules/auth/roles.decorator';
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
 
 @ApiTags('students')
 @Controller('students')
 export class StudentsController {
-<<<<<<< HEAD
-  constructor(private readonly students: StudentsService) {}
-=======
   constructor(
     private readonly students: StudentsService,
     private readonly courseInterests: CourseInterestsService,
   ) {}
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
 
   @Post()
   @ApiOperation({ summary: 'Create student profile (legacy public endpoint)' })
@@ -33,8 +22,6 @@ export class StudentsController {
   async create(@Body() dto: CreateStudentDto) {
     return this.students.create(dto);
   }
-<<<<<<< HEAD
-=======
 
   @Post('me/course-interests/:courseId')
   @ApiBearerAuth()
@@ -69,5 +56,4 @@ export class StudentsController {
   ) {
     return this.courseInterests.deleteInterest(req.user, courseId);
   }
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
 }

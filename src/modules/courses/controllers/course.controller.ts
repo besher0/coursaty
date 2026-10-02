@@ -174,8 +174,6 @@ export class CourseController {
     return this.courseService.listCourses();
   }
 
-<<<<<<< HEAD
-=======
   @Patch(':id/payment-qr')
   @ApiOperation({ summary: 'Upload or replace course payment QR image' })
   @ApiConsumes('multipart/form-data')
@@ -207,7 +205,6 @@ export class CourseController {
     return this.courseService.deleteCoursePaymentQr(id, req.user);
   }
 
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
   @Patch(':id')
   @ApiOperation({ summary: 'Update course' })
   @UseGuards(JwtAuthGuard, RolesGuard)
