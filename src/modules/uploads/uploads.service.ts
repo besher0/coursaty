@@ -1,11 +1,8 @@
 import { BadGatewayException, BadRequestException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { BunnyService } from '../../shared/bunny/bunny.service';
 import { PrismaService } from '@/prisma/prisma.service';
-<<<<<<< HEAD
-=======
 import { ApiCodeException } from '@/common/errors/api-code.exception';
 import { HttpStatus } from '@nestjs/common';
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { UpdateBunnyVideoSettingsDto } from './dtos/update-bunny-video-settings.dto';
@@ -14,13 +11,8 @@ import { RefreshUploadVideoTusDto } from './dtos/refresh-upload-video-tus.dto';
 
 @Injectable()
 export class UploadsService {
-<<<<<<< HEAD
-  /** Allowed payment-proof formats with their magic byte signatures. */
-  private static readonly RECEIPT_ALLOWED_TYPES = [
-=======
   /** Allowed QR/receipt image formats with their magic byte signatures. */
   private static readonly PAYMENT_IMAGE_ALLOWED_TYPES = [
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
     { mime: 'image/jpeg', extension: '.jpg', signature: [0xff, 0xd8, 0xff] },
     { mime: 'image/png', extension: '.png', signature: [0x89, 0x50, 0x4e, 0x47] },
     {
@@ -30,18 +22,10 @@ export class UploadsService {
       signature: [0x52, 0x49, 0x46, 0x46],
       signatureOffsetMatch: { offset: 8, bytes: [0x57, 0x45, 0x42, 0x50] },
     },
-<<<<<<< HEAD
-    { mime: 'application/pdf', extension: '.pdf', signature: [0x25, 0x50, 0x44, 0x46] },
-  ] as const;
-
-  /** 5 MB — consistent with typical payment-proof image/PDF sizes. */
-  private static readonly RECEIPT_MAX_SIZE_BYTES = 5 * 1024 * 1024;
-=======
   ] as const;
 
   /** 5 MB, matching the mobile contract for payment QR and receipt images. */
   private static readonly PAYMENT_IMAGE_MAX_SIZE_BYTES = 5 * 1024 * 1024;
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
 
   constructor(
     private readonly bunny: BunnyService,
@@ -67,29 +51,7 @@ export class UploadsService {
    * request. Uploading alone never grants any course access.
    */
   async uploadSubscriptionReceipt(file: any) {
-<<<<<<< HEAD
-    if (!file?.buffer || !Buffer.isBuffer(file.buffer) || !file.buffer.length) {
-      throw new BadRequestException('ملف إثبات الدفع مطلوب');
-    }
-
-    const detected = this.detectReceiptType(file.buffer);
-    if (!detected) {
-      throw new BadRequestException(
-        'صيغة إثبات الدفع غير مدعومة. الصيغ المسموحة: JPG أو PNG أو WebP أو PDF',
-      );
-    }
-
-    if (file.buffer.length > UploadsService.RECEIPT_MAX_SIZE_BYTES) {
-      throw new BadRequestException(
-        `حجم ملف إثبات الدفع يتجاوز الحد المسموح (${UploadsService.RECEIPT_MAX_SIZE_BYTES / (1024 * 1024)} ميغابايت)`,
-      );
-    }
-
-    // Keep the storage extension aligned with the DETECTED type, never the
-    // client-provided file name.
-=======
     const detected = this.validatePaymentImage(file, 'إثبات الدفع');
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
     const fileName = `${randomUUID()}${detected.extension}`;
     const storagePath = `uploads/subscription-receipts/${fileName}`;
     const url = await this.bunny.uploadImage(storagePath, file);
@@ -103,10 +65,16 @@ export class UploadsService {
     };
   }
 
-<<<<<<< HEAD
-  private detectReceiptType(buffer: Buffer) {
-    for (const type of UploadsService.RECEIPT_ALLOWED_TYPES) {
-=======
+  async deleteSubscriptionReceipt(storagePath?: string | null) {
+    const normalizedPath = String(storagePath ?? '').replace(/^\/+/, '');
+    if (!normalizedPath.startsWith('uploads/subscription-receipts/')) return;
+    try {
+      await this.bunny.deleteStorageFile(normalizedPath);
+    } catch {
+      // The request failed after upload; stale storage can be retried manually.
+    }
+  }
+
   async uploadPaymentQr(file: any) {
     const detected = this.validatePaymentImage(file, 'QR الدفع');
     const fileName = `${randomUUID()}${detected.extension}`;
@@ -149,7 +117,6 @@ export class UploadsService {
 
   private detectPaymentImageType(buffer: Buffer) {
     for (const type of UploadsService.PAYMENT_IMAGE_ALLOWED_TYPES) {
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
       const signature = type.signature as readonly number[];
       if (buffer.length < signature.length) continue;
       const headMatches = signature.every((byte, index) => buffer[index] === byte);

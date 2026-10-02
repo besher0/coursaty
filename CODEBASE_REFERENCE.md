@@ -52,10 +52,7 @@ Core models and purpose:
 - `TeacherAffiliation`: teacher scope binding (university/college/department)
 - `CourseCategory`: categories (has `sortOrder`, `requiresAcademicLinks`, `isProgram`)
 - `Course`: course master record with approval and pricing fields
-<<<<<<< HEAD
-=======
 - `StudentCourseInterest`: student intent to pay for a course through QR before/during receipt review
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
 - `Lecture`, `Video`, `LectureFile`: learning content
 - `Question`, `QuestionOption`: assessments
 - `CodeGroup`, `Code`: discount code system
@@ -81,12 +78,9 @@ Core models and purpose:
 
 ### Students (`/students`)
 - `POST /`: create student profile
-<<<<<<< HEAD
-=======
 - `POST /me/course-interests/:courseId` (`STUDENT`): save QR/manual course payment interest
 - `GET /me/course-interests` (`STUDENT`): list interests with pending request if present
 - `DELETE /me/course-interests/:courseId` (`STUDENT`): delete interest only when no pending request exists
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
 
 ### Teachers (`/teachers`)
 - `POST /`: create teacher profile
@@ -109,11 +103,8 @@ Core models and purpose:
 - `DELETE /categories/:id` (`ADMIN`)
 - `GET /:id`: course with aggregated counts
 - `GET /:id/details`: course details for app consumption
-<<<<<<< HEAD
-=======
 - `PATCH /:id/payment-qr` (`TEACHER`, `ADMIN`): upload/replace QR payment image
 - `DELETE /:id/payment-qr` (`TEACHER`, `ADMIN`): remove QR payment image
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
 - `GET /:id/admin-details` (`ADMIN`): rich admin view (course/details/lectures/codes)
 - `GET /`: list courses
 - `PATCH /:id` (`TEACHER`, `ADMIN`)

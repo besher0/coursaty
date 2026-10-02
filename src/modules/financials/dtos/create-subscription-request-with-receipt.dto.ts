@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class CreateSubscriptionRequestWithReceiptDto {
   @ApiProperty()
@@ -10,5 +10,6 @@ export class CreateSubscriptionRequestWithReceiptDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @MaxLength(400)
   note?: string;
 }

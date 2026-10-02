@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import { BadRequestException } from '@nestjs/common';
-=======
 import { ApiCodeException } from '@/common/errors/api-code.exception';
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
 import { UploadsService } from './uploads.service';
 
 describe('UploadsService payment receipt validation', () => {
@@ -38,24 +34,6 @@ describe('UploadsService payment receipt validation', () => {
     Buffer.alloc(64, 0x44),
   ]);
 
-<<<<<<< HEAD
-  it('accepts a PDF by magic bytes and returns the receipt metadata', async () => {
-    const { service, bunny } = createService();
-
-    const result = await service.uploadSubscriptionReceipt({
-      originalname: 'receipt.exe', // hostile extension is ignored
-      mimetype: 'application/octet-stream', // lying mimetype is ignored
-      buffer: pdf,
-    });
-
-    expect(bunny.uploadImage).toHaveBeenCalledWith(
-      expect.stringMatching(/^uploads\/subscription-receipts\/.+\.pdf$/),
-      expect.anything(),
-    );
-    expect(result.mimeType).toBe('application/pdf');
-    expect(result.sizeBytes).toBe(pdf.length);
-    expect(result.fileUrl).toContain('uploads/subscription-receipts/');
-=======
   it('rejects PDF files for the QR receipt flow', async () => {
     const { service, bunny } = createService();
 
@@ -66,7 +44,6 @@ describe('UploadsService payment receipt validation', () => {
     })).rejects.toBeInstanceOf(ApiCodeException);
 
     expect(bunny.uploadImage).not.toHaveBeenCalled();
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
   });
 
   it('accepts JPG, PNG and WebP images', async () => {
@@ -96,11 +73,7 @@ describe('UploadsService payment receipt validation', () => {
         mimetype: 'image/jpeg',
         buffer: fake,
       }),
-<<<<<<< HEAD
-    ).rejects.toBeInstanceOf(BadRequestException);
-=======
     ).rejects.toBeInstanceOf(ApiCodeException);
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
   });
 
   it('rejects an empty payload', async () => {
@@ -108,28 +81,29 @@ describe('UploadsService payment receipt validation', () => {
 
     await expect(
       service.uploadSubscriptionReceipt({ originalname: 'a.jpg', mimetype: 'image/jpeg', buffer: Buffer.alloc(0) }),
-<<<<<<< HEAD
-    ).rejects.toBeInstanceOf(BadRequestException);
-=======
     ).rejects.toBeInstanceOf(ApiCodeException);
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
   });
 
   it('rejects files above the 5MB limit even when the type is valid', async () => {
     const { service, bunny } = createService();
-<<<<<<< HEAD
-    const bigPdf = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(5 * 1024 * 1024, 0x44)]);
-
-    await expect(
-      service.uploadSubscriptionReceipt({ originalname: 'big.pdf', mimetype: 'application/pdf', buffer: bigPdf }),
-    ).rejects.toThrow(BadRequestException);
-=======
     const bigJpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(5 * 1024 * 1024, 0x44)]);
 
     await expect(
       service.uploadSubscriptionReceipt({ originalname: 'big.jpg', mimetype: 'image/jpeg', buffer: bigJpeg }),
     ).rejects.toThrow(ApiCodeException);
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
     expect(bunny.uploadImage).not.toHaveBeenCalled();
+  });
+
+  it('deletes only receipt paths during best-effort cleanup', async () => {
+    const bunny = {
+      deleteStorageFile: jest.fn().mockResolvedValue(undefined),
+    };
+    const { service } = createService(bunny);
+
+    await service.deleteSubscriptionReceipt('/uploads/subscription-receipts/local.jpg');
+    await service.deleteSubscriptionReceipt('uploads/payment-qr/keep.jpg');
+
+    expect(bunny.deleteStorageFile).toHaveBeenCalledTimes(1);
+    expect(bunny.deleteStorageFile).toHaveBeenCalledWith('uploads/subscription-receipts/local.jpg');
   });
 });

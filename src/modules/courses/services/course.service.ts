@@ -1,15 +1,12 @@
-﻿import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { CreateCourseDto } from '../dtos/create-course.dto';
 import { BunnyService } from '../../../shared/bunny/bunny.service';
 import { UpdateCourseDto } from '../dtos/update-course.dto';
 import { DomainException } from '@/common/errors/domain.exception';
-<<<<<<< HEAD
-=======
 import { ApiCodeException } from '@/common/errors/api-code.exception';
 import { HttpStatus } from '@nestjs/common';
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { InitTusVideoUploadDto } from '../../lectures/dtos/init-tus-video-upload.dto';
@@ -20,8 +17,6 @@ import { RevenuePeriodQueryDto } from '@/modules/revenues/dtos';
 
 @Injectable()
 export class CourseService {
-<<<<<<< HEAD
-=======
   private static readonly PAYMENT_QR_ALLOWED_TYPES = [
     { mime: 'image/jpeg', extension: '.jpg', signature: [0xff, 0xd8, 0xff] },
     { mime: 'image/png', extension: '.png', signature: [0x89, 0x50, 0x4e, 0x47] },
@@ -34,7 +29,6 @@ export class CourseService {
   ] as const;
   private static readonly PAYMENT_QR_MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
   constructor(
     private readonly prisma: PrismaService,
     private readonly bunny: BunnyService,
@@ -340,8 +334,6 @@ export class CourseService {
     return this.getCourseDetails(String(id), user);
   }
 
-<<<<<<< HEAD
-=======
   async updateCoursePaymentQr(
     id: string,
     file: any,
@@ -388,7 +380,6 @@ export class CourseService {
     return { paymentQrUrl: null };
   }
 
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
   async deleteCourse(id: string, user?: { userId: string | number; type: string }) {
     const courseId = String(id);
     await this.assertCourseOwnership(user, courseId);
@@ -450,10 +441,7 @@ export class CourseService {
       }
 
       await tx.studentSubscription.deleteMany({ where: { courseId } });
-<<<<<<< HEAD
-=======
       await tx.studentCourseInterest.deleteMany({ where: { courseId } });
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
       await tx.courseRating.deleteMany({ where: { courseId } });
 
       return tx.course.delete({ where: { id: courseId } });
@@ -553,10 +541,7 @@ export class CourseService {
         name: course.name,
         basePrice: basePrice,
         discountedPrice: priceAfterCourseDiscount,
-<<<<<<< HEAD
-=======
         paymentQrUrl: course.paymentQrUrl ?? null,
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
         isFree: course.isFree,
         isCompleted: course.isCompleted ?? false,
         locked: !hasAccess,
@@ -1205,8 +1190,6 @@ export class CourseService {
     return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
   }
 
-<<<<<<< HEAD
-=======
   private validatePaymentQrFile(file: any) {
     if (!file?.buffer || !Buffer.isBuffer(file.buffer) || !file.buffer.length) {
       throw new ApiCodeException(HttpStatus.BAD_REQUEST, 'INVALID_RECEIPT_FILE', 'ملف QR الدفع مطلوب');
@@ -1274,7 +1257,6 @@ export class CourseService {
     }
   }
 
->>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
   private async assertStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {
     if (!user || user.type !== 'STUDENT') return;
 
