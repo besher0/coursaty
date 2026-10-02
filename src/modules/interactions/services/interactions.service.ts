@@ -1,0 +1,387 @@
+﻿import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '@/prisma/prisma.service';
+
+@Injectable()
+export class InteractionsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async getMyCourseRating(courseId: string, user?: { userId: string | number; type: string }) {
+    const { studentId } = await this.ensureStudentContext(user);
+
+    const course = await this.prisma.course.findFirst({
+      where: {
+        id: String(courseId),
+        teacher: { isVisibleToStudents: true },
+      },
+    });
+    if (!course) throw new NotFoundException('الكورس غير موجود');
+
+    const rating = await this.prisma.courseRating.findUnique({
+      where: {
+        courseId_studentId: {
+          courseId: String(courseId),
+          studentId,
+        },
+      },
+      select: {
+        id: true,
+        courseId: true,
+        studentId: true,
+        rating: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    const stats = await this.prisma.courseRating.aggregate({
+      where: { courseId: String(courseId) },
+      _avg: { rating: true },
+      _count: { rating: true },
+    });
+
+    return {
+      courseId: String(courseId),
+      averageRating: stats._avg.rating || 0,
+      totalRatings: stats._count.rating,
+      isRatedByUser: !!rating,
+      myRating: rating
+        ? {
+            rating: rating.rating,
+            createdAt: rating.createdAt,
+            updatedAt: rating.updatedAt,
+          }
+        : null,
+    };
+  }
+
+  async rateCourse(courseId: string, rating: number, user?: { userId: string | number; type: string }) {
+    const { studentId } = await this.ensureStudentContext(user);
+
+    const course = await this.prisma.course.findUnique({
+      where: { id: String(courseId) },
+      select: {
+        id: true,
+        isFree: true,
+        price: true,
+        courseDiscountPercentage: true,
+        teacher: {
+          select: { isVisibleToStudents: true },
+        },
+      },
+    });
+    if (!course) throw new NotFoundException('الكورس غير موجود');
+    if (!course.teacher.isVisibleToStudents) throw new NotFoundException('الكورس غير موجود');
+
+    const canRateWithoutSubscription = this.canStudentRateWithoutSubscription(course);
+    if (!canRateWithoutSubscription) {
+      const subscription = await this.prisma.studentSubscription.findUnique({
+        where: { studentId_courseId: { studentId, courseId: String(courseId) } },
+      });
+      if (!subscription) throw new ForbiddenException('التقييم متاح فقط للطلاب المشتركين في الكورس');
+    }
+
+    return this.prisma.courseRating.upsert({
+      where: {
+        courseId_studentId: {
+          courseId: String(courseId),
+          studentId,
+        },
+      },
+      update: { rating },
+      create: {
+        courseId: String(courseId),
+        studentId,
+        rating,
+      },
+    });
+  }
+
+  async likeTeacher(teacherId: string, user?: { userId: string | number; type: string }) {
+    const { studentId } = await this.ensureStudentContext(user);
+    await this.ensureVisibleTeacher(teacherId);
+
+    const result = await this.prisma.teacherLike.upsert({
+      where: { teacherId_studentId: { teacherId, studentId } },
+      update: {},
+      create: { teacherId, studentId },
+    });
+
+    await this.syncTeacherLikesCount(teacherId);
+    return result;
+  }
+
+  async deleteTeacherLike(teacherId: string, user?: { userId: string | number; type: string }) {
+    const { studentId } = await this.ensureStudentContext(user);
+    await this.ensureVisibleTeacher(teacherId);
+    const result = await this.prisma.teacherLike.delete({
+      where: { teacherId_studentId: { teacherId, studentId } },
+    });
+    await this.syncTeacherLikesCount(teacherId);
+    return result;
+  }
+
+  async interactVideo(
+    videoId: string,
+    user: { userId: string | number; type: string } | undefined,
+    data: { isLiked?: boolean },
+  ) {
+    const { dbUser } = await this.ensureVideoAccess(videoId, user);
+    const existingInteraction = await this.prisma.videoInteraction.findFirst({
+      where: { videoId, userId: dbUser.id },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // If isLiked is omitted, keep this endpoint as a toggle.
+    const shouldToggleLike = data.isLiked === undefined;
+
+    if (existingInteraction) {
+      if (shouldToggleLike) {
+        const nextLikeState = !existingInteraction.isLiked;
+
+        return this.prisma.$transaction(async (tx) => {
+          await tx.videoInteraction.updateMany({
+            where: {
+              videoId,
+              userId: dbUser.id,
+              isLiked: true,
+              NOT: { id: existingInteraction.id },
+            },
+            data: { isLiked: false },
+          });
+
+          return tx.videoInteraction.update({
+            where: { id: existingInteraction.id },
+            data: { isLiked: nextLikeState },
+          });
+        });
+      }
+
+      if (data.isLiked === existingInteraction.isLiked) return existingInteraction;
+      if (!data.isLiked) {
+        return this.prisma.videoInteraction.update({
+          where: { id: existingInteraction.id },
+          data: { isLiked: false },
+        });
+      }
+
+      return this.prisma.$transaction(async (tx) => {
+        await tx.videoInteraction.updateMany({
+          where: {
+            videoId,
+            userId: dbUser.id,
+            isLiked: true,
+            NOT: { id: existingInteraction.id },
+          },
+          data: { isLiked: false },
+        });
+
+        return tx.videoInteraction.update({
+          where: { id: existingInteraction.id },
+          data: { isLiked: true },
+        });
+      });
+    }
+
+    return this.prisma.videoInteraction.create({
+      data: {
+        videoId,
+        userId: dbUser.id,
+        isLiked: shouldToggleLike ? true : !!data.isLiked,
+      },
+    });
+  }
+
+  async getVideoLikes(videoId: string, user: { userId: string | number; type: string } | undefined) {
+    await this.ensureVideoAccess(videoId, user);
+    const { dbUser } = await this.ensureStudentContext(user);
+
+    const [likesCount, myLike] = await Promise.all([
+      this.prisma.videoInteraction.count({
+        where: { videoId, isLiked: true },
+      }),
+      this.prisma.videoInteraction.findFirst({
+        where: { videoId, userId: dbUser.id, isLiked: true },
+        select: { id: true },
+      }),
+    ]);
+
+    return {
+      videoId,
+      likesCount,
+      isLikedByUser: !!myLike,
+    };
+  }
+
+  async updateVideoInteraction(
+    id: string,
+    user: { userId: string | number; type: string } | undefined,
+    data: { isLiked?: boolean },
+  ) {
+    const interaction = await this.prisma.videoInteraction.findUnique({ where: { id } });
+    if (!interaction) throw new NotFoundException('التفاعل غير موجود');
+
+    const { dbUser } = await this.ensureStudentContext(user);
+
+    if (interaction.userId.toString() !== dbUser.id.toString()) throw new ForbiddenException('هذا التفاعل ليس لك');
+    await this.ensureVideoAccess(interaction.videoId, user);
+
+    if (data.isLiked === undefined || data.isLiked === interaction.isLiked) return interaction;
+
+    if (!data.isLiked) {
+      return this.prisma.videoInteraction.update({
+        where: { id },
+        data: { isLiked: false },
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.videoInteraction.updateMany({
+        where: {
+          videoId: interaction.videoId,
+          userId: dbUser.id,
+          isLiked: true,
+          NOT: { id },
+        },
+        data: { isLiked: false },
+      });
+
+      return tx.videoInteraction.update({
+        where: { id },
+        data: { isLiked: true },
+      });
+    });
+  }
+
+  async deleteVideoInteraction(id: string, user: { userId: string | number; type: string } | undefined) {
+    const interaction = await this.prisma.videoInteraction.findUnique({ where: { id } });
+    if (!interaction) throw new NotFoundException('التفاعل غير موجود');
+
+    const { dbUser } = await this.ensureStudentContext(user);
+    if (interaction.userId.toString() !== dbUser.id.toString()) throw new ForbiddenException('هذا التفاعل ليس لك');
+    await this.ensureVideoAccess(interaction.videoId, user);
+
+    await this.prisma.videoInteraction.delete({ where: { id } });
+    return { success: true };
+  }
+
+  async incrementVideoView(videoId: string, user: { userId: string | number; type: string } | undefined) {
+    await this.ensureVideoAccess(videoId, user);
+    return this.prisma.video.update({
+      where: { id: videoId },
+      data: { viewsCount: { increment: 1 } },
+    });
+  }
+
+  private async ensureStudentContext(user?: { userId: string | number; type: string }) {
+    if (user?.type !== 'STUDENT') {
+      throw new ForbiddenException('يجب تسجيل الدخول بحساب طالب');
+    }
+
+    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
+    if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
+    return { dbUser, studentId: dbUser.userableId };
+  }
+
+  private async ensureVideoAccess(videoId: string, user: { userId: string | number; type: string } | undefined) {
+    const video = await this.prisma.video.findUnique({
+      where: { id: videoId },
+      include: {
+        lecture: {
+          select: {
+            courseId: true,
+            course: {
+              select: {
+                isFree: true,
+                expiresAt: true,
+                teacher: {
+                  select: { isVisibleToStudents: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!video) throw new NotFoundException('الفيديو غير موجود');
+
+    if (user?.type === 'ADMIN') return { video };
+    if (user?.type === 'TEACHER') {
+      // Allow teacher access only if owns the course
+      const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
+      if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
+      const course = await this.prisma.course.findUnique({ where: { id: video.lecture.courseId } });
+      if (!course) throw new NotFoundException('الكورس غير موجود');
+      if (course.teacherId.toString() !== dbUser.userableId.toString()) {
+        throw new ForbiddenException('أنت لا تملك هذا الكورس');
+      }
+      return { video, dbUser };
+    }
+
+    const { dbUser } = await this.ensureStudentContext(user);
+
+    if (!video.lecture.course?.teacher.isVisibleToStudents) {
+      throw new NotFoundException('الفيديو غير موجود');
+    }
+
+    if (video.lecture.course?.expiresAt && video.lecture.course.expiresAt.getTime() <= Date.now()) {
+      throw new ForbiddenException('انتهت صلاحية الوصول للكورس');
+    }
+
+    if (video.lecture.course?.isFree) {
+      return { video, dbUser };
+    }
+
+    const subscription = await this.prisma.studentSubscription.findUnique({
+      where: {
+        studentId_courseId: { studentId: dbUser.userableId, courseId: video.lecture.courseId },
+      },
+    });
+
+    if (!subscription) throw new ForbiddenException('يلزم اشتراك');
+    if (subscription.expiresAt && subscription.expiresAt.getTime() <= Date.now()) {
+      throw new ForbiddenException('انتهت صلاحية الاشتراك على هذا الكورس');
+    }
+    return { video, dbUser };
+  }
+
+  private async ensureVideoExists(videoId: string) {
+    const video = await this.prisma.video.findUnique({
+      where: { id: videoId },
+      select: { id: true },
+    });
+    if (!video) throw new NotFoundException('الفيديو غير موجود');
+    return video;
+  }
+
+  private async ensureVisibleTeacher(teacherId: string) {
+    const teacher = await this.prisma.teacher.findFirst({
+      where: {
+        id: teacherId,
+        isVisibleToStudents: true,
+      },
+      select: { id: true },
+    });
+    if (!teacher) throw new NotFoundException('المدرس غير موجود');
+    return teacher;
+  }
+
+  private async syncTeacherLikesCount(teacherId: string) {
+    const likes = await this.prisma.teacherLike.count({ where: { teacherId } });
+    await this.prisma.teacher.update({ where: { id: teacherId }, data: { likesCount: likes } });
+  }
+
+  private canStudentRateWithoutSubscription(course: {
+    isFree: boolean;
+    price: unknown;
+    courseDiscountPercentage: unknown;
+  }) {
+    if (course.isFree) return true;
+
+    const basePrice = Number(course.price ?? 0);
+    const discountPercentage = Number(course.courseDiscountPercentage ?? 0);
+    const priceAfterCourseDiscount = Math.max(0, basePrice - (basePrice * discountPercentage) / 100);
+
+    return basePrice <= 0 || priceAfterCourseDiscount <= 0;
+  }
+}
+

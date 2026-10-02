@@ -1,0 +1,2 @@
+ALTER TABLE "Video" ADD COLUMN "size" INTEGER;
+ALTER TABLE "LectureFile" ADD COLUMN "size" INTEGER;

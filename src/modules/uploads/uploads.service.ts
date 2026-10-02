@@ -1,0 +1,388 @@
+import { BadGatewayException, BadRequestException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
+import { BunnyService } from '../../shared/bunny/bunny.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import { randomUUID } from 'crypto';
+import * as path from 'path';
+import { UpdateBunnyVideoSettingsDto } from './dtos/update-bunny-video-settings.dto';
+import { CompleteUploadVideoTusDto } from './dtos/complete-upload-video-tus.dto';
+import { RefreshUploadVideoTusDto } from './dtos/refresh-upload-video-tus.dto';
+
+@Injectable()
+export class UploadsService {
+  /** Allowed payment-proof formats with their magic byte signatures. */
+  private static readonly RECEIPT_ALLOWED_TYPES = [
+    { mime: 'image/jpeg', extension: '.jpg', signature: [0xff, 0xd8, 0xff] },
+    { mime: 'image/png', extension: '.png', signature: [0x89, 0x50, 0x4e, 0x47] },
+    {
+      mime: 'image/webp',
+      extension: '.webp',
+      // RIFF....WEBP
+      signature: [0x52, 0x49, 0x46, 0x46],
+      signatureOffsetMatch: { offset: 8, bytes: [0x57, 0x45, 0x42, 0x50] },
+    },
+    { mime: 'application/pdf', extension: '.pdf', signature: [0x25, 0x50, 0x44, 0x46] },
+  ] as const;
+
+  /** 5 MB — consistent with typical payment-proof image/PDF sizes. */
+  private static readonly RECEIPT_MAX_SIZE_BYTES = 5 * 1024 * 1024;
+
+  constructor(
+    private readonly bunny: BunnyService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  async uploadFile(file: any) {
+    const ext = path.extname(file.originalname || '') || '';
+    const fileName = `${randomUUID()}${ext}`;
+    const storagePath = `uploads/files/${fileName}`;
+    const url = await this.bunny.uploadImage(storagePath, file);
+
+    return {
+      fileName,
+      fileUrl: url,
+    };
+  }
+
+  /**
+   * Secure payment-proof upload: validates MIME/extension against the actual
+   * file bytes (magic numbers) and the size limit BEFORE uploading. The
+   * returned URL is the only accepted value when creating a subscription
+   * request. Uploading alone never grants any course access.
+   */
+  async uploadSubscriptionReceipt(file: any) {
+    if (!file?.buffer || !Buffer.isBuffer(file.buffer) || !file.buffer.length) {
+      throw new BadRequestException('ملف إثبات الدفع مطلوب');
+    }
+
+    const detected = this.detectReceiptType(file.buffer);
+    if (!detected) {
+      throw new BadRequestException(
+        'صيغة إثبات الدفع غير مدعومة. الصيغ المسموحة: JPG أو PNG أو WebP أو PDF',
+      );
+    }
+
+    if (file.buffer.length > UploadsService.RECEIPT_MAX_SIZE_BYTES) {
+      throw new BadRequestException(
+        `حجم ملف إثبات الدفع يتجاوز الحد المسموح (${UploadsService.RECEIPT_MAX_SIZE_BYTES / (1024 * 1024)} ميغابايت)`,
+      );
+    }
+
+    // Keep the storage extension aligned with the DETECTED type, never the
+    // client-provided file name.
+    const fileName = `${randomUUID()}${detected.extension}`;
+    const storagePath = `uploads/subscription-receipts/${fileName}`;
+    const url = await this.bunny.uploadImage(storagePath, file);
+
+    return {
+      fileName,
+      fileUrl: url,
+      storagePath,
+      mimeType: detected.mime,
+      sizeBytes: file.buffer.length,
+    };
+  }
+
+  private detectReceiptType(buffer: Buffer) {
+    for (const type of UploadsService.RECEIPT_ALLOWED_TYPES) {
+      const signature = type.signature as readonly number[];
+      if (buffer.length < signature.length) continue;
+      const headMatches = signature.every((byte, index) => buffer[index] === byte);
+      if (!headMatches) continue;
+
+      if ('signatureOffsetMatch' in type && type.signatureOffsetMatch) {
+        const { offset, bytes } = type.signatureOffsetMatch;
+        if (buffer.length < offset + bytes.length) continue;
+        const tailMatches = (bytes as readonly number[]).every(
+          (byte, index) => buffer[offset + index] === byte,
+        );
+        if (!tailMatches) continue;
+      }
+
+      return { mime: type.mime, extension: type.extension };
+    }
+    return null;
+  }
+
+  async uploadVideo(file: any, options?: { title?: string; preferredResolution?: string }) {
+    const videoTitle = options?.title || file.originalname || `video-${randomUUID()}`;
+    const ext = path.extname(file.originalname || '') || '.mp4';
+    const fileName = `${randomUUID()}${ext}`;
+    const storagePath = `uploads/videos/${fileName}`;
+    let storageVideoUrl: string | null = null;
+    let storageUploadError: string | null = null;
+    try {
+      storageVideoUrl = await this.bunny.uploadImage(storagePath, file);
+    } catch (error) {
+      storageUploadError = this.bunny.describeError(error, 'Bunny Storage upload');
+    }
+    let streamUploadError: string | null = null;
+    let streamVideoId: string | null = null;
+
+    let streamPlayback = {
+      streamVideoId: null as string | null,
+      streamEmbedUrl: null as string | null,
+      streamPlayUrl: null as string | null,
+      streamMasterPlaylistUrl: null as string | null,
+      streamPlaylistUrl: null as string | null,
+      streamFallbackUrl: null as string | null,
+      availableResolutions: null as string[] | null,
+      playlistResolutions: null as Array<{ resolution: string; path: string }> | null,
+      mp4Resolutions: null as Array<{ resolution: string; path: string }> | null,
+      preferredResolution: options?.preferredResolution ?? null,
+      preferredPlaylistResolutionUrl: null as string | null,
+      preferredResolutionUrl: null as string | null,
+      isPlayable: null as boolean | null,
+      isPlaylistPlayable: null as boolean | null,
+    };
+    try {
+      const streamVideo = await this.bunny.createStreamVideo(videoTitle);
+      streamVideoId = streamVideo.guid;
+      await this.bunny.uploadStreamVideo(streamVideo.guid, file);
+      streamPlayback = await this.bunny.getStreamPlaybackPayload(streamVideo.guid, options?.preferredResolution);
+    } catch (error) {
+      streamUploadError = `${this.bunny.describeError(error, 'Bunny Stream upload')}. File is available in Bunny Storage only.`;
+      streamPlayback = {
+        ...streamPlayback,
+        streamVideoId,
+      };
+    }
+
+    const persistedVideoUrl = streamPlayback.streamPlayUrl ?? storageVideoUrl;
+    if (!persistedVideoUrl) {
+      throw new BadGatewayException(
+        [storageUploadError, streamUploadError].filter(Boolean).join(' | ') || 'Video upload failed',
+      );
+    }
+
+    return {
+      guid: streamPlayback.streamVideoId ?? streamVideoId,
+      title: videoTitle,
+      videoUrl: persistedVideoUrl,
+      downloadUrl: storageVideoUrl ?? persistedVideoUrl,
+      storageVideoUrl,
+      storagePath,
+      storageUploadError,
+      streamUploadSucceeded: Boolean(streamPlayback.streamVideoId),
+      streamUploadError,
+      embedUrl: streamPlayback.streamEmbedUrl,
+      ...streamPlayback,
+    };
+  }
+
+  async initTusVideoUpload(options?: { title?: string; expiresInSeconds?: number }) {
+    const videoTitle = options?.title?.trim() || `video-${randomUUID()}`;
+    const uploadSession = await this.bunny.createTusUploadSession(videoTitle, options?.expiresInSeconds ?? 3600);
+
+    return {
+      title: videoTitle,
+      upload: {
+        videoId: uploadSession.videoId,
+        endpoint: uploadSession.tusEndpoint,
+        libraryId: uploadSession.libraryId,
+        authorizationExpire: uploadSession.authorizationExpire,
+        authorizationSignature: uploadSession.authorizationSignature,
+        headers: uploadSession.headers,
+      },
+    };
+  }
+
+  async completeTusVideoUpload(dto: CompleteUploadVideoTusDto) {
+    const videoTitle = dto.title?.trim() || `video-${dto.videoId}`;
+    const streamPlayback = await this.bunny.getStreamPlaybackPayload(dto.videoId, dto.preferredResolution);
+
+    return {
+      guid: dto.videoId,
+      title: videoTitle,
+      videoUrl: streamPlayback.streamPlayUrl,
+      embedUrl: streamPlayback.streamEmbedUrl,
+      ...streamPlayback,
+    };
+  }
+
+  async refreshTusVideoUpload(dto: RefreshUploadVideoTusDto) {
+    const refreshed = this.bunny.signTusUpload(dto.videoId, dto.expiresInSeconds ?? 3600);
+
+    return {
+      upload: {
+        videoId: dto.videoId,
+        endpoint: refreshed.tusEndpoint,
+        libraryId: refreshed.libraryId,
+        authorizationExpire: refreshed.authorizationExpire,
+        authorizationSignature: refreshed.authorizationSignature,
+        headers: refreshed.headers,
+      },
+    };
+  }
+
+  async updateBunnyVideoSettings(dto: UpdateBunnyVideoSettingsDto) {
+    return this.bunny.updateLibraryResolutionSettings({
+      enabledResolutions: dto.enabledResolutions,
+      enableMp4Fallback: dto.enableMp4Fallback,
+      allowDirectPlay: dto.allowDirectPlay,
+    });
+  }
+
+  async verifyBunnyConfiguration() {
+    const [storageCheck, streamCheck] = await Promise.allSettled([
+      this.bunny.verifyStorageCredentials(),
+      this.bunny.verifyStreamCredentials(),
+    ]);
+
+    return {
+      storage:
+        storageCheck.status === 'fulfilled'
+          ? storageCheck.value
+          : { ok: false, message: this.getErrorMessage(storageCheck.reason) },
+      stream:
+        streamCheck.status === 'fulfilled'
+          ? streamCheck.value
+          : { ok: false, message: this.getErrorMessage(streamCheck.reason) },
+    };
+  }
+
+  async getBunnyVideoResolutions(
+    videoId: string,
+    user?: { userId: string | number; type: string },
+    deviceId?: string,
+  ) {
+    const normalizedDeviceId = typeof deviceId === 'string' ? deviceId.trim() : '';
+    if (!user && !normalizedDeviceId) {
+      throw new BadRequestException('للزائر يجب إرسال deviceId');
+    }
+
+    const { streamVideoId } = await this.resolveStreamVideoIdFromDbVideo(videoId);
+
+    const [playDataResult, resolutionsResult] = await Promise.allSettled([
+      this.bunny.getVideoPlayData(streamVideoId),
+      this.bunny.getVideoResolutions(streamVideoId),
+    ]);
+
+    if (playDataResult.status === 'rejected' && resolutionsResult.status === 'rejected') {
+      const playStatus = this.extractStatus(playDataResult.reason);
+      const resolutionsStatus = this.extractStatus(resolutionsResult.reason);
+
+      if (playStatus === 404 || resolutionsStatus === 404) {
+        throw new NotFoundException('الفيديو غير موجود أو لم يكتمل رفعه بعد');
+      }
+    }
+
+    const playData =
+      playDataResult.status === 'fulfilled'
+        ? playDataResult.value
+        : {
+            videoId: streamVideoId,
+            libraryId: null,
+            directPlayUrl: this.bunny.getStreamPlayUrl(streamVideoId),
+            embedUrl: this.bunny.getStreamEmbedUrl(streamVideoId),
+            playlistUrl: null,
+            fallbackUrl: null,
+            availableResolutions: null,
+            isPlayable: null,
+            isPlaylistPlayable: null,
+          };
+
+    const resolutions =
+      resolutionsResult.status === 'fulfilled'
+        ? resolutionsResult.value
+        : {
+            videoId: streamVideoId,
+            availableResolutions: playData.availableResolutions ?? [],
+            playlistResolutions: [],
+            mp4Resolutions: [],
+          };
+
+    const playlistByResolution = Object.fromEntries(
+      (resolutions.playlistResolutions ?? [])
+        .filter((item) => item?.resolution && item?.path)
+        .map((item) => [item.resolution, item.path]),
+    );
+
+    return {
+      requestedVideoId: videoId,
+      resolvedVideoId: streamVideoId,
+      resolvedFrom: 'db_video_id',
+      ...playData,
+      streamMasterPlaylistUrl: playData.playlistUrl,
+      streamPlaylistUrl: playData.playlistUrl,
+      availableResolutions: resolutions.availableResolutions,
+      playlistResolutions: resolutions.playlistResolutions,
+      playlistByResolution,
+      mp4Resolutions: resolutions.mp4Resolutions,
+    };
+  }
+
+  private async resolveStreamVideoIdFromDbVideo(videoId: string): Promise<{ streamVideoId: string }> {
+    const input = String(videoId || '').trim();
+    if (!input) {
+      throw new BadRequestException('videoId مطلوب');
+    }
+
+    const dbVideo = await this.prisma.video.findUnique({
+      where: { id: input },
+      select: { videoUrl: true },
+    });
+
+    if (!dbVideo) throw new NotFoundException('الفيديو غير موجود');
+
+    const streamVideoId = this.extractBunnyGuidFromUrl(dbVideo.videoUrl);
+    if (!streamVideoId) {
+      throw new BadRequestException('هذا الفيديو لا يحتوي على معرف Bunny Stream صالح');
+    }
+
+    return { streamVideoId };
+  }
+
+  private extractBunnyGuidFromUrl(url?: string | null): string | null {
+    if (!url) return null;
+
+    const playMatch = url.match(/\/play\/[^/]+\/([0-9a-fA-F-]{36})(?:[/?#]|$)/);
+    if (playMatch?.[1]) return playMatch[1];
+
+    const embedMatch = url.match(/\/embed\/[^/]+\/([0-9a-fA-F-]{36})(?:[/?#]|$)/);
+    if (embedMatch?.[1]) return embedMatch[1];
+
+    const uuidPattern = /([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/;
+
+    try {
+      const pathname = new URL(url).pathname;
+      const segments = pathname.split('/').filter(Boolean);
+      for (const segment of segments) {
+        const segmentMatch = segment.match(uuidPattern);
+        if (segmentMatch?.[1]) return segmentMatch[1];
+      }
+    } catch {
+      // Non-URL inputs are handled by the generic regex fallback below.
+    }
+
+    const genericMatch = url.match(uuidPattern);
+    if (genericMatch?.[1]) return genericMatch[1];
+
+    return null;
+  }
+
+  private extractStatus(error: unknown): number | undefined {
+    if (error instanceof HttpException) return error.getStatus();
+    if (error && typeof error === 'object' && 'status' in error && typeof (error as any).status === 'number') {
+      return (error as any).status;
+    }
+
+    const responseStatus = (error as any)?.response?.status;
+    return typeof responseStatus === 'number' ? responseStatus : undefined;
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      if (typeof response === 'string') return response;
+      if (response && typeof response === 'object') {
+        const message = (response as any).message;
+        if (Array.isArray(message)) return message.join(', ');
+        if (typeof message === 'string') return message;
+      }
+      return error.message;
+    }
+
+    const message = (error as any)?.message;
+    return typeof message === 'string' ? message : 'Unknown error';
+  }
+}

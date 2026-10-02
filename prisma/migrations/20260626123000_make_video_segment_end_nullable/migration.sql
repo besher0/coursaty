@@ -1,0 +1,1 @@
+ALTER TABLE "VideoSegment" ALTER COLUMN "endSeconds" DROP NOT NULL;

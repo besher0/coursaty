@@ -1,0 +1,6 @@
+export enum CourseType {
+  PRACTICAL = 'PRACTICAL',
+  THEORETICAL = 'THEORETICAL',
+  PROGRAM = 'PROGRAM',
+  FREE = 'FREE',
+}

@@ -1,0 +1,764 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserType {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum CodeStatus {
+  ACTIVE
+  USED
+  INACTIVE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum NotificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum SubscriptionRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CourseStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum RevenueTransactionType {
+  INITIAL
+  RENEWAL
+  BACKFILL
+}
+
+model User {
+  id           String    @id @default(uuid())
+  phone        String    @unique
+  deletedPhone String?
+  password     String
+  userableId   String
+  userableType UserType
+  status       String    @default("active")
+  gender       Gender    @default(MALE)
+  fcmToken     String?
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  videoInteractions    VideoInteraction[]
+  createdNotifications Notification[]     @relation("CreatedNotifications")
+
+  @@index([userableId, userableType])
+}
+
+model Student {
+  id         String   @id @default(uuid())
+  name       String
+  provinceId String
+  createdAt  DateTime @default(now())
+
+  // Academic identity lives ONLY on the active StudentEnrollment.
+  province             Province              @relation(fields: [provinceId], references: [id])
+  enrollments          StudentEnrollment[]
+  subscriptions        StudentSubscription[]
+  subscriptionRequests SubscriptionRequest[]
+  courseRatings        CourseRating[]
+  teacherLikes         TeacherLike[]
+  usedCodes            Code[]                @relation("UsedCodes")
+
+  @@index([provinceId])
+}
+
+model Teacher {
+  id                  String   @id @default(uuid())
+  name                String
+  description         String?
+  image               String?
+  telegramUrl         String?
+  instagramUrl        String?
+  isVisibleToStudents Boolean  @default(false)
+  likesCount          Int      @default(0)
+  createdAt           DateTime @default(now())
+
+  affiliations    TeacherAffiliation[]
+  courses         Course[]
+  teacherLikes    TeacherLike[]
+  allowedSubjects TeacherSubjectPermission[]
+  withdrawals     TeacherWithdrawal[]
+}
+
+model TeacherWithdrawal {
+  id        String           @id @default(uuid())
+  teacherId String
+  amount    Decimal          @db.Decimal(10, 2)
+  status    WithdrawalStatus @default(APPROVED)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@index([teacherId])
+  @@index([createdAt])
+}
+
+model Admin {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  approvedNotifications        Notification[]
+  approvedCourses              Course[]
+  reviewedSubscriptionRequests SubscriptionRequest[]
+}
+
+model University {
+  id                  String               @id @default(uuid())
+  provinceId          String
+  name                String
+  createdAt           DateTime             @default(now())
+  province            Province             @relation(fields: [provinceId], references: [id])
+  colleges            College[]
+  courses             Course[]
+  studentEnrollments  StudentEnrollment[]
+  teacherAffiliations TeacherAffiliation[]
+  guestPreferences    GuestPreference[]
+  notifications       Notification[]
+  advertisements      Advertisement[]
+
+  @@index([provinceId])
+}
+
+model Province {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  universities  University[]
+  pointsOfSales PointOfSale[]
+  Student       Student[]
+}
+
+model College {
+  id           String @id @default(uuid())
+  universityId String
+  name         String
+
+  university          University           @relation(fields: [universityId], references: [id])
+  departments         Department[]
+  collegeYears        CollegeYear[]
+  subjects            Subject[]
+  courses             Course[]
+  advertisements      Advertisement[]
+  notifications       Notification[]
+  studentEnrollments  StudentEnrollment[]
+  teacherAffiliations TeacherAffiliation[]
+  guestPreferences    GuestPreference[]
+
+  @@index([universityId])
+}
+
+model TeacherAffiliation {
+  id           String   @id @default(uuid())
+  teacherId    String
+  universityId String
+  collegeId    String
+  departmentId String?
+  createdAt    DateTime @default(now())
+
+  teacher    Teacher     @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  university University  @relation(fields: [universityId], references: [id])
+  college    College     @relation(fields: [collegeId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@index([teacherId])
+  @@index([universityId])
+  @@index([collegeId])
+  @@index([departmentId])
+}
+
+model Advertisement {
+  id                  String   @id @default(uuid())
+  universityId        String?
+  collegeId           String?
+  departmentId        String?
+  title               String
+  imageUrl            String?
+  fullScreen_imageUrl String?
+  videoUrl            String?
+  helperLink          String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  university University? @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  college    College?    @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@index([universityId])
+  @@index([collegeId])
+  @@index([departmentId])
+}
+
+model Notification {
+  id           String             @id @default(uuid())
+  title        String
+  description  String
+  link         String?
+  status       NotificationStatus @default(PENDING)
+  createdById  String
+  universityId String?
+  collegeId    String?
+  departmentId String?
+  approvedById String?
+  approvedAt   DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  createdBy  User        @relation("CreatedNotifications", fields: [createdById], references: [id])
+  university University? @relation(fields: [universityId], references: [id])
+  college    College?    @relation(fields: [collegeId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  approvedBy Admin?      @relation(fields: [approvedById], references: [id])
+
+  @@index([createdById])
+  @@index([universityId])
+  @@index([collegeId])
+  @@index([departmentId])
+  @@index([status])
+}
+
+model Department {
+  id        String @id @default(uuid())
+  collegeId String
+  name      String
+
+  college             College              @relation(fields: [collegeId], references: [id])
+  collegeYears        CollegeYear[]
+  subjects            Subject[]
+  studentEnrollments  StudentEnrollment[]
+  notifications       Notification[]
+  teacherAffiliations TeacherAffiliation[]
+  courses             Course[]
+  guestPreferences    GuestPreference[]
+  advertisements      Advertisement[]
+
+  @@index([collegeId])
+}
+
+model GuestPreference {
+  id            String   @id @default(uuid())
+  deviceId      String   @unique
+  universityId  String
+  collegeId     String
+  departmentId  String?
+  collegeYearId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  university  University   @relation(fields: [universityId], references: [id])
+  college     College      @relation(fields: [collegeId], references: [id])
+  department  Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  collegeYear CollegeYear? @relation(fields: [collegeYearId], references: [id], onDelete: SetNull)
+
+  @@index([universityId])
+  @@index([collegeId])
+  @@index([departmentId])
+  @@index([collegeYearId])
+}
+
+model AcademicYear {
+  id         String @id @default(uuid())
+  yearNumber Int    @unique
+  yearName   String
+
+  collegeYears CollegeYear[]
+}
+
+model CollegeYear {
+  id             String  @id @default(uuid())
+  collegeId      String
+  departmentId   String?
+  academicYearId String
+  isActive       Boolean @default(true)
+
+  college            College             @relation(fields: [collegeId], references: [id])
+  department         Department?         @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  academicYear       AcademicYear        @relation(fields: [academicYearId], references: [id])
+  studentEnrollments StudentEnrollment[]
+  courses            Course[]
+  subjects           Subject[]
+  guestPreferences   GuestPreference[]
+
+  @@index([collegeId])
+  @@index([departmentId])
+  @@index([academicYearId])
+}
+
+model Season {
+  id           String    @id @default(uuid())
+  seasonName   String
+  seasonNumber Int
+  isHomeActive Boolean   @default(false)
+  courses      Course[]
+  subjects     Subject[]
+}
+
+model Subject {
+  id            String  @id @default(uuid())
+  collegeId     String
+  collegeYearId String?
+  seasonId      String?
+  departmentId  String?
+  subjectName   String
+  isProgram     Boolean @default(false)
+  imageUrl      String?
+
+  college            College                    @relation(fields: [collegeId], references: [id])
+  collegeYear        CollegeYear?               @relation(fields: [collegeYearId], references: [id])
+  season             Season?                    @relation(fields: [seasonId], references: [id])
+  department         Department?                @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  courses            Course[]
+  teacherPermissions TeacherSubjectPermission[]
+
+  @@index([collegeId])
+  @@index([collegeYearId])
+  @@index([seasonId])
+  @@index([departmentId])
+}
+
+model Course {
+  id                       String       @id @default(uuid())
+  teacherId                String
+  subjectId                String?
+  collegeYearId            String?
+  seasonId                 String?
+  universityId             String?
+  collegeId                String?
+  departmentId             String?
+  categoryId               String?
+  name                     String
+  description              String?
+  imageUrl                 String?
+  price                    Decimal      @db.Decimal(10, 2)
+  courseDiscountPercentage Decimal      @default(0.00) @db.Decimal(5, 2)
+  duration                 Int          @default(0)
+  isFree                   Boolean      @default(false)
+  isCompleted              Boolean      @default(false)
+  expiresAt                DateTime?
+  introVideoUrl            String?
+  discussionGroupUrl       String?
+  status                   CourseStatus @default(PENDING)
+  teacherPercentage        Decimal      @default(0.0)
+  approvedById             String?
+  approvedAt               DateTime?
+  createdAt                DateTime     @default(now())
+
+  teacher              Teacher               @relation(fields: [teacherId], references: [id])
+  subject              Subject?              @relation(fields: [subjectId], references: [id])
+  collegeYear          CollegeYear?          @relation(fields: [collegeYearId], references: [id])
+  season               Season?               @relation(fields: [seasonId], references: [id])
+  university           University?           @relation(fields: [universityId], references: [id])
+  college              College?              @relation(fields: [collegeId], references: [id])
+  department           Department?           @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  category             CourseCategory?       @relation(fields: [categoryId], references: [id])
+  approvedBy           Admin?                @relation(fields: [approvedById], references: [id], onDelete: SetNull)
+  lectures             Lecture[]
+  codeGroups           CodeGroup[]
+  subscriptions        StudentSubscription[]
+  subscriptionRequests SubscriptionRequest[]
+  courseRatings        CourseRating[]
+
+  @@index([teacherId])
+  @@index([subjectId])
+  @@index([collegeYearId])
+  @@index([seasonId])
+  @@index([universityId])
+  @@index([collegeId])
+  @@index([departmentId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([approvedById])
+}
+
+model CourseRating {
+  id        String   @id @default(uuid())
+  courseId  String
+  studentId String
+  rating    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course  Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, studentId])
+  @@index([courseId])
+  @@index([studentId])
+}
+
+model CourseCategory {
+  id                    String   @id @default(uuid())
+  name                  String
+  sortOrder             Int?
+  requiresAcademicLinks Boolean  @default(true)
+  isProgram             Boolean  @default(false)
+  createdAt             DateTime @default(now())
+
+  courses Course[]
+
+  @@unique([name])
+}
+
+model Lecture {
+  id          String  @id @default(uuid())
+  courseId    String
+  title       String
+  description String?
+  imageUrl    String?
+  isCompleted Boolean @default(false)
+  sortOrder   Int?
+
+  course    Course        @relation(fields: [courseId], references: [id])
+  videos    Video[]
+  files     LectureFile[]
+  questions Question[]
+
+  @@index([courseId])
+}
+
+model Video {
+  id          String  @id @default(uuid())
+  lectureId   String
+  videoName   String
+  description String?
+  videoUrl    String
+  size        String?
+  duration    Int     @default(0)
+  viewsCount  Int     @default(0)
+  isFree      Boolean @default(false)
+  sortOrder   Int?
+
+  lecture      Lecture            @relation(fields: [lectureId], references: [id])
+  interactions VideoInteraction[]
+  segments     VideoSegment[]
+
+  @@index([lectureId])
+  @@index([sortOrder])
+}
+
+model VideoSegment {
+  id           String   @id @default(uuid())
+  videoId      String
+  segmentName  String
+  startSeconds Int
+  endSeconds   Int?
+  sortOrder    Int?
+  createdAt    DateTime @default(now())
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([videoId])
+  @@index([startSeconds, endSeconds])
+}
+
+model VideoInteraction {
+  id        String   @id @default(uuid())
+  videoId   String
+  userId    String
+  isLiked   Boolean  @default(false)
+  rating    Int?
+  comment   String?
+  createdAt DateTime @default(now())
+
+  video Video @relation(fields: [videoId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([videoId])
+  @@index([userId])
+  @@index([rating])
+}
+
+model TeacherLike {
+  id        String @id @default(uuid())
+  teacherId String
+  studentId String
+
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@unique([teacherId, studentId])
+  @@index([studentId])
+}
+
+model TeacherSubjectPermission {
+  teacherId String
+  subjectId String
+  createdAt DateTime @default(now())
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@id([teacherId, subjectId])
+  @@index([subjectId])
+}
+
+model LectureFile {
+  id        String  @id @default(uuid())
+  lectureId String
+  fileName  String
+  fileUrl   String
+  size      String?
+  fileType  String?
+  isFree    Boolean @default(false)
+  sortOrder Int?
+
+  lecture Lecture @relation(fields: [lectureId], references: [id])
+
+  @@index([lectureId])
+  @@index([sortOrder])
+}
+
+model Question {
+  id           String  @id @default(uuid())
+  lectureId    String
+  questionText String?
+  imageUrl     String?
+  explanation  String?
+  questionType String  @default("multiple_choice") // multiple_choice, true_false, short_answer
+  points       Int     @default(1)
+  sortOrder    Int?
+
+  lecture Lecture          @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+  options QuestionOption[]
+
+  @@index([lectureId])
+}
+
+model QuestionOption {
+  id         String  @id @default(uuid())
+  questionId String
+  optionText String
+  isCorrect  Boolean @default(false)
+  sortOrder  Int?
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+}
+
+model CodeGroup {
+  id                 String    @id @default(uuid())
+  courseId           String
+  batchName          String
+  discountPercentage Decimal   @default(0.00) @db.Decimal(5, 2)
+  isForPrinting      Boolean   @default(false)
+  isPrinted          Boolean   @default(false)
+  prefix             String?
+  validForDays       Int?
+  validUntil         DateTime?
+  usageLimit         Int?
+  createdAt          DateTime  @default(now())
+
+  course Course @relation(fields: [courseId], references: [id])
+  codes  Code[]
+
+  @@index([courseId])
+}
+
+model Code {
+  id                      String     @id @default(uuid())
+  codeGroupId             String
+  codeValue               String     @unique
+  status                  CodeStatus @default(ACTIVE)
+  allowedUniversityNumber String?
+  validForDays            Int?
+  validUntil              DateTime?
+  usageLimit              Int?
+  usageCount              Int        @default(0)
+  usedByStudentId         String?
+  usedAt                  DateTime?
+  createdAt               DateTime   @default(now())
+
+  codeGroup CodeGroup @relation(fields: [codeGroupId], references: [id])
+  usedBy    Student?  @relation("UsedCodes", fields: [usedByStudentId], references: [id])
+
+  @@index([codeGroupId])
+  @@index([usedByStudentId])
+}
+
+model StudentSubscription {
+  id                   String    @id @default(uuid())
+  studentId            String
+  courseId             String
+  basePrice            Decimal   @db.Decimal(10, 2)
+  courseDiscountAmount Decimal   @default(0.00) @db.Decimal(10, 2)
+  codeDiscountAmount   Decimal   @default(0.00) @db.Decimal(10, 2)
+  finalPrice           Decimal   @db.Decimal(10, 2)
+  expiresAt            DateTime?
+  createdAt            DateTime  @default(now())
+
+  student Student @relation(fields: [studentId], references: [id])
+  course  Course  @relation(fields: [courseId], references: [id])
+
+  @@unique([studentId, courseId])
+  @@index([courseId])
+  @@index([createdAt])
+}
+
+model StudentEnrollment {
+  id               String    @id @default(uuid())
+  studentId        String
+  universityId     String
+  collegeId        String
+  departmentId     String?
+  collegeYearId    String
+  universityNumber String?
+  isActive         Boolean   @default(true)
+  startedAt        DateTime  @default(now())
+  endedAt          DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  university  University  @relation(fields: [universityId], references: [id])
+  college     College     @relation(fields: [collegeId], references: [id])
+  department  Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  collegeYear CollegeYear @relation(fields: [collegeYearId], references: [id])
+
+  // Active universityNumber uniqueness is enforced by a partial PostgreSQL
+  // unique index in migrations: (universityId, collegeId, universityNumber)
+  // WHERE isActive = true AND universityNumber IS NOT NULL.
+  // Historical inactive enrollments may reuse the same number.
+  @@index([studentId])
+  @@index([isActive])
+  @@index([universityId])
+  @@index([collegeId])
+  @@index([departmentId])
+  @@index([collegeYearId])
+}
+
+model SubscriptionRequest {
+  id                       String                    @id @default(uuid())
+  studentId                String
+  courseId                 String
+  receiptUrl               String
+  // Receipt metadata captured from the secure receipt-specific upload endpoint.
+  receiptFileName          String?
+  receiptMimeType          String?
+  receiptSizeBytes         Int?
+  // Price snapshot captured when the student created the request.
+  // Approvals must use these values instead of the current course price.
+  basePrice                Decimal                   @default(0) @db.Decimal(10, 2)
+  courseDiscountPercentage Decimal                   @default(0.00) @db.Decimal(5, 2)
+  courseDiscountAmount     Decimal                   @default(0) @db.Decimal(10, 2)
+  finalAmount              Decimal                   @default(0) @db.Decimal(10, 2)
+  status                   SubscriptionRequestStatus @default(PENDING)
+  note                     String?
+  adminNote                String?
+  reviewedById             String?
+  reviewedAt               DateTime?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+
+  student    Student @relation(fields: [studentId], references: [id])
+  course     Course  @relation(fields: [courseId], references: [id])
+  reviewedBy Admin?  @relation(fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([studentId])
+  @@index([courseId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model RevenueTransaction {
+  id                       String                 @id @default(uuid())
+  type                     RevenueTransactionType
+  studentId                String
+  studentName              String
+  courseId                 String
+  courseName               String
+  teacherId                String
+  teacherName              String
+  universityId             String?
+  universityName           String?
+  collegeId                String?
+  collegeName              String?
+  codeId                   String?
+  codeGroupId              String?
+  purchasedAt              DateTime               @default(now())
+  currency                 String                 @default("SYP")
+  coursePrice              Decimal                @db.Decimal(10, 2)
+  courseDiscountPercentage Decimal                @db.Decimal(5, 2)
+  courseDiscountAmount     Decimal                @db.Decimal(10, 2)
+  codeDiscountPercentage   Decimal                @db.Decimal(5, 2)
+  codeDiscountAmount       Decimal                @db.Decimal(10, 2)
+  finalPrice               Decimal                @db.Decimal(10, 2)
+  teacherPercentage        Decimal                @db.Decimal(5, 2)
+  teacherRevenue           Decimal                @db.Decimal(10, 2)
+  platformRevenue          Decimal                @db.Decimal(10, 2)
+
+  @@index([purchasedAt])
+  @@index([studentId, purchasedAt])
+  @@index([courseId, purchasedAt])
+  @@index([teacherId, purchasedAt])
+  @@index([universityId, purchasedAt])
+  @@index([collegeId, purchasedAt])
+}
+
+model PointOfSale {
+  id            String   @id @default(uuid())
+  provinceId    String
+  name          String
+  address       String
+  phone         String?
+  description   String?
+  image         String?
+  imageLocation String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  province Province @relation(fields: [provinceId], references: [id])
+
+  @@index([provinceId])
+}
+
+model CustomerService {
+  id                    String   @id @default(uuid())
+  technicalSupportPhone String
+  contactSupportPhone   String?
+  whatsappUrl           String?
+  telegramUrl           String?
+  facebookUrl           String?
+  instagramUrl          String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model AppDescription {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

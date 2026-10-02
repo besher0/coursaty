@@ -1,0 +1,72 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  ParseUUIDPipe,
+  Query,
+  Req,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { PointOfSalesService } from '../services/point-of-sales.service';
+import { CreatePointOfSaleDto } from '../dtos/create-point-of-sale.dto';
+import { UpdatePointOfSaleDto } from '../dtos/update-point-of-sale.dto';
+import { ListPointOfSalesQueryDto } from '../dtos/list-point-of-sales-query.dto';
+
+@ApiTags('point-of-sales')
+@Controller('point-of-sales')
+export class PointOfSalesController {
+  constructor(private readonly pointOfSalesService: PointOfSalesService) {}
+
+  @Post()
+  create(@Body() createPointOfSaleDto: CreatePointOfSaleDto) {
+    return this.pointOfSalesService.create(createPointOfSaleDto);
+  }
+
+  @Get()
+  @ApiQuery({ name: 'universityId', required: false, description: 'Filter by university id' })
+  @ApiQuery({ name: 'provinceId', required: false, description: 'Filter by province id' })
+  findAll(@Query() query: ListPointOfSalesQueryDto) {
+    return this.pointOfSalesService.findAll(query);
+  }
+
+  @Get('university/:universityId')
+  @ApiOperation({ summary: 'Get point of sales by university (mapped to university province)' })
+  findByUniversity(@Param('universityId', new ParseUUIDPipe({ version: '4' })) universityId: string) {
+    return this.pointOfSalesService.findByUniversity(universityId);
+  }
+
+  @Get('province/:provinceId')
+  @ApiOperation({ summary: 'Get point of sales by province' })
+  findByProvince(@Param('provinceId', new ParseUUIDPipe({ version: '4' })) provinceId: string) {
+    return this.pointOfSalesService.findByProvince(provinceId);
+  }
+
+  @Get('university')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get point of sales for student province' })
+  findByStudentUniversity(@Req() req: any) {
+    return this.pointOfSalesService.findByStudentToken(req.user);
+  }
+
+  @Get(':id')
+  findOne(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.pointOfSalesService.findOne(id);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() updatePointOfSaleDto: UpdatePointOfSaleDto,
+  ) {
+    return this.pointOfSalesService.update(id, updatePointOfSaleDto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.pointOfSalesService.remove(id);
+  }
+}
