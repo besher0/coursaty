@@ -53,7 +53,11 @@ export class UploadsController {
   @Post('subscription-receipts')
   @ApiOperation({
     summary:
+<<<<<<< HEAD
       'Upload subscription payment proof (JPG/PNG/WebP/PDF, max 5MB). Returns the URL required by the subscription request endpoint. Upload alone never grants access.',
+=======
+      'Upload subscription payment proof (JPG/PNG/WebP, max 5MB). Returns the URL required by the subscription request endpoint. Upload alone never grants access.',
+>>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({

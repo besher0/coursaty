@@ -48,6 +48,14 @@ enum CourseStatus {
   REJECTED
 }
 
+<<<<<<< HEAD
+=======
+enum CourseInterestSource {
+  QR_SCREENSHOT
+  MANUAL
+}
+
+>>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
 enum RevenueTransactionType {
   INITIAL
   RENEWAL
@@ -84,6 +92,10 @@ model Student {
   enrollments          StudentEnrollment[]
   subscriptions        StudentSubscription[]
   subscriptionRequests SubscriptionRequest[]
+<<<<<<< HEAD
+=======
+  courseInterests      StudentCourseInterest[]
+>>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
   courseRatings        CourseRating[]
   teacherLikes         TeacherLike[]
   usedCodes            Code[]                @relation("UsedCodes")
@@ -368,6 +380,10 @@ model Course {
   expiresAt                DateTime?
   introVideoUrl            String?
   discussionGroupUrl       String?
+<<<<<<< HEAD
+=======
+  paymentQrUrl             String?
+>>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
   status                   CourseStatus @default(PENDING)
   teacherPercentage        Decimal      @default(0.0)
   approvedById             String?
@@ -387,6 +403,10 @@ model Course {
   codeGroups           CodeGroup[]
   subscriptions        StudentSubscription[]
   subscriptionRequests SubscriptionRequest[]
+<<<<<<< HEAD
+=======
+  interests            StudentCourseInterest[]
+>>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
   courseRatings        CourseRating[]
 
   @@index([teacherId])
@@ -626,6 +646,25 @@ model StudentSubscription {
   @@index([createdAt])
 }
 
+<<<<<<< HEAD
+=======
+model StudentCourseInterest {
+  id        String               @id @default(uuid())
+  studentId String
+  courseId  String
+  source    CourseInterestSource
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  course  Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, courseId])
+  @@index([studentId, createdAt])
+  @@index([courseId])
+}
+
+>>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
 model StudentEnrollment {
   id               String    @id @default(uuid())
   studentId        String

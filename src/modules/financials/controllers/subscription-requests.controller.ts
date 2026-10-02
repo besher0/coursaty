@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+=======
+import { BadRequestException, Body, Controller, Get, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+>>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { FinancialsService } from '../services/financials.service';
@@ -12,6 +16,10 @@ import { RejectSubscriptionRequestDto } from '../dtos/reject-subscription-reques
 import { CreateSubscriptionRequestWithReceiptDto } from '../dtos/create-subscription-request-with-receipt.dto';
 import { ResubmitSubscriptionRequestWithReceiptDto } from '../dtos/resubmit-subscription-request-with-receipt.dto';
 import { UploadsService } from '../../uploads/uploads.service';
+<<<<<<< HEAD
+=======
+import { ApiCodeException } from '@/common/errors/api-code.exception';
+>>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
 
 @ApiTags('financials')
 @ApiBearerAuth()
@@ -54,10 +62,19 @@ export class SubscriptionRequestsController {
     @Body() body: CreateSubscriptionRequestWithReceiptDto,
     @Req() req: any,
   ) {
+<<<<<<< HEAD
     if (!file) throw new BadRequestException('صورة إيصال الدفع مطلوبة');
 
     const receipt = await this.uploads.uploadSubscriptionReceipt(file);
     return this.financials.createSubscriptionRequest(req.user, {
+=======
+    if (!file) {
+      throw new ApiCodeException(HttpStatus.BAD_REQUEST, 'INVALID_RECEIPT_FILE', 'صورة إيصال الدفع مطلوبة');
+    }
+
+    const receipt = await this.uploads.uploadSubscriptionReceipt(file);
+    const subscriptionRequest = await this.financials.createSubscriptionRequest(req.user, {
+>>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
       courseId: body.courseId,
       receiptUrl: receipt.fileUrl,
       receiptFileName: receipt.fileName,
@@ -65,6 +82,10 @@ export class SubscriptionRequestsController {
       receiptSizeBytes: receipt.sizeBytes,
       note: body.note,
     });
+<<<<<<< HEAD
+=======
+    return { subscriptionRequest };
+>>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
   }
 
   @Get('me')

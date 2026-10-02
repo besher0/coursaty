@@ -46,10 +46,17 @@ export class FirebaseService {
     this.initialized = true;
   }
 
+<<<<<<< HEAD
   async sendPush(token: string, title: string, body: string) {
     if (!token) return;
     try {
       await admin.messaging().send({ notification: { title, body }, token });
+=======
+  async sendPush(token: string, title: string, body: string, data?: Record<string, string>) {
+    if (!token) return;
+    try {
+      await admin.messaging().send({ notification: { title, body }, data, token });
+>>>>>>> b003771b30409d560ff5f4883cf3637436ceb6ca
     } catch (err) {
       this.logger.error('FCM send failed', err as Error);
     }
