@@ -240,7 +240,10 @@ describe('Single source of truth: active StudentEnrollment', () => {
       code: { findUnique: jest.fn().mockResolvedValue({ id: 'code-1', status: 'ACTIVE', allowedUniversityNumber: '20240001', createdAt: new Date(), validUntil: null, codeGroupId: 'g1' }) },
       codeGroup: { findUnique: jest.fn().mockResolvedValue({ id: 'g1', courseId: 'c1' }) },
     };
-    const service = new FinancialsService(prisma as any);
+    const service = new FinancialsService(
+      prisma as any,
+      { getPaymentQrUrl: jest.fn().mockResolvedValue('https://cdn.example.com/uploads/payment-qr/system.webp') } as any,
+    );
 
     // Reaching the code-group lookup means the allowed-number check passed.
     try {

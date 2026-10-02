@@ -106,4 +106,17 @@ describe('UploadsService payment receipt validation', () => {
     expect(bunny.deleteStorageFile).toHaveBeenCalledTimes(1);
     expect(bunny.deleteStorageFile).toHaveBeenCalledWith('uploads/subscription-receipts/local.jpg');
   });
+
+  it('deletes only payment QR paths during best-effort cleanup', async () => {
+    const bunny = {
+      deleteStorageFile: jest.fn().mockResolvedValue(undefined),
+    };
+    const { service } = createService(bunny);
+
+    await service.deletePaymentQr('/uploads/payment-qr/system.webp');
+    await service.deletePaymentQr('uploads/subscription-receipts/keep.jpg');
+
+    expect(bunny.deleteStorageFile).toHaveBeenCalledTimes(1);
+    expect(bunny.deleteStorageFile).toHaveBeenCalledWith('uploads/payment-qr/system.webp');
+  });
 });

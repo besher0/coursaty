@@ -5,7 +5,7 @@ describe('FinancialsService subscription expiry', () => {
   const activatedAt = new Date('2026-06-01T12:00:00.000Z');
 
   function createService(prisma: any = {}) {
-    return new FinancialsService(prisma);
+    return new FinancialsService(prisma, { getPaymentQrUrl: jest.fn().mockResolvedValue('https://cdn.example.com/uploads/payment-qr/system.webp') } as any);
   }
 
   function getSubscriptionExpiry(
@@ -474,8 +474,14 @@ describe('FinancialsService subscription expiry', () => {
 });
 
 describe('FinancialsService manual payment requests', () => {
-  function createPaymentService(prisma: any) {
-    return new FinancialsService(prisma);
+  function createPaymentService(
+    prisma: any,
+    paymentQrUrl: string | null = 'https://cdn.example.com/uploads/payment-qr/system.webp',
+  ) {
+    return new FinancialsService(
+      prisma,
+      { getPaymentQrUrl: jest.fn().mockResolvedValue(paymentQrUrl) } as any,
+    );
   }
 
   const studentUser = { userId: 'user-1', type: 'STUDENT' };
@@ -581,6 +587,18 @@ describe('FinancialsService manual payment requests', () => {
         receiptUrl: 'https://evil.example.com/some/other/file.jpg',
       } as any),
     ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.subscriptionRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a subscription request when the global payment QR is missing', async () => {
+    const prisma = basePrisma();
+    const service = createPaymentService(prisma, null);
+
+    await expect(
+      service.createSubscriptionRequest(studentUser as any, receiptDto as any),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PAYMENT_QR_MISSING' }),
+    });
     expect(prisma.subscriptionRequest.create).not.toHaveBeenCalled();
   });
 
@@ -797,6 +815,33 @@ describe('FinancialsService manual payment requests', () => {
       }),
     });
     expect(result.status).toBe('PENDING');
+  });
+
+  it('does not resubmit when the global payment QR is missing', async () => {
+    const rejectedRequest = {
+      id: 'request-1',
+      status: 'REJECTED',
+      studentId: 'student-1',
+      courseId: 'course-1',
+      course: {
+        status: 'APPROVED',
+        price: 100,
+        courseDiscountPercentage: 0,
+        isFree: false,
+        expiresAt: new Date('2027-01-30T00:00:00.000Z'),
+        teacher: { isVisibleToStudents: true },
+      },
+    };
+    const prisma = basePrisma({ existingRequest: rejectedRequest });
+    const service = createPaymentService(prisma, null);
+
+    await expect(
+      service.resubmitSubscriptionRequest('request-1', studentUser as any, receiptDto as any),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PAYMENT_QR_MISSING' }),
+    });
+
+    expect(prisma.subscriptionRequest.updateMany).not.toHaveBeenCalled();
   });
 
   it('does not allow resubmitting a request that is not rejected', async () => {

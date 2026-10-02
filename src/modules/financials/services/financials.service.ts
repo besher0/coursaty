@@ -12,6 +12,7 @@ import { ListSubscriptionRequestsQueryDto } from '../dtos/list-subscription-requ
 import { ReviewSubscriptionRequestDto } from '../dtos/review-subscription-request.dto';
 import { RejectSubscriptionRequestDto } from '../dtos/reject-subscription-request.dto';
 import { randomInt } from 'crypto';
+import { SystemSettingsService } from '@/modules/system-settings/services/system-settings.service';
 
 @Injectable()
 export class FinancialsService {
@@ -21,6 +22,7 @@ export class FinancialsService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly systemSettingsService: SystemSettingsService,
     private readonly firebase?: FirebaseService,
   ) {}
 
@@ -179,7 +181,6 @@ export class FinancialsService {
         imageUrl: true,
         price: true,
         courseDiscountPercentage: true,
-        paymentQrUrl: true,
         expiresAt: true,
         status: true,
         teacher: { select: { id: true, name: true, image: true } },
@@ -200,13 +201,24 @@ export class FinancialsService {
    */
   private mapSubscriptionRequestStudent<
     T extends { student: { id: string; name: string; enrollments?: Array<Record<string, any>> } | null },
-  >(request: T) {
+  >(request: T, systemPaymentQrUrl?: string | null) {
+    const course = (request as any).course;
+    const requestWithSystemQr =
+      course && systemPaymentQrUrl !== undefined
+        ? {
+            ...request,
+            course: {
+              ...course,
+              paymentQrUrl: systemPaymentQrUrl,
+            },
+          }
+        : request;
     const student = request.student;
-    if (!student) return request;
+    if (!student) return requestWithSystemQr;
 
     const enrollment = student.enrollments?.[0] ?? null;
     return {
-      ...request,
+      ...requestWithSystemQr,
       student: {
         id: student.id,
         name: student.name,
@@ -261,6 +273,18 @@ export class FinancialsService {
     }
   }
 
+  private async assertSystemPaymentQrAvailable() {
+    const paymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
+    if (!paymentQrUrl) {
+      throw new ApiCodeException(
+        HttpStatus.BAD_REQUEST,
+        'PAYMENT_QR_MISSING',
+        'QR الدفع غير متوفر حاليًا',
+      );
+    }
+    return paymentQrUrl;
+  }
+
   /**
    * Performs the side-effect-free checks required before a receipt is stored.
    * The create path repeats these checks after upload to protect against races.
@@ -297,13 +321,7 @@ export class FinancialsService {
         'الكورس غير متاح للاشتراك',
       );
     }
-    if (!course.paymentQrUrl) {
-      throw new ApiCodeException(
-        HttpStatus.BAD_REQUEST,
-        'COURSE_PAYMENT_QR_MISSING',
-        'لا يوجد QR قابل للدفع للكورس',
-      );
-    }
+    const paymentQrUrl = await this.assertSystemPaymentQrAvailable();
 
     const activeSubscription = await this.prisma.studentSubscription.findUnique({
       where: { studentId_courseId: { studentId, courseId: course.id } },
@@ -329,7 +347,7 @@ export class FinancialsService {
       );
     }
 
-    return { studentId, course };
+    return { studentId, course, paymentQrUrl };
   }
 
   private mapSubscribedCourseDetails(
@@ -868,7 +886,7 @@ export class FinancialsService {
     user: { userId: string | number; type: string } | undefined,
     dto: CreateSubscriptionRequestDto,
   ) {
-    const { studentId, course } = await this.assertSubscribableCourse(user, dto.courseId);
+    const { studentId, course, paymentQrUrl } = await this.assertSubscribableCourse(user, dto.courseId);
 
     // The receipt must come from the secure receipt-specific upload endpoint.
     this.assertReceiptUrlFromSecureUpload(dto.receiptUrl);
@@ -904,7 +922,7 @@ export class FinancialsService {
 
         return request;
       });
-      return this.mapSubscriptionRequestStudent(createdRequest);
+      return this.mapSubscriptionRequestStudent(createdRequest, paymentQrUrl);
     } catch (err) {
       // P2002 on the partial unique index: a concurrent request already created
       // a PENDING request for the same student+course.
@@ -970,13 +988,7 @@ export class FinancialsService {
         'الكورس غير متاح للاشتراك',
       );
     }
-    if (!request.course.paymentQrUrl) {
-      throw new ApiCodeException(
-        HttpStatus.BAD_REQUEST,
-        'COURSE_PAYMENT_QR_MISSING',
-        'لا يوجد QR قابل للدفع للكورس',
-      );
-    }
+    const paymentQrUrl = await this.assertSystemPaymentQrAvailable();
     if (request.course.expiresAt && request.course.expiresAt.getTime() <= now.getTime()) {
       throw new BadRequestException('انتهى الكورس ولا يمكن الاشتراك به');
     }
@@ -1061,7 +1073,7 @@ export class FinancialsService {
 
       // Keep the original price snapshot; resubmission only replaces the proof
       // and starts a new review cycle for the same request.
-      return this.mapSubscriptionRequestStudent(pendingRequest);
+      return this.mapSubscriptionRequestStudent(pendingRequest, paymentQrUrl);
     } catch (err) {
       if (this.isUniqueConstraintError(err)) {
         throw new ApiCodeException(
@@ -1088,7 +1100,8 @@ export class FinancialsService {
       include: this.subscriptionRequestInclude,
       orderBy: { createdAt: 'desc' },
     });
-    return requests.map((request) => this.mapSubscriptionRequestStudent(request));
+    const paymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
+    return requests.map((request) => this.mapSubscriptionRequestStudent(request, paymentQrUrl));
   }
 
   async listSubscriptionRequests(query: ListSubscriptionRequestsQueryDto) {
@@ -1101,7 +1114,8 @@ export class FinancialsService {
       include: this.subscriptionRequestInclude,
       orderBy: { createdAt: 'desc' },
     });
-    return requests.map((request) => this.mapSubscriptionRequestStudent(request));
+    const paymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
+    return requests.map((request) => this.mapSubscriptionRequestStudent(request, paymentQrUrl));
   }
 
   /**
@@ -1113,7 +1127,8 @@ export class FinancialsService {
       include: this.subscriptionRequestInclude,
     });
     if (!request) throw new NotFoundException('طلب الاشتراك غير موجود');
-    return this.mapSubscriptionRequestStudent(request);
+    const paymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
+    return this.mapSubscriptionRequestStudent(request, paymentQrUrl);
   }
 
   /**
@@ -1133,7 +1148,8 @@ export class FinancialsService {
     if (!request || request.studentId !== studentId) {
       throw new NotFoundException('طلب الاشتراك غير موجود');
     }
-    return this.mapSubscriptionRequestStudent(request);
+    const paymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
+    return this.mapSubscriptionRequestStudent(request, paymentQrUrl);
   }
 
   async approveSubscriptionRequest(
@@ -1143,6 +1159,7 @@ export class FinancialsService {
   ) {
     const adminId = await this.getAdminIdFromUser(user);
     const now = new Date();
+    const paymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
 
     const request = await this.prisma.subscriptionRequest.findUnique({
       where: { id },
@@ -1284,7 +1301,7 @@ export class FinancialsService {
 
       return {
         request: reviewedRequest
-          ? this.mapSubscriptionRequestStudent(reviewedRequest)
+          ? this.mapSubscriptionRequestStudent(reviewedRequest, paymentQrUrl)
           : null,
         subscription,
       };
@@ -1307,6 +1324,7 @@ export class FinancialsService {
     dto: RejectSubscriptionRequestDto,
   ) {
     const adminId = await this.getAdminIdFromUser(user);
+    const paymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
 
     // Mandatory non-empty reason (also enforced by the DTO, this protects
     // internal callers).
@@ -1355,7 +1373,7 @@ export class FinancialsService {
     );
 
     return rejectedRequest
-      ? this.mapSubscriptionRequestStudent(rejectedRequest)
+      ? this.mapSubscriptionRequestStudent(rejectedRequest, paymentQrUrl)
       : null;
   }
 

@@ -75,6 +75,16 @@ export class UploadsService {
     }
   }
 
+  async deletePaymentQr(storagePath?: string | null) {
+    const normalizedPath = String(storagePath ?? '').replace(/^\/+/, '');
+    if (!normalizedPath.startsWith('uploads/payment-qr/')) return;
+    try {
+      await this.bunny.deleteStorageFile(normalizedPath);
+    } catch {
+      // The database state is already correct; stale storage can be retried manually.
+    }
+  }
+
   async uploadPaymentQr(file: any) {
     const detected = this.validatePaymentImage(file, 'QR الدفع');
     const fileName = `${randomUUID()}${detected.extension}`;

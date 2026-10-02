@@ -5,8 +5,6 @@ import { CreateCourseDto } from '../dtos/create-course.dto';
 import { BunnyService } from '../../../shared/bunny/bunny.service';
 import { UpdateCourseDto } from '../dtos/update-course.dto';
 import { DomainException } from '@/common/errors/domain.exception';
-import { ApiCodeException } from '@/common/errors/api-code.exception';
-import { HttpStatus } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { InitTusVideoUploadDto } from '../../lectures/dtos/init-tus-video-upload.dto';
@@ -14,25 +12,15 @@ import { CompleteTusVideoUploadDto } from '../../lectures/dtos/complete-tus-vide
 import { RefreshTusVideoUploadDto } from '../../lectures/dtos/refresh-tus-video-upload.dto';
 import { RevenueService } from '@/modules/revenues/services/revenue.service';
 import { RevenuePeriodQueryDto } from '@/modules/revenues/dtos';
+import { SystemSettingsService } from '@/modules/system-settings/services/system-settings.service';
 
 @Injectable()
 export class CourseService {
-  private static readonly PAYMENT_QR_ALLOWED_TYPES = [
-    { mime: 'image/jpeg', extension: '.jpg', signature: [0xff, 0xd8, 0xff] },
-    { mime: 'image/png', extension: '.png', signature: [0x89, 0x50, 0x4e, 0x47] },
-    {
-      mime: 'image/webp',
-      extension: '.webp',
-      signature: [0x52, 0x49, 0x46, 0x46],
-      signatureOffsetMatch: { offset: 8, bytes: [0x57, 0x45, 0x42, 0x50] },
-    },
-  ] as const;
-  private static readonly PAYMENT_QR_MAX_SIZE_BYTES = 5 * 1024 * 1024;
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly bunny: BunnyService,
     private readonly revenueService: RevenueService,
+    private readonly systemSettingsService: SystemSettingsService,
   ) {}
 
   async getCourseCategories() {
@@ -334,52 +322,6 @@ export class CourseService {
     return this.getCourseDetails(String(id), user);
   }
 
-  async updateCoursePaymentQr(
-    id: string,
-    file: any,
-    user?: { userId: string | number; type: string },
-  ) {
-    await this.assertCourseOwnership(user, id);
-    const detected = this.validatePaymentQrFile(file);
-    const fileName = `${randomUUID()}${detected.extension}`;
-    const storagePath = `uploads/payment-qr/${fileName}`;
-    const paymentQrUrl = await this.bunny.uploadImage(storagePath, {
-      ...file,
-      mimetype: detected.mime,
-    });
-
-    const previous = await this.prisma.course.findUnique({
-      where: { id: String(id) },
-      select: { paymentQrUrl: true },
-    });
-    if (!previous) throw new NotFoundException('الكورس غير موجود');
-
-    const course = await this.prisma.course.update({
-      where: { id: String(id) },
-      data: { paymentQrUrl },
-    });
-
-    await this.deletePaymentQrUrl(previous.paymentQrUrl);
-    return { paymentQrUrl: course.paymentQrUrl };
-  }
-
-  async deleteCoursePaymentQr(id: string, user?: { userId: string | number; type: string }) {
-    await this.assertCourseOwnership(user, id);
-    const course = await this.prisma.course.findUnique({
-      where: { id: String(id) },
-      select: { paymentQrUrl: true },
-    });
-    if (!course) throw new NotFoundException('الكورس غير موجود');
-
-    await this.prisma.course.update({
-      where: { id: String(id) },
-      data: { paymentQrUrl: null },
-    });
-    await this.deletePaymentQrUrl(course.paymentQrUrl);
-
-    return { paymentQrUrl: null };
-  }
-
   async deleteCourse(id: string, user?: { userId: string | number; type: string }) {
     const courseId = String(id);
     await this.assertCourseOwnership(user, courseId);
@@ -526,6 +468,7 @@ export class CourseService {
     const priceAfterCourseDiscount = Number.isNaN(basePrice)
       ? null
       : Math.max(0, basePrice - (basePrice * courseDiscountPct) / 100);
+    const systemPaymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
 
     const totalVideos = course.lectures.reduce((acc, lec) => acc + (lec._count?.videos ?? 0), 0);
     const totalFiles = course.lectures.reduce((acc, lec) => acc + (lec._count?.files ?? 0), 0);
@@ -541,7 +484,7 @@ export class CourseService {
         name: course.name,
         basePrice: basePrice,
         discountedPrice: priceAfterCourseDiscount,
-        paymentQrUrl: course.paymentQrUrl ?? null,
+        paymentQrUrl: systemPaymentQrUrl,
         isFree: course.isFree,
         isCompleted: course.isCompleted ?? false,
         locked: !hasAccess,
@@ -1188,73 +1131,6 @@ export class CourseService {
     });
 
     return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
-  }
-
-  private validatePaymentQrFile(file: any) {
-    if (!file?.buffer || !Buffer.isBuffer(file.buffer) || !file.buffer.length) {
-      throw new ApiCodeException(HttpStatus.BAD_REQUEST, 'INVALID_RECEIPT_FILE', 'ملف QR الدفع مطلوب');
-    }
-
-    const detected = this.detectPaymentQrType(file.buffer);
-    if (!detected) {
-      throw new ApiCodeException(
-        HttpStatus.BAD_REQUEST,
-        'INVALID_RECEIPT_FILE',
-        'ملف QR الدفع يجب أن يكون صورة JPG أو PNG أو WebP',
-      );
-    }
-
-    if (file.buffer.length > CourseService.PAYMENT_QR_MAX_SIZE_BYTES) {
-      throw new ApiCodeException(
-        HttpStatus.BAD_REQUEST,
-        'INVALID_RECEIPT_FILE',
-        `حجم ملف QR الدفع يتجاوز الحد المسموح (${CourseService.PAYMENT_QR_MAX_SIZE_BYTES / (1024 * 1024)} ميغابايت)`,
-      );
-    }
-
-    return detected;
-  }
-
-  private detectPaymentQrType(buffer: Buffer) {
-    for (const type of CourseService.PAYMENT_QR_ALLOWED_TYPES) {
-      const signature = type.signature as readonly number[];
-      if (buffer.length < signature.length) continue;
-      const headMatches = signature.every((byte, index) => buffer[index] === byte);
-      if (!headMatches) continue;
-
-      if ('signatureOffsetMatch' in type && type.signatureOffsetMatch) {
-        const { offset, bytes } = type.signatureOffsetMatch;
-        if (buffer.length < offset + bytes.length) continue;
-        const tailMatches = (bytes as readonly number[]).every(
-          (byte, index) => buffer[offset + index] === byte,
-        );
-        if (!tailMatches) continue;
-      }
-
-      return { mime: type.mime, extension: type.extension };
-    }
-    return null;
-  }
-
-  private async deletePaymentQrUrl(paymentQrUrl?: string | null) {
-    const storagePath = this.extractPaymentQrStoragePath(paymentQrUrl);
-    if (!storagePath) return;
-
-    try {
-      await this.bunny.deleteStorageFile(storagePath);
-    } catch {
-      // The database state is already correct; stale storage can be retried manually.
-    }
-  }
-
-  private extractPaymentQrStoragePath(paymentQrUrl?: string | null) {
-    if (!paymentQrUrl) return null;
-    try {
-      const pathname = new URL(paymentQrUrl).pathname.replace(/^\/+/, '');
-      return pathname.startsWith('uploads/payment-qr/') ? pathname : null;
-    } catch {
-      return null;
-    }
   }
 
   private async assertStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {

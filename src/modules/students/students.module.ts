@@ -4,9 +4,10 @@ import { StudentsService } from './services/students.service';
 import { EnrollmentsService } from './services/enrollments.service';
 import { CourseInterestsService } from './services/course-interests.service';
 import { PrismaModule } from '@/prisma/prisma.module';
+import { SystemSettingsModule } from '@/modules/system-settings/system-settings.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, SystemSettingsModule],
   controllers: [StudentsController],
   providers: [StudentsService, EnrollmentsService, CourseInterestsService],
   exports: [StudentsService, EnrollmentsService, CourseInterestsService],

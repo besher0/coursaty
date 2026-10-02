@@ -1,11 +1,15 @@
-import { CourseService } from './course.service';
+﻿import { CourseService } from './course.service';
 import { DomainException } from '@/common/errors/domain.exception';
 
 describe('CourseService academic identity immutability', () => {
+  const systemSettings = {
+    getPaymentQrUrl: jest.fn().mockResolvedValue('https://cdn.example.com/uploads/payment-qr/system.webp'),
+  };
+
   it('rejects academic identity overrides on create', async () => {
     const prisma = {} as any;
     const bunny = {} as any;
-    const service = new CourseService(prisma, bunny, {} as any);
+    const service = new CourseService(prisma, bunny, {} as any, systemSettings as any);
 
     const dto = {
       categoryId: 1,
@@ -18,7 +22,7 @@ describe('CourseService academic identity immutability', () => {
   it('rejects academic identity overrides on update', async () => {
     const prisma = {} as any;
     const bunny = {} as any;
-    const service = new CourseService(prisma, bunny, {} as any);
+    const service = new CourseService(prisma, bunny, {} as any, systemSettings as any);
 
     await expect(
       service.updateCourse("1", { collegeId: 5 } as any, { userId: 1, type: 'ADMIN' }),
@@ -34,7 +38,7 @@ describe('CourseService academic identity immutability', () => {
       teacherAffiliation: { findFirst: jest.fn().mockResolvedValue({ id: 'affiliation-1' }) },
       course: { create: jest.fn().mockResolvedValue({ id: 'course-1' }) },
     };
-    const service = new CourseService(prisma as any, {} as any, {} as any);
+    const service = new CourseService(prisma as any, {} as any, {} as any, systemSettings as any);
 
     await service.createCourse(
       {
@@ -66,7 +70,7 @@ describe('CourseService academic identity immutability', () => {
     const prisma = {
       $transaction: jest.fn((callback) => callback(tx)),
     } as any;
-    const service = new CourseService(prisma, {} as any, {} as any);
+    const service = new CourseService(prisma, {} as any, {} as any, systemSettings as any);
     jest.spyOn(service as any, 'assertCourseOwnership').mockResolvedValue(undefined);
     jest.spyOn(service, 'getCourseDetails').mockResolvedValue({} as any);
 
@@ -86,7 +90,7 @@ describe('CourseService academic identity immutability', () => {
   });
 
   it('rejects a discounted final price greater than the course price', async () => {
-    const service = new CourseService({} as any, {} as any, {} as any);
+    const service = new CourseService({} as any, {} as any, {} as any, systemSettings as any);
 
     expect(() =>
       (service as any).resolveCourseDiscountPercentage(400, 500),
@@ -104,7 +108,7 @@ describe('CourseService academic identity immutability', () => {
     const prisma = {
       $transaction: jest.fn((callback) => callback(tx)),
     } as any;
-    const service = new CourseService(prisma, {} as any, {} as any);
+    const service = new CourseService(prisma, {} as any, {} as any, systemSettings as any);
     jest.spyOn(service as any, 'assertCourseOwnership').mockResolvedValue(undefined);
     jest.spyOn(service, 'getCourseDetails').mockResolvedValue({} as any);
 
@@ -132,7 +136,7 @@ describe('CourseService academic identity immutability', () => {
     const prisma = {
       $transaction: jest.fn((callback) => callback(tx)),
     } as any;
-    const service = new CourseService(prisma, {} as any, {} as any);
+    const service = new CourseService(prisma, {} as any, {} as any, systemSettings as any);
     jest.spyOn(service as any, 'assertCourseOwnership').mockResolvedValue(undefined);
     jest.spyOn(service, 'getCourseDetails').mockResolvedValue({} as any);
 
@@ -155,7 +159,7 @@ describe('CourseService academic identity immutability', () => {
     const prisma = {
       $transaction: jest.fn((callback) => callback(tx)),
     } as any;
-    const service = new CourseService(prisma, {} as any, {} as any);
+    const service = new CourseService(prisma, {} as any, {} as any, systemSettings as any);
     jest.spyOn(service as any, 'assertCourseOwnership').mockResolvedValue(undefined);
     jest.spyOn(service, 'getCourseDetails').mockResolvedValue({} as any);
 
@@ -166,5 +170,67 @@ describe('CourseService academic identity immutability', () => {
     );
 
     expect(tx.studentSubscription.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('CourseService course details global payment QR', () => {
+  function createCourse(id: string, name: string) {
+    return {
+      id,
+      imageUrl: null,
+      name,
+      price: 100,
+      courseDiscountPercentage: 0,
+      paymentQrUrl: `https://cdn.example.com/uploads/payment-qr/${id}.webp`,
+      isFree: false,
+      isCompleted: false,
+      expiresAt: null,
+      subjectId: null,
+      universityId: null,
+      collegeId: null,
+      departmentId: null,
+      categoryId: null,
+      introVideoUrl: null,
+      discussionGroupUrl: null,
+      teacherId: 'teacher-1',
+      teacher: {
+        id: 'teacher-1',
+        name: 'Teacher One',
+        image: null,
+        instagramUrl: null,
+        telegramUrl: null,
+        isVisibleToStudents: true,
+      },
+      collegeYear: null,
+      season: null,
+      lectures: [],
+      codeGroups: [],
+      _count: { subscriptions: 0, lectures: 0 },
+    };
+  }
+
+  it('returns the global QR in course.paymentQrUrl for different courses', async () => {
+    const systemQrUrl = 'https://cdn.example.com/uploads/payment-qr/system.webp';
+    const courses = new Map([
+      ['course-a', createCourse('course-a', 'Course A')],
+      ['course-b', createCourse('course-b', 'Course B')],
+    ]);
+    const prisma: any = {
+      course: {
+        findUnique: jest.fn(({ where }: any) => Promise.resolve(courses.get(where.id))),
+      },
+      lecture: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const systemSettings = {
+      getPaymentQrUrl: jest.fn().mockResolvedValue(systemQrUrl),
+    };
+    const service = new CourseService(prisma, {} as any, {} as any, systemSettings as any);
+
+    const courseA: any = await service.getCourseDetails('course-a');
+    const courseB: any = await service.getCourseDetails('course-b');
+
+    expect(courseA.course.paymentQrUrl).toBe(systemQrUrl);
+    expect(courseB.course.paymentQrUrl).toBe(systemQrUrl);
+    expect(systemSettings.getPaymentQrUrl).toHaveBeenCalledTimes(2);
   });
 });

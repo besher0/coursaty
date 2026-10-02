@@ -18,6 +18,7 @@ const ADMIN_ID = 'admin-local-1';
 type LocalUser = { userId: string; type: 'STUDENT' | 'ADMIN' };
 
 class LocalSubscriptionState {
+  systemPaymentQrUrl: string | null = 'https://local.test/qr.png';
   course = {
     id: COURSE_ID,
     name: 'دورات برمجة 3',
@@ -25,7 +26,6 @@ class LocalSubscriptionState {
     discountedPrice: 700,
     isFree: false,
     expiresAt: new Date('2099-09-28T00:00:00.000Z'),
-    paymentQrUrl: 'https://local.test/qr.png',
   };
   interest: any = null;
   pending: any = null;
@@ -80,8 +80,8 @@ class LocalCourseInterestsService {
     ) {
       throw new ApiCodeException(403, 'COURSE_NOT_AVAILABLE_FOR_SUBSCRIPTION', 'not eligible');
     }
-    if (!this.state.course.paymentQrUrl) {
-      throw new ApiCodeException(400, 'COURSE_PAYMENT_QR_MISSING', 'missing qr');
+    if (!this.state.systemPaymentQrUrl) {
+      throw new ApiCodeException(400, 'PAYMENT_QR_MISSING', 'missing qr');
     }
   }
 
@@ -93,7 +93,7 @@ class LocalCourseInterestsService {
       discountedPrice: this.state.course.discountedPrice,
       isFree: this.state.course.isFree,
       isExpired: this.state.course.expiresAt.getTime() <= Date.now(),
-      paymentQrUrl: this.state.course.paymentQrUrl,
+      paymentQrUrl: this.state.systemPaymentQrUrl,
     };
   }
 }
@@ -108,7 +108,7 @@ class LocalFinancialsService {
         this.state.course.expiresAt.getTime() <= Date.now()) {
       throw new ApiCodeException(403, 'COURSE_NOT_AVAILABLE_FOR_SUBSCRIPTION', 'not eligible');
     }
-    if (!this.state.course.paymentQrUrl) throw new ApiCodeException(400, 'COURSE_PAYMENT_QR_MISSING', 'missing qr');
+    if (!this.state.systemPaymentQrUrl) throw new ApiCodeException(400, 'PAYMENT_QR_MISSING', 'missing qr');
     if (this.state.active) throw new ApiCodeException(409, 'ACTIVE_SUBSCRIPTION_EXISTS', 'already active');
     if (this.state.pending) throw new ApiCodeException(409, 'SUBSCRIPTION_REQUEST_ALREADY_PENDING', 'already pending');
     return { studentId: STUDENT_ID, course: this.state.course };

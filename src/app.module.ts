@@ -26,6 +26,7 @@ import { AllExceptionsFilter } from './shared/filters/all-exceptions.filter';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ProvincesModule } from './modules/provinces/provinces.module';
+import { SystemSettingsModule } from './modules/system-settings/system-settings.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { ProvincesModule } from './modules/provinces/provinces.module';
     UploadsModule,
     NotificationsModule,
     ProvincesModule,
+    SystemSettingsModule,
   ],
   providers: [
     {

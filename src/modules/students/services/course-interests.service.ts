@@ -2,10 +2,14 @@ import { ForbiddenException, HttpStatus, Injectable, NotFoundException } from '@
 import { CourseInterestSource, Prisma } from '@prisma/client';
 import { ApiCodeException } from '@/common/errors/api-code.exception';
 import { PrismaService } from '@/prisma/prisma.service';
+import { SystemSettingsService } from '@/modules/system-settings/services/system-settings.service';
 
 @Injectable()
 export class CourseInterestsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly systemSettingsService: SystemSettingsService,
+  ) {}
 
   async saveInterest(
     user: { userId: string | number; type: string } | undefined,
@@ -14,7 +18,7 @@ export class CourseInterestsService {
   ) {
     const { studentId } = await this.resolveStudentContext(user);
     const course = await this.findSubscribableCourse(courseId);
-    await this.assertCourseCanStartQrFlow(studentId, course);
+    const paymentQrUrl = await this.assertCourseCanStartQrFlow(studentId, course);
 
     const interest = await this.prisma.studentCourseInterest.upsert({
       where: { studentId_courseId: { studentId, courseId: course.id } },
@@ -24,7 +28,7 @@ export class CourseInterestsService {
     });
 
     return {
-      interest: await this.mapInterestWithPendingRequest(interest),
+      interest: await this.mapInterestWithPendingRequest(interest, paymentQrUrl),
     };
   }
 
@@ -47,10 +51,11 @@ export class CourseInterestsService {
     const pendingByCourseId = new Map(
       pendingRequests.map((request) => [request.courseId, request]),
     );
+    const paymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
 
     return {
       interests: interests.map((interest) =>
-        this.mapInterest(interest, pendingByCourseId.get(interest.courseId) ?? null),
+        this.mapInterest(interest, pendingByCourseId.get(interest.courseId) ?? null, paymentQrUrl),
       ),
     };
   }
@@ -86,6 +91,7 @@ export class CourseInterestsService {
     interest: Prisma.StudentCourseInterestGetPayload<{
       include: { course: { include: { teacher: { select: { isVisibleToStudents: true } } } } };
     }>,
+    paymentQrUrl?: string | null,
   ) {
     const pendingRequest = await this.prisma.subscriptionRequest.findFirst({
       where: {
@@ -96,7 +102,12 @@ export class CourseInterestsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return this.mapInterest(interest, pendingRequest);
+    const systemPaymentQrUrl =
+      paymentQrUrl === undefined
+        ? await this.systemSettingsService.getPaymentQrUrl()
+        : paymentQrUrl;
+
+    return this.mapInterest(interest, pendingRequest, systemPaymentQrUrl);
   }
 
   private mapInterest(
@@ -104,13 +115,14 @@ export class CourseInterestsService {
       include: { course: { include: { teacher: { select: { isVisibleToStudents: true } } } } };
     }>,
     pendingRequest: Prisma.SubscriptionRequestGetPayload<Record<string, never>> | null,
+    paymentQrUrl: string | null,
   ) {
     return {
       id: interest.id,
       courseId: interest.courseId,
       source: interest.source,
       createdAt: interest.createdAt,
-      course: this.mapCourse(interest.course),
+      course: this.mapCourse(interest.course, paymentQrUrl),
       pendingRequest: pendingRequest
         ? {
             id: pendingRequest.id,
@@ -129,10 +141,9 @@ export class CourseInterestsService {
     imageUrl?: string | null;
     price: Prisma.Decimal | number | string;
     courseDiscountPercentage?: Prisma.Decimal | number | string | null;
-    paymentQrUrl?: string | null;
     isFree?: boolean;
     expiresAt?: Date | null;
-  }) {
+  }, paymentQrUrl: string | null) {
     const basePrice = Number(course.price);
     const discountPct = Number(course.courseDiscountPercentage ?? 0);
     const discountedPrice = Number.isNaN(basePrice)
@@ -145,7 +156,7 @@ export class CourseInterestsService {
       imageUrl: course.imageUrl ?? null,
       basePrice,
       discountedPrice,
-      paymentQrUrl: course.paymentQrUrl ?? null,
+      paymentQrUrl,
       isFree: course.isFree ?? false,
       expiresAt: course.expiresAt ?? null,
       isExpired: Boolean(course.expiresAt && course.expiresAt.getTime() <= Date.now()),
@@ -187,11 +198,12 @@ export class CourseInterestsService {
       );
     }
 
-    if (!course.paymentQrUrl) {
+    const paymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
+    if (!paymentQrUrl) {
       throw new ApiCodeException(
         HttpStatus.BAD_REQUEST,
-        'COURSE_PAYMENT_QR_MISSING',
-        'لا يوجد QR دفع لهذا الكورس',
+        'PAYMENT_QR_MISSING',
+        'QR الدفع غير متوفر حاليًا',
       );
     }
 
@@ -218,6 +230,8 @@ export class CourseInterestsService {
         'يوجد طلب اشتراك معلق لهذا الكورس',
       );
     }
+
+    return paymentQrUrl;
   }
 
   private async resolveStudentContext(user?: { userId: string | number; type: string }) {
