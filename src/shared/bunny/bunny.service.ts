@@ -1,7 +1,7 @@
 import { BadGatewayException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, createHmac, randomUUID } from 'crypto';
 import { BUNNY_STREAM_RESOLUTIONS, BunnyStreamResolution } from './bunny-resolution.constants';
 
 type BunnyResolutionPath = {
@@ -21,6 +21,9 @@ type BunnyVideoResolutionsResponse = {
 @Injectable()
 export class BunnyService {
   private static readonly TUS_UPLOAD_ENDPOINT = 'https://video.bunnycdn.com/tusupload';
+  private static readonly DEFAULT_CDN_TOKEN_TTL_SECONDS = 10800;
+  private static readonly UUID_PATTERN =
+    /([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/;
   private readonly streamLibraryId: string;
   private readonly apiKey: string;
   private readonly coreApiKey: string;
@@ -28,6 +31,8 @@ export class BunnyService {
   private readonly storageHost: string;
   private readonly storageApiKey: string;
   private readonly storagePublicHost: string;
+  private readonly cdnTokenKey: string;
+  private readonly cdnTokenTtlSeconds: number;
 
   constructor(private readonly configService: ConfigService) {
     this.streamLibraryId = this.readEnv('BUNNY_STREAM_LIBRARY_ID');
@@ -41,6 +46,11 @@ export class BunnyService {
     const configuredPublicHost =
       this.readEnv('BUNNY_STORAGE_PUBLIC_HOST') || this.readEnv('CDN_Hostname');
     this.storagePublicHost = configuredPublicHost || `${this.storageZone}.b-cdn.net`;
+    this.cdnTokenKey = this.readEnv('BUNNY_CDN_TOKEN_KEY');
+    this.cdnTokenTtlSeconds = this.readPositiveIntegerEnv(
+      'BUNNY_CDN_TOKEN_TTL_SECONDS',
+      BunnyService.DEFAULT_CDN_TOKEN_TTL_SECONDS,
+    );
   }
 
   async createStreamVideo(title: string): Promise<{ guid: string; title: string }> {
@@ -185,8 +195,8 @@ export class BunnyService {
     return {
       videoId,
       availableResolutions: payload?.availableResolutions ?? [],
-      playlistResolutions,
-      mp4Resolutions,
+      playlistResolutions: this.signResolutionPaths(playlistResolutions, videoId) ?? [],
+      mp4Resolutions: this.signResolutionPaths(mp4Resolutions, videoId) ?? [],
     };
   }
 
@@ -214,9 +224,10 @@ export class BunnyService {
     const playData = await this.getVideoPlayData(videoId).catch((): null => null);
     const resolutions = await this.getVideoResolutions(videoId, playData ?? undefined).catch((): null => null);
 
-    const streamMasterPlaylistUrl = playData?.playlistUrl ?? null;
-    const playlistResolutions = resolutions?.playlistResolutions ?? null;
-    const mp4Resolutions = resolutions?.mp4Resolutions ?? null;
+    const streamMasterPlaylistUrl = this.signNullableStreamUrl(playData?.playlistUrl, videoId);
+    const streamFallbackUrl = this.signNullableStreamUrl(playData?.fallbackUrl, videoId);
+    const playlistResolutions = this.signResolutionPaths(resolutions?.playlistResolutions ?? null, videoId);
+    const mp4Resolutions = this.signResolutionPaths(resolutions?.mp4Resolutions ?? null, videoId);
 
     const preferredPlaylistResolutionUrl = this.resolveResolutionPath(
       preferredResolution,
@@ -230,7 +241,7 @@ export class BunnyService {
       streamPlayUrl: this.getStreamPlayUrl(videoId),
       streamMasterPlaylistUrl,
       streamPlaylistUrl: preferredPlaylistResolutionUrl ?? streamMasterPlaylistUrl,
-      streamFallbackUrl: playData?.fallbackUrl ?? null,
+      streamFallbackUrl,
       availableResolutions: resolutions?.availableResolutions ?? null,
       playlistResolutions,
       mp4Resolutions,
@@ -240,6 +251,91 @@ export class BunnyService {
       isPlayable: playData?.isPlayable ?? null,
       isPlaylistPlayable: playData?.isPlaylistPlayable ?? null,
     };
+  }
+
+  async resolveSignedStoredStreamUrl(url?: string | null): Promise<string | null> {
+    if (!url) return null;
+
+    const videoId = this.extractBunnyVideoId(url);
+    if (!videoId) return url;
+
+    if (this.isBunnyStreamMediaUrl(url, videoId)) {
+      return this.signStreamPlaybackUrl(url, videoId);
+    }
+
+    if (!this.isBunnyStreamStablePlaybackUrl(url, videoId)) return url;
+
+    const playback = await this.getStreamPlaybackPayload(videoId);
+    return playback.streamPlaylistUrl ?? playback.streamMasterPlaylistUrl ?? playback.streamFallbackUrl ?? url;
+  }
+
+  signStreamPlaybackUrl(url: string, videoId: string, expiresInSeconds?: number): string {
+    if (!this.isBunnyStreamMediaUrl(url, videoId)) return url;
+    this.assertCdnTokenConfigured();
+
+    const parsed = this.parseUrl(url);
+    if (!parsed) return url;
+
+    const unsignedUrl = this.removeExistingCdnToken(parsed);
+    const expires = this.getPlaybackExpiration(expiresInSeconds);
+    const videoDirectory = this.getVideoDirectoryPath(videoId);
+
+    return this.signBunnyStreamMediaUrl(unsignedUrl, expires, videoDirectory);
+  }
+
+  isBunnyStreamMediaUrl(url?: string | null, videoId?: string | null): boolean {
+    const parsed = this.parseUrl(url);
+    if (!parsed) return false;
+
+    const hostname = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname;
+    const normalizedVideoId = String(videoId || this.extractBunnyVideoId(url) || '').trim();
+
+    if (!normalizedVideoId || !this.pathContainsVideoId(pathname, normalizedVideoId)) return false;
+    if (this.isConfiguredStorageHost(hostname)) return false;
+    if (this.isBunnyManagementUrl(parsed)) return false;
+    if (this.isBunnyStreamStablePlaybackParsedUrl(parsed, normalizedVideoId)) return false;
+
+    return (
+      hostname === 'video.bunnycdn.com' ||
+      hostname.endsWith('.bunnycdn.com') ||
+      hostname === 'b-cdn.net' ||
+      hostname.endsWith('.b-cdn.net') ||
+      hostname === 'mediadelivery.net' ||
+      hostname.endsWith('.mediadelivery.net')
+    );
+  }
+
+  extractBunnyVideoId(url?: string | null): string | null {
+    if (!url) return null;
+
+    const playMatch = url.match(/\/play\/[^/]+\/([0-9a-fA-F-]{36})(?:[/?#]|$)/);
+    if (playMatch?.[1]) return playMatch[1];
+
+    const embedMatch = url.match(/\/embed\/[^/]+\/([0-9a-fA-F-]{36})(?:[/?#]|$)/);
+    if (embedMatch?.[1]) return embedMatch[1];
+
+    try {
+      const pathname = new URL(url).pathname;
+      const segments = pathname.split('/').filter(Boolean);
+      for (const segment of segments) {
+        if (segment.startsWith('bcdn_token=')) continue;
+        const segmentMatch = segment.match(BunnyService.UUID_PATTERN);
+        if (segmentMatch?.[1]) return segmentMatch[1];
+      }
+    } catch {
+      // Non-URL inputs are handled by the generic regex fallback below.
+    }
+
+    const genericMatch = url.match(BunnyService.UUID_PATTERN);
+    if (genericMatch?.[1]) return genericMatch[1];
+
+    return null;
+  }
+
+  getPlaybackExpiration(expiresInSeconds?: number): number {
+    const ttl = this.clampPlaybackTtl(expiresInSeconds ?? this.cdnTokenTtlSeconds);
+    return Math.floor(Date.now() / 1000) + ttl;
   }
 
   private resolveResolutionPath(preferredResolution: string | undefined, resolutions: BunnyResolutionPath[]): string | null {
@@ -268,10 +364,14 @@ export class BunnyService {
     if (!resolutions.length) return resolutions;
 
     const withSizes = await Promise.all(
-      resolutions.map(async (item) => ({
-        ...item,
-        sizeBytes: await this.tryResolveContentLength(item.path, baseUrl),
-      })),
+      resolutions.map(async (item) => {
+        const normalizedPath = this.normalizeResolutionUrl(item.path, baseUrl) ?? item.path;
+        return {
+          ...item,
+          path: normalizedPath,
+          sizeBytes: await this.tryResolveContentLength(item.path, baseUrl),
+        };
+      }),
     );
 
     return withSizes;
@@ -284,10 +384,14 @@ export class BunnyService {
     if (!resolutions.length) return resolutions;
 
     const withSizes = await Promise.all(
-      resolutions.map(async (item) => ({
-        ...item,
-        sizeBytes: await this.getPlaylistSizeBytes(item.path, baseUrl),
-      })),
+      resolutions.map(async (item) => {
+        const normalizedPath = this.normalizeResolutionUrl(item.path, baseUrl) ?? item.path;
+        return {
+          ...item,
+          path: normalizedPath,
+          sizeBytes: await this.getPlaylistSizeBytes(item.path, baseUrl),
+        };
+      }),
     );
 
     return withSizes;
@@ -332,8 +436,9 @@ export class BunnyService {
   }
 
   private async tryFetchPlaylistBody(url: string): Promise<string | null> {
+    const requestUrl = this.signUrlForServerMediaRequest(url);
     try {
-      const response = await axios.get(url, {
+      const response = await axios.get(requestUrl, {
         timeout: 20000,
         responseType: 'text',
         maxRedirects: 3,
@@ -374,9 +479,10 @@ export class BunnyService {
   private async tryResolveContentLength(path: string, baseUrl?: string): Promise<number | null> {
     const url = this.normalizeResolutionUrl(path, baseUrl);
     if (!url) return null;
+    const requestUrl = this.signUrlForServerMediaRequest(url);
 
     try {
-      const response = await axios.head(url, {
+      const response = await axios.head(requestUrl, {
         timeout: 20000,
         maxRedirects: 3,
         validateStatus: (status) => status >= 200 && status < 400,
@@ -410,6 +516,156 @@ export class BunnyService {
   private getStreamPlayBaseUrl(videoId: string): string {
     const base = this.getStreamPlayUrl(videoId);
     return base.endsWith('/') ? base : `${base}/`;
+  }
+
+  private signResolutionPaths(
+    resolutions: BunnyResolutionPath[] | null,
+    videoId: string,
+  ): BunnyResolutionPath[] | null {
+    if (!resolutions) return null;
+    return resolutions.map((item) => ({
+      ...item,
+      path: this.signStreamPlaybackUrl(item.path, videoId),
+    }));
+  }
+
+  private signNullableStreamUrl(url: string | null | undefined, videoId: string): string | null {
+    if (!url) return null;
+    return this.signStreamPlaybackUrl(url, videoId);
+  }
+
+  private signUrlForServerMediaRequest(url: string): string {
+    const videoId = this.extractBunnyVideoId(url);
+    if (!videoId || !this.isBunnyStreamMediaUrl(url, videoId)) return url;
+    return this.signStreamPlaybackUrl(url, videoId);
+  }
+
+  private signBunnyStreamMediaUrl(parsed: URL, expires: number, pathAllowed: string): string {
+    const parameters: Record<string, string> = {};
+    for (const [key, value] of parsed.searchParams) {
+      if (key === 'token' || key === 'expires' || key === 'bcdn_token') continue;
+      if (Object.prototype.hasOwnProperty.call(parameters, key)) {
+        throw new BadGatewayException(`Duplicate Bunny CDN token parameter "${key}" is not supported`);
+      }
+      parameters[key] = value;
+    }
+    parameters.token_path = pathAllowed;
+
+    const sortedEntries = Object.entries(parameters).sort(([a], [b]) => a.localeCompare(b));
+    const signingData = sortedEntries.map(([key, value]) => `${key}=${value}`).join('&');
+    const urlData = sortedEntries
+      .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+      .join('&');
+
+    const hmac = createHmac('sha256', this.cdnTokenKey);
+    hmac.update(pathAllowed);
+    hmac.update(String(expires));
+    hmac.update(signingData);
+
+    const token = `HS256-${hmac
+      .digest('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')}`;
+
+    const base = `${parsed.protocol}//${parsed.host}`;
+    const tail = urlData ? `&${urlData}` : '';
+    return `${base}/bcdn_token=${token}${tail}&expires=${expires}${parsed.pathname}`;
+  }
+
+  private removeExistingCdnToken(parsed: URL): URL {
+    const unsigned = new URL(parsed.toString());
+    const segments = unsigned.pathname.split('/').filter(Boolean);
+    if (segments[0]?.startsWith('bcdn_token=')) {
+      unsigned.pathname = `/${segments.slice(1).join('/')}`;
+    }
+    unsigned.searchParams.delete('token');
+    unsigned.searchParams.delete('expires');
+    unsigned.searchParams.delete('bcdn_token');
+    return unsigned;
+  }
+
+  private isBunnyStreamStablePlaybackUrl(url?: string | null, videoId?: string | null): boolean {
+    const parsed = this.parseUrl(url);
+    return parsed ? this.isBunnyStreamStablePlaybackParsedUrl(parsed, videoId) : false;
+  }
+
+  private isBunnyStreamStablePlaybackParsedUrl(parsed: URL, videoId?: string | null): boolean {
+    const normalizedVideoId = String(videoId || '').trim();
+    const path = parsed.pathname;
+    const escapedVideoId = this.escapeRegex(normalizedVideoId);
+    if (parsed.hostname.toLowerCase() === 'video.bunnycdn.com') {
+      return new RegExp(`^/play/[^/]+/${escapedVideoId}(?:/)?$`, 'i').test(path);
+    }
+
+    if (parsed.hostname.toLowerCase() === 'player.mediadelivery.net') {
+      return new RegExp(`^/embed/[^/]+/${escapedVideoId}(?:/)?$`, 'i').test(path);
+    }
+
+    return false;
+  }
+
+  private isBunnyManagementUrl(parsed: URL): boolean {
+    const hostname = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname.toLowerCase();
+    if (hostname === 'api.bunny.net') return true;
+    if (hostname === 'video.bunnycdn.com' && pathname.startsWith('/library/')) return true;
+    if (hostname === 'video.bunnycdn.com' && pathname.startsWith('/tusupload')) return true;
+    return false;
+  }
+
+  private isConfiguredStorageHost(hostname: string): boolean {
+    const configuredHosts = [this.storagePublicHost, this.storageHost]
+      .map((host) => this.normalizeHostname(host))
+      .filter(Boolean);
+    return configuredHosts.includes(this.normalizeHostname(hostname));
+  }
+
+  private pathContainsVideoId(pathname: string, videoId: string): boolean {
+    return pathname.split('/').some((segment) => segment.toLowerCase() === videoId.toLowerCase());
+  }
+
+  private getVideoDirectoryPath(videoId: string): string {
+    const normalized = String(videoId || '').trim().replace(/^\/+|\/+$/g, '');
+    return `/${normalized}/`;
+  }
+
+  private assertCdnTokenConfigured() {
+    if (!this.cdnTokenKey) {
+      throw new BadGatewayException('Missing BUNNY_CDN_TOKEN_KEY for Bunny Stream CDN token authentication');
+    }
+  }
+
+  private clampPlaybackTtl(expiresInSeconds: number): number {
+    const MIN_TTL = 60;
+    const MAX_TTL = 86400;
+
+    if (!Number.isFinite(expiresInSeconds)) return BunnyService.DEFAULT_CDN_TOKEN_TTL_SECONDS;
+    const rounded = Math.floor(expiresInSeconds);
+    return Math.min(MAX_TTL, Math.max(MIN_TTL, rounded));
+  }
+
+  private parseUrl(url?: string | null): URL | null {
+    if (!url) return null;
+    try {
+      const parsed = new URL(String(url).trim());
+      if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  private normalizeHostname(host?: string | null): string {
+    return String(host || '')
+      .trim()
+      .replace(/^https?:\/\//i, '')
+      .split('/')[0]
+      .toLowerCase();
+  }
+
+  private escapeRegex(value: string): string {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   describeError(error: any, operationLabel: string): string {
@@ -626,5 +882,14 @@ export class BunnyService {
 
   private readEnv(key: string): string {
     return (this.configService.get<string>(key) ?? '').trim();
+  }
+
+  private readPositiveIntegerEnv(key: string, defaultValue: number): number {
+    const raw = this.readEnv(key);
+    if (!raw) return defaultValue;
+
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return defaultValue;
+    return Math.floor(parsed);
   }
 }

@@ -87,15 +87,11 @@ export class LecturesService {
       });
     }
 
-    const mapLecture = (lecture: any, hideLockedMedia: boolean) => ({
+    const mapLecture = async (lecture: any, hideLockedMedia: boolean) => ({
       ...lecture,
       hasVideosSortOrder: lecture.videos.some((video: any) => video.sortOrder !== null && video.sortOrder !== undefined),
       hasFilesSortOrder: lecture.files.some((file: any) => file.sortOrder !== null && file.sortOrder !== undefined),
-      videos: lecture.videos.map((video: any) => ({
-        ...video,
-        videoUrl: hideLockedMedia && !video.isFree ? null : video.videoUrl,
-        locked: hideLockedMedia ? !video.isFree : false,
-      })),
+      videos: await this.mapVideosForPlayback(lecture.videos, !hideLockedMedia),
       files: lecture.files.map((file: any) => ({
         ...file,
         fileUrl: hideLockedMedia && !file.isFree ? null : file.fileUrl,
@@ -104,10 +100,10 @@ export class LecturesService {
     });
 
     if (!isOwnerOrAdmin && isStudent && !hasAccess) {
-      return lectures.map((lecture) => mapLecture(lecture, true));
+      return Promise.all(lectures.map((lecture) => mapLecture(lecture, true)));
     }
 
-    return lectures.map((lecture) => mapLecture(lecture, false));
+    return Promise.all(lectures.map((lecture) => mapLecture(lecture, false)));
   }
 
   async updateLecture(id: string, data: UpdateLectureDto, user?: { userId: string | number; type: string }) {
@@ -533,11 +529,7 @@ export class LecturesService {
           fileUrl: file.isFree ? file.fileUrl : null,
           locked: !file.isFree,
         })),
-        videos: lecture.videos.map((video) => ({
-          ...video,
-          videoUrl: video.isFree ? video.videoUrl : null,
-          locked: !video.isFree,
-        })),
+        videos: await this.mapVideosForPlayback(lecture.videos, false),
         questions: lecture.questions,
       };
     }
@@ -560,12 +552,22 @@ export class LecturesService {
         ...file,
         locked: false,
       })),
-      videos: lecture.videos.map((video) => ({
-        ...video,
-        locked: false,
-      })),
+      videos: await this.mapVideosForPlayback(lecture.videos, true),
       questions: lecture.questions,
     };
+  }
+
+  private async mapVideosForPlayback(videos: any[], canAccessLockedVideos: boolean) {
+    return Promise.all(
+      videos.map(async (video) => {
+        const locked = canAccessLockedVideos ? false : !video.isFree;
+        return {
+          ...video,
+          videoUrl: locked ? null : await this.bunny.resolveSignedStoredStreamUrl(video.videoUrl),
+          locked,
+        };
+      }),
+    );
   }
 
   async createVideo(

@@ -1,6 +1,80 @@
 import { LecturesService } from './lectures.service';
 
 describe('LecturesService media links and question ordering', () => {
+  it('signs accessible video URLs when listing lectures', async () => {
+    const prisma = {
+      lecture: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'lecture-1',
+            videos: [
+              {
+                id: 'video-1',
+                videoUrl: 'https://video.bunnycdn.com/play/123/11111111-1111-4111-8111-111111111111',
+                isFree: false,
+                sortOrder: null,
+              },
+            ],
+            files: [],
+          },
+        ]),
+      },
+    } as any;
+    const bunny = {
+      resolveSignedStoredStreamUrl: jest.fn().mockResolvedValue('https://vz-test.b-cdn.net/bcdn_token=signed'),
+    };
+    const service = new LecturesService(prisma, bunny as any);
+    jest.spyOn(service as any, 'getCourseAccess').mockResolvedValue({
+      hasAccess: true,
+      isOwnerOrAdmin: false,
+      isStudent: true,
+    });
+
+    const result = await service.listLectures('course-1', { userId: 'student-user-1', type: 'STUDENT' });
+
+    expect(result[0].videos[0].videoUrl).toBe('https://vz-test.b-cdn.net/bcdn_token=signed');
+    expect(result[0].videos[0].locked).toBe(false);
+    expect(bunny.resolveSignedStoredStreamUrl).toHaveBeenCalledWith(
+      'https://video.bunnycdn.com/play/123/11111111-1111-4111-8111-111111111111',
+    );
+  });
+
+  it('does not sign locked video URLs when listing lectures without access', async () => {
+    const prisma = {
+      lecture: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'lecture-1',
+            videos: [
+              {
+                id: 'video-1',
+                videoUrl: 'https://video.bunnycdn.com/play/123/11111111-1111-4111-8111-111111111111',
+                isFree: false,
+                sortOrder: null,
+              },
+            ],
+            files: [],
+          },
+        ]),
+      },
+    } as any;
+    const bunny = {
+      resolveSignedStoredStreamUrl: jest.fn(),
+    };
+    const service = new LecturesService(prisma, bunny as any);
+    jest.spyOn(service as any, 'getCourseAccess').mockResolvedValue({
+      hasAccess: false,
+      isOwnerOrAdmin: false,
+      isStudent: true,
+    });
+
+    const result = await service.listLectures('course-1', { userId: 'student-user-1', type: 'STUDENT' });
+
+    expect(result[0].videos[0].videoUrl).toBeNull();
+    expect(result[0].videos[0].locked).toBe(true);
+    expect(bunny.resolveSignedStoredStreamUrl).not.toHaveBeenCalled();
+  });
+
   it('updates a video URL without changing other video fields', async () => {
     const prisma = {
       video: {

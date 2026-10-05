@@ -339,14 +339,22 @@ export class UploadsService {
         .filter((item) => item?.resolution && item?.path)
         .map((item) => [item.resolution, item.path]),
     );
+    const signedPlaylistUrl = playData.playlistUrl
+      ? this.bunny.signStreamPlaybackUrl(playData.playlistUrl, streamVideoId)
+      : null;
+    const signedFallbackUrl = playData.fallbackUrl
+      ? this.bunny.signStreamPlaybackUrl(playData.fallbackUrl, streamVideoId)
+      : null;
 
     return {
       requestedVideoId: videoId,
       resolvedVideoId: streamVideoId,
       resolvedFrom: 'db_video_id',
       ...playData,
-      streamMasterPlaylistUrl: playData.playlistUrl,
-      streamPlaylistUrl: playData.playlistUrl,
+      playlistUrl: signedPlaylistUrl,
+      fallbackUrl: signedFallbackUrl,
+      streamMasterPlaylistUrl: signedPlaylistUrl,
+      streamPlaylistUrl: signedPlaylistUrl,
       availableResolutions: resolutions.availableResolutions,
       playlistResolutions: resolutions.playlistResolutions,
       playlistByResolution,
@@ -367,40 +375,12 @@ export class UploadsService {
 
     if (!dbVideo) throw new NotFoundException('الفيديو غير موجود');
 
-    const streamVideoId = this.extractBunnyGuidFromUrl(dbVideo.videoUrl);
+    const streamVideoId = this.bunny.extractBunnyVideoId(dbVideo.videoUrl);
     if (!streamVideoId) {
       throw new BadRequestException('هذا الفيديو لا يحتوي على معرف Bunny Stream صالح');
     }
 
     return { streamVideoId };
-  }
-
-  private extractBunnyGuidFromUrl(url?: string | null): string | null {
-    if (!url) return null;
-
-    const playMatch = url.match(/\/play\/[^/]+\/([0-9a-fA-F-]{36})(?:[/?#]|$)/);
-    if (playMatch?.[1]) return playMatch[1];
-
-    const embedMatch = url.match(/\/embed\/[^/]+\/([0-9a-fA-F-]{36})(?:[/?#]|$)/);
-    if (embedMatch?.[1]) return embedMatch[1];
-
-    const uuidPattern = /([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/;
-
-    try {
-      const pathname = new URL(url).pathname;
-      const segments = pathname.split('/').filter(Boolean);
-      for (const segment of segments) {
-        const segmentMatch = segment.match(uuidPattern);
-        if (segmentMatch?.[1]) return segmentMatch[1];
-      }
-    } catch {
-      // Non-URL inputs are handled by the generic regex fallback below.
-    }
-
-    const genericMatch = url.match(uuidPattern);
-    if (genericMatch?.[1]) return genericMatch[1];
-
-    return null;
   }
 
   private extractStatus(error: unknown): number | undefined {
