@@ -464,6 +464,7 @@ export class DashboardService {
     guestFilter?: DashboardGuestFilter,
   ) {
     const { collegeId, college, departmentId, collegeYearId } = await this.getStudentCollege(user, guestFilter);
+    const activeSeasonId = await this.getActiveHomeSeasonId();
     // For this endpoint, only apply explicit year/season filters when provided.
     // Default response should include all years and all seasons for the college scope.
     const filters = await this.resolveSubjectFiltersForCollege(collegeId, null, options);
@@ -497,13 +498,25 @@ export class DashboardService {
     });
 
     const teachersBySubjectId = await this.getTeachersBySubjectIds(subjects.map((subject) => subject.id));
-    const mappedSubjects = subjects.map((subject) =>
-      this.buildSubjectCard(
-        subject,
-        subject.imageUrl ?? null,
-        teachersBySubjectId.get(subject.id),
-      ),
-    );
+    const mappedSubjects = subjects
+      .map((subject) =>
+        this.buildSubjectCard(
+          subject,
+          subject.imageUrl ?? null,
+          teachersBySubjectId.get(subject.id),
+        ),
+      )
+      .sort((a, b) => {
+        const aPriority = activeSeasonId && a.season?.id === activeSeasonId ? 0 : 1;
+        const bPriority = activeSeasonId && b.season?.id === activeSeasonId ? 0 : 1;
+        if (aPriority !== bPriority) return aPriority - bPriority;
+
+        const aSeasonNumber = a.season?.number ?? Number.MAX_SAFE_INTEGER;
+        const bSeasonNumber = b.season?.number ?? Number.MAX_SAFE_INTEGER;
+        if (aSeasonNumber !== bSeasonNumber) return aSeasonNumber - bSeasonNumber;
+
+        return a.name.localeCompare(b.name, 'ar');
+      });
 
     const yearsMap = new Map<
       string,
@@ -574,6 +587,10 @@ export class DashboardService {
         year: yearEntry.year,
         seasons: Array.from(yearEntry.seasonsMap.values())
           .sort((a, b) => {
+            const aPriority = activeSeasonId && a.season.id === activeSeasonId ? 0 : 1;
+            const bPriority = activeSeasonId && b.season.id === activeSeasonId ? 0 : 1;
+            if (aPriority !== bPriority) return aPriority - bPriority;
+
             const aNumber = a.season.number ?? Number.MAX_SAFE_INTEGER;
             const bNumber = b.season.number ?? Number.MAX_SAFE_INTEGER;
             return aNumber - bNumber;
@@ -750,7 +767,7 @@ export class DashboardService {
     const hasExplicitSeasonFilter = Boolean(options?.seasonId?.trim());
     const activeSeasonId = await this.getActiveHomeSeasonId();
     const filters = await this.resolveSubjectFiltersForCollege(collegeId, collegeYearId, options);
-    const resolvedSeasonId = filters.seasonId ?? activeSeasonId;
+    const resolvedSeasonId = filters.seasonId ?? null;
 
     // Get ads targeted by department/college/university, plus global ads for all students.
     const advertisements = await this.prisma.advertisement.findMany({
@@ -871,6 +888,18 @@ export class DashboardService {
         take: 1,
       });
     }
+
+    subjects.sort((a, b) => {
+      const aPriority = activeSeasonId && a.seasonId === activeSeasonId ? 0 : 1;
+      const bPriority = activeSeasonId && b.seasonId === activeSeasonId ? 0 : 1;
+      if (aPriority !== bPriority) return aPriority - bPriority;
+
+      const aSeasonNumber = a.season?.seasonNumber ?? Number.MAX_SAFE_INTEGER;
+      const bSeasonNumber = b.season?.seasonNumber ?? Number.MAX_SAFE_INTEGER;
+      if (aSeasonNumber !== bSeasonNumber) return aSeasonNumber - bSeasonNumber;
+
+      return a.subjectName.localeCompare(b.subjectName, 'ar');
+    });
 
     const programs = await this.getStudentPrograms(user, guestFilter);
 
@@ -1221,16 +1250,15 @@ export class DashboardService {
       departmentId,
       collegeYearId: userCollegeYearId,
     } = await this.getStudentCollege(user, guestFilter);
-    const activeSeasonId = await this.getActiveHomeSeasonId();
     const filters = await this.resolveSubjectFiltersForCollege(collegeId, userCollegeYearId, {
       collegeYearId,
       seasonId,
     });
     const selectedCollegeYearId = filters.collegeYearId ?? undefined;
-    const selectedSeasonId = filters.seasonId ?? activeSeasonId;
+    const selectedSeasonId = filters.seasonId ?? null;
     const seasons = await this.prisma.season.findMany({
       where: selectedSeasonId ? { id: selectedSeasonId } : undefined,
-      orderBy: { seasonNumber: 'asc' },
+      orderBy: [{ isHomeActive: 'desc' }, { seasonNumber: 'asc' }],
     });
 
     // Get all years for this college's department
@@ -1886,7 +1914,6 @@ export class DashboardService {
   ) {
     const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
     const scopedCollegeYearId = includeAllYears ? null : collegeYearId;
-    const activeSeasonId = await this.getActiveHomeSeasonId();
 
     const years = await this.prisma.collegeYear.findMany({
       where: {
@@ -1911,7 +1938,6 @@ export class DashboardService {
                   collegeId,
                   collegeYearId: year.id,
                   categoryId: category.id,
-                  ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
                 },
                 isFree,
               ),
@@ -1926,7 +1952,7 @@ export class DashboardService {
                 teacher: true,
                 _count: { select: { subscriptions: true } },
               },
-              orderBy: { createdAt: 'desc' },
+              orderBy: [{ season: { isHomeActive: 'desc' } }, { createdAt: 'desc' }],
               skip: (page - 1) * limit,
               take: limit,
             });
@@ -1978,7 +2004,6 @@ export class DashboardService {
   ) {
     const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
     const scopedCollegeYearId = includeAllYears ? null : collegeYearId;
-    const activeSeasonId = await this.getActiveHomeSeasonId();
 
     const years = await this.prisma.collegeYear.findMany({
       where: {
@@ -1997,7 +2022,6 @@ export class DashboardService {
               collegeId,
               collegeYearId: year.id,
               subscriptions: { some: {} },
-              ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
             },
             isFree,
           ),
@@ -2011,7 +2035,7 @@ export class DashboardService {
             teacher: true,
             _count: { select: { subscriptions: true } },
           },
-          orderBy: { subscriptions: { _count: 'desc' } },
+          orderBy: [{ season: { isHomeActive: 'desc' } }, { subscriptions: { _count: 'desc' } }],
           skip: (page - 1) * limit,
           take: limit,
         });
@@ -2046,7 +2070,6 @@ export class DashboardService {
             collegeId,
             collegeYearId: null,
             subscriptions: { some: {} },
-            ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
           },
           isFree,
         ),
@@ -2061,7 +2084,7 @@ export class DashboardService {
             teacher: true,
             _count: { select: { subscriptions: true } },
           },
-          orderBy: { subscriptions: { _count: 'desc' } },
+          orderBy: [{ season: { isHomeActive: 'desc' } }, { subscriptions: { _count: 'desc' } }],
           skip: (page - 1) * limit,
           take: limit,
         });
@@ -2103,7 +2126,6 @@ export class DashboardService {
   ) {
     const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
     const scopedCollegeYearId = includeAllYears ? null : collegeYearId;
-    const activeSeasonId = await this.getActiveHomeSeasonId();
 
     const years = await this.prisma.collegeYear.findMany({
       where: {
@@ -2121,7 +2143,6 @@ export class DashboardService {
             {
               collegeId,
               collegeYearId: year.id,
-              ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
             },
             isFree,
           ),
@@ -2135,7 +2156,7 @@ export class DashboardService {
             teacher: true,
             _count: { select: { subscriptions: true } },
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: [{ season: { isHomeActive: 'desc' } }, { createdAt: 'desc' }],
           skip: (page - 1) * limit,
           take: limit,
         });
@@ -2157,13 +2178,12 @@ export class DashboardService {
       }),
     );
 
-    const getNoYearCoursesEntry = async (withActiveSeason: boolean) => {
+    const getNoYearCoursesEntry = async () => {
       const where = this.withActiveCourseFilter(
         this.applyFreeCourseFilter(
           {
             collegeId,
             collegeYearId: null,
-            ...(withActiveSeason && activeSeasonId ? { seasonId: activeSeasonId } : {}),
           },
           isFree,
         ),
@@ -2180,7 +2200,7 @@ export class DashboardService {
           teacher: true,
           _count: { select: { subscriptions: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ season: { isHomeActive: 'desc' } }, { createdAt: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
       });
@@ -2204,19 +2224,6 @@ export class DashboardService {
     const hasCoursesInScopedFilters = yearsWithCourses.some((yearEntry) => yearEntry.courses.length > 0);
 
     if (!hasCoursesInScopedFilters) {
-      if (activeSeasonId) {
-        const activeSeasonNoYearEntry = await getNoYearCoursesEntry(true);
-
-        return {
-          college: {
-            id: college.id,
-            name: college.name,
-            universityId: college.universityId,
-          },
-          years: activeSeasonNoYearEntry ? [...yearsWithCourses, activeSeasonNoYearEntry] : yearsWithCourses,
-        };
-      }
-
       const fallbackYears = await this.prisma.collegeYear.findMany({
         where: {
           collegeId,
@@ -2267,7 +2274,7 @@ export class DashboardService {
         }),
       );
 
-      const fallbackNoYearEntry = await getNoYearCoursesEntry(false);
+      const fallbackNoYearEntry = await getNoYearCoursesEntry();
 
       return {
         college: {
@@ -2279,7 +2286,7 @@ export class DashboardService {
       };
     }
 
-    const noYearEntry = await getNoYearCoursesEntry(Boolean(activeSeasonId));
+    const noYearEntry = await getNoYearCoursesEntry();
 
     return {
       college: {
@@ -2315,16 +2322,6 @@ export class DashboardService {
       );
 
       if (matched && !hasCoursesInScopedFilters) {
-        const activeSeasonId = await this.getActiveHomeSeasonId();
-        if (activeSeasonId) {
-          return {
-            college: result.college,
-            mode: 'category',
-            category: matched.category,
-            years: matched.years,
-          };
-        }
-
         const { collegeId } = await this.getStudentCollege(user, guestFilter);
         const fallbackCourses = await this.prisma.course.findMany({
           where: this.withActiveCourseFilter(
@@ -2343,6 +2340,7 @@ export class DashboardService {
             _count: { select: { subscriptions: true } },
           },
           orderBy: [
+            { season: { isHomeActive: 'desc' } },
             { collegeYear: { academicYear: { yearNumber: 'asc' } } },
             { createdAt: 'desc' },
           ],
