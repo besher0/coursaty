@@ -31,7 +31,7 @@ export class DashboardController {
   @ApiQuery({ name: 'limit', required: false, description: 'Optional items limit, default is 7' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
   @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id to filter subjects only' })
-  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional season id to filter subjects only' })
+  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional explicit season filter; when omitted, all seasons are returned with the home-active season first' })
   getStudentCollegeInfo(
     @Req() req: any,
     @Query('limit') limit: string = '7',
@@ -77,7 +77,7 @@ export class DashboardController {
   @Get('courses-by-subjects')
   @ApiOperation({ summary: 'Get courses organized by college, year, and season' })
   @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id' })
-  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional season id' })
+  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional explicit season filter; when omitted, all seasons are returned with the home-active season first' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
   getCoursesByCollege(
     @Req() req: any,
@@ -96,7 +96,7 @@ export class DashboardController {
   @Get('student/subjects')
   @ApiOperation({ summary: 'Get student college subjects with full details (filter by year and season)' })
   @ApiQuery({ name: 'collegeYearId', required: false, description: 'Optional college year id (defaults to student year)' })
-  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional season id (defaults to active home season)' })
+  @ApiQuery({ name: 'seasonId', required: false, description: 'Optional explicit season filter; when omitted, all seasons are returned with the home-active season first' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Optional guest device id' })
   @ApiQuery({ name: 'deviceID', required: false, description: 'Optional guest device id (alias for deviceId)' })
   getStudentSubjects(
