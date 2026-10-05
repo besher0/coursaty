@@ -2252,7 +2252,7 @@ export class DashboardService {
               teacher: true,
               _count: { select: { subscriptions: true } },
             },
-            orderBy: { createdAt: 'desc' },
+            orderBy: [{ season: { isHomeActive: 'desc' } }, { createdAt: 'desc' }],
             skip: (page - 1) * limit,
             take: limit,
           });
