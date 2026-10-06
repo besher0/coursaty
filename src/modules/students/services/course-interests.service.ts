@@ -11,6 +11,14 @@ export class CourseInterestsService {
     private readonly systemSettingsService: SystemSettingsService,
   ) {}
 
+  private roundMoney(value: number) {
+    return Number(value.toFixed(2));
+  }
+
+  private getCourseDiscountedPrice(basePrice: number, discountPercentage: number) {
+    return this.roundMoney(Math.max(0, basePrice - (basePrice * discountPercentage) / 100));
+  }
+
   async saveInterest(
     user: { userId: string | number; type: string } | undefined,
     courseId: string,
@@ -148,7 +156,7 @@ export class CourseInterestsService {
     const discountPct = Number(course.courseDiscountPercentage ?? 0);
     const discountedPrice = Number.isNaN(basePrice)
       ? null
-      : Math.max(0, basePrice - (basePrice * discountPct) / 100);
+      : this.getCourseDiscountedPrice(basePrice, discountPct);
 
     return {
       id: course.id,
@@ -183,7 +191,7 @@ export class CourseInterestsService {
     const now = Date.now();
     const basePrice = Number(course.price);
     const discountPercentage = Number(course.courseDiscountPercentage ?? 0);
-    const finalPrice = basePrice - (basePrice * discountPercentage) / 100;
+    const finalPrice = this.getCourseDiscountedPrice(basePrice, discountPercentage);
     if (
       course.status !== 'APPROVED' ||
       course.isFree ||

@@ -5,6 +5,10 @@ import { PrismaService } from '@/prisma/prisma.service';
 export class InteractionsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private roundMoney(value: number) {
+    return Number(value.toFixed(2));
+  }
+
   async getMyCourseRating(courseId: string, user?: { userId: string | number; type: string }) {
     const { studentId } = await this.ensureStudentContext(user);
 
@@ -379,7 +383,9 @@ export class InteractionsService {
 
     const basePrice = Number(course.price ?? 0);
     const discountPercentage = Number(course.courseDiscountPercentage ?? 0);
-    const priceAfterCourseDiscount = Math.max(0, basePrice - (basePrice * discountPercentage) / 100);
+    const priceAfterCourseDiscount = this.roundMoney(
+      Math.max(0, basePrice - (basePrice * discountPercentage) / 100),
+    );
 
     return basePrice <= 0 || priceAfterCourseDiscount <= 0;
   }

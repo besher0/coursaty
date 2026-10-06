@@ -23,6 +23,14 @@ export class CourseService {
     private readonly systemSettingsService: SystemSettingsService,
   ) {}
 
+  private roundMoney(value: number) {
+    return Number(value.toFixed(2));
+  }
+
+  private getCourseDiscountedPrice(basePrice: number, discountPercentage: number) {
+    return this.roundMoney(Math.max(0, basePrice - (basePrice * discountPercentage) / 100));
+  }
+
   async getCourseCategories() {
     const categories = await this.prisma.courseCategory.findMany({
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
@@ -467,7 +475,7 @@ export class CourseService {
     const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
     const priceAfterCourseDiscount = Number.isNaN(basePrice)
       ? null
-      : Math.max(0, basePrice - (basePrice * courseDiscountPct) / 100);
+      : this.getCourseDiscountedPrice(basePrice, courseDiscountPct);
     const systemPaymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
 
     const totalVideos = course.lectures.reduce((acc, lec) => acc + (lec._count?.videos ?? 0), 0);
@@ -607,7 +615,7 @@ export class CourseService {
     const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
     const courseDiscountedPrice = Number.isNaN(basePrice)
       ? null
-      : Math.max(0, basePrice - (basePrice * courseDiscountPct) / 100);
+      : this.getCourseDiscountedPrice(basePrice, courseDiscountPct);
 
     const ratingsAgg = await this.prisma.courseRating.aggregate({
       where: { courseId: course.id },
@@ -692,7 +700,7 @@ export class CourseService {
           const groupDiscountPct = Number(group.discountPercentage ?? 0);
           const codePrice = Number.isNaN(basePrice)
             ? null
-            : Math.max(0, basePrice - (basePrice * groupDiscountPct) / 100);
+            : this.getCourseDiscountedPrice(basePrice, groupDiscountPct);
 
           return {
             id: group.id,
@@ -820,7 +828,7 @@ export class CourseService {
 
     const basePrice = Number(course.price ?? 0);
     const discountPercentage = Number(course.courseDiscountPercentage ?? 0);
-    const discountedPrice = Math.max(0, basePrice - (basePrice * discountPercentage) / 100);
+    const discountedPrice = this.getCourseDiscountedPrice(basePrice, discountPercentage);
 
     const grossRevenue = invoice.summary.totalRevenues;
     const teacherPercentage = Number(course.teacherPercentage ?? 0);
@@ -842,7 +850,7 @@ export class CourseService {
       subscriptionPrice: {
         beforeDiscount: Number(basePrice.toFixed(2)),
         discountPercentage: Number(discountPercentage.toFixed(2)),
-        afterDiscount: Number(discountedPrice.toFixed(2)),
+        afterDiscount: discountedPrice,
         hasDiscount: discountPercentage > 0,
       },
       subscriptions: {
@@ -1352,7 +1360,7 @@ export class CourseService {
 
     if (basePrice === 0) return 0;
 
-    return Number((((basePrice - finalPrice) * 100) / basePrice).toFixed(2));
+    return Number((((basePrice - finalPrice) * 100) / basePrice).toFixed(6));
   }
 
 

@@ -97,6 +97,12 @@ describe('CourseService academic identity immutability', () => {
     ).toThrow('سعر الكورس بعد الحسم لا يمكن أن يكون أكبر من سعر الكورس');
   });
 
+  it('stores enough discount precision to round back to the requested final price', () => {
+    const service = new CourseService({} as any, {} as any, {} as any, systemSettings as any);
+
+    expect((service as any).resolveCourseDiscountPercentage(700, 200)).toBe(71.428571);
+  });
+
   it('caps existing subscriptions when a course expiry is set', async () => {
     const tx = {
       course: {
@@ -232,5 +238,29 @@ describe('CourseService course details global payment QR', () => {
     expect(courseA.course.paymentQrUrl).toBe(systemQrUrl);
     expect(courseB.course.paymentQrUrl).toBe(systemQrUrl);
     expect(systemSettings.getPaymentQrUrl).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns a rounded discountedPrice from the stored discount percentage', async () => {
+    const systemQrUrl = 'https://cdn.example.com/uploads/payment-qr/system.webp';
+    const course = {
+      ...createCourse('course-a', 'Course A'),
+      price: 700,
+      courseDiscountPercentage: 71.428571,
+    };
+    const prisma: any = {
+      course: {
+        findUnique: jest.fn().mockResolvedValue(course),
+      },
+      lecture: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const systemSettings = {
+      getPaymentQrUrl: jest.fn().mockResolvedValue(systemQrUrl),
+    };
+    const service = new CourseService(prisma, {} as any, {} as any, systemSettings as any);
+
+    const result: any = await service.getCourseDetails('course-a');
+
+    expect(result.course.basePrice).toBe(700);
+    expect(result.course.discountedPrice).toBe(200);
   });
 });
