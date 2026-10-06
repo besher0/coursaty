@@ -89,6 +89,24 @@ export class DashboardService {
     return { AND: [where, { NOT: freeClause }] };
   }
 
+  private getItemSeasonId(item: any) {
+    return item?.seasonId ?? item?.season?.id ?? null;
+  }
+
+  private preferSeasonFirst<T>(items: T[], preferredSeasonId?: string | null) {
+    if (!preferredSeasonId) return items;
+
+    return [...items].sort((a, b) => {
+      const aPreferred = this.getItemSeasonId(a) === preferredSeasonId ? 0 : 1;
+      const bPreferred = this.getItemSeasonId(b) === preferredSeasonId ? 0 : 1;
+      return aPreferred - bPreferred;
+    });
+  }
+
+  private paginateItems<T>(items: T[], page: number, limit: number) {
+    return items.slice((page - 1) * limit, page * limit);
+  }
+
   private buildTeacherCourseScope(collegeId: string, departmentId?: string | null) {
     if (departmentId) {
       return {
@@ -497,7 +515,8 @@ export class DashboardService {
     });
 
     const teachersBySubjectId = await this.getTeachersBySubjectIds(subjects.map((subject) => subject.id));
-    const mappedSubjects = subjects.map((subject) =>
+    const activeSeasonId = filters.seasonId ? null : await this.getActiveHomeSeasonId();
+    const mappedSubjects = this.preferSeasonFirst(subjects, filters.seasonId ?? activeSeasonId).map((subject) =>
       this.buildSubjectCard(
         subject,
         subject.imageUrl ?? null,
@@ -574,6 +593,11 @@ export class DashboardService {
         year: yearEntry.year,
         seasons: Array.from(yearEntry.seasonsMap.values())
           .sort((a, b) => {
+            if (activeSeasonId) {
+              const aPreferred = a.season.id === activeSeasonId ? 0 : 1;
+              const bPreferred = b.season.id === activeSeasonId ? 0 : 1;
+              if (aPreferred !== bPreferred) return aPreferred - bPreferred;
+            }
             const aNumber = a.season.number ?? Number.MAX_SAFE_INTEGER;
             const bNumber = b.season.number ?? Number.MAX_SAFE_INTEGER;
             return aNumber - bNumber;
@@ -750,7 +774,7 @@ export class DashboardService {
     const hasExplicitSeasonFilter = Boolean(options?.seasonId?.trim());
     const activeSeasonId = await this.getActiveHomeSeasonId();
     const filters = await this.resolveSubjectFiltersForCollege(collegeId, collegeYearId, options);
-    const resolvedSeasonId = filters.seasonId ?? activeSeasonId;
+    const preferredSeasonId = filters.seasonId ?? activeSeasonId;
 
     // Get ads targeted by department/college/university, plus global ads for all students.
     const advertisements = await this.prisma.advertisement.findMany({
@@ -830,7 +854,7 @@ export class DashboardService {
     const scopedSubjectWhere = {
       ...baseSubjectWhere,
       ...(filters.collegeYearId ? { collegeYearId: filters.collegeYearId } : {}),
-      ...(resolvedSeasonId ? { seasonId: resolvedSeasonId } : {}),
+      ...(hasExplicitSeasonFilter && filters.seasonId ? { seasonId: filters.seasonId } : {}),
     };
 
     let subjects = await this.prisma.subject.findMany({
@@ -881,7 +905,7 @@ export class DashboardService {
       const coursesWithImages = await this.prisma.course.findMany({
         where: this.withActiveCourseFilter({
           subjectId: { in: allSubjectIds },
-          ...(resolvedSeasonId ? { seasonId: resolvedSeasonId } : {}),
+          ...(hasExplicitSeasonFilter && filters.seasonId ? { seasonId: filters.seasonId } : {}),
           imageUrl: { not: null },
         }),
         select: {
@@ -906,7 +930,7 @@ export class DashboardService {
       },
       advertisements,
       teachers,
-      subjects: subjects.map((subject) =>
+      subjects: this.preferSeasonFirst(subjects, preferredSeasonId).map((subject) =>
         this.buildSubjectCard(subject, subject.imageUrl ?? courseImagesBySubjectId.get(subject.id) ?? null),
       ),
       programs: programs.slice(0, limit),  // Take limited programs
@@ -1227,11 +1251,13 @@ export class DashboardService {
       seasonId,
     });
     const selectedCollegeYearId = filters.collegeYearId ?? undefined;
-    const selectedSeasonId = filters.seasonId ?? activeSeasonId;
+    const selectedSeasonId = filters.seasonId ?? null;
+    const preferredSeasonId = selectedSeasonId ?? activeSeasonId;
     const seasons = await this.prisma.season.findMany({
       where: selectedSeasonId ? { id: selectedSeasonId } : undefined,
       orderBy: { seasonNumber: 'asc' },
     });
+    const orderedSeasons = this.preferSeasonFirst(seasons, preferredSeasonId);
 
     // Get all years for this college's department
     const years = await this.prisma.collegeYear.findMany({
@@ -1265,7 +1291,7 @@ export class DashboardService {
           orderBy: [{ season: { seasonNumber: 'asc' } }, { subjectName: 'asc' }],
         });
 
-        const seasonsArray = seasons.map((season) => ({
+        const seasonsArray = orderedSeasons.map((season) => ({
           season: {
             id: season.id,
             seasonName: season.seasonName,
@@ -1911,7 +1937,6 @@ export class DashboardService {
                   collegeId,
                   collegeYearId: year.id,
                   categoryId: category.id,
-                  ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
                 },
                 isFree,
               ),
@@ -1927,9 +1952,12 @@ export class DashboardService {
                 _count: { select: { subscriptions: true } },
               },
               orderBy: { createdAt: 'desc' },
-              skip: (page - 1) * limit,
-              take: limit,
             });
+            const paginatedCourses = this.paginateItems(
+              this.preferSeasonFirst(courses, activeSeasonId),
+              page,
+              limit,
+            );
 
             return {
               year: {
@@ -1943,7 +1971,7 @@ export class DashboardService {
                 total,
                 totalPages: Math.ceil(total / limit),
               },
-              courses: courses.map((course) => this.buildCourseCard(course)),
+              courses: paginatedCourses.map((course) => this.buildCourseCard(course)),
             };
           }),
         );
@@ -1997,7 +2025,6 @@ export class DashboardService {
               collegeId,
               collegeYearId: year.id,
               subscriptions: { some: {} },
-              ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
             },
             isFree,
           ),
@@ -2012,9 +2039,12 @@ export class DashboardService {
             _count: { select: { subscriptions: true } },
           },
           orderBy: { subscriptions: { _count: 'desc' } },
-          skip: (page - 1) * limit,
-          take: limit,
         });
+        const paginatedCourses = this.paginateItems(
+          this.preferSeasonFirst(courses, activeSeasonId),
+          page,
+          limit,
+        );
 
         return {
           year: {
@@ -2028,7 +2058,7 @@ export class DashboardService {
             total,
             totalPages: Math.ceil(total / limit),
           },
-          courses: courses.map((course) => this.buildCourseCard(course)),
+          courses: paginatedCourses.map((course) => this.buildCourseCard(course)),
         };
       }),
     );
@@ -2046,7 +2076,6 @@ export class DashboardService {
             collegeId,
             collegeYearId: null,
             subscriptions: { some: {} },
-            ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
           },
           isFree,
         ),
@@ -2062,9 +2091,12 @@ export class DashboardService {
             _count: { select: { subscriptions: true } },
           },
           orderBy: { subscriptions: { _count: 'desc' } },
-          skip: (page - 1) * limit,
-          take: limit,
         });
+        const paginatedNoYearCourses = this.paginateItems(
+          this.preferSeasonFirst(noYearCourses, activeSeasonId),
+          page,
+          limit,
+        );
 
         noYearEntry = {
           year: {
@@ -2078,7 +2110,7 @@ export class DashboardService {
             total: noYearTotal,
             totalPages: Math.ceil(noYearTotal / limit),
           },
-          courses: noYearCourses.map((course) => this.buildCourseCard(course)),
+          courses: paginatedNoYearCourses.map((course) => this.buildCourseCard(course)),
         };
       }
     }
@@ -2121,7 +2153,6 @@ export class DashboardService {
             {
               collegeId,
               collegeYearId: year.id,
-              ...(activeSeasonId ? { seasonId: activeSeasonId } : {}),
             },
             isFree,
           ),
@@ -2136,9 +2167,12 @@ export class DashboardService {
             _count: { select: { subscriptions: true } },
           },
           orderBy: { createdAt: 'desc' },
-          skip: (page - 1) * limit,
-          take: limit,
         });
+        const paginatedCourses = this.paginateItems(
+          this.preferSeasonFirst(courses, activeSeasonId),
+          page,
+          limit,
+        );
 
         return {
           year: {
@@ -2152,18 +2186,17 @@ export class DashboardService {
             total,
             totalPages: Math.ceil(total / limit),
           },
-          courses: courses.map((course) => this.buildCourseCard(course)),
+          courses: paginatedCourses.map((course) => this.buildCourseCard(course)),
         };
       }),
     );
 
-    const getNoYearCoursesEntry = async (withActiveSeason: boolean) => {
+    const getNoYearCoursesEntry = async () => {
       const where = this.withActiveCourseFilter(
         this.applyFreeCourseFilter(
           {
             collegeId,
             collegeYearId: null,
-            ...(withActiveSeason && activeSeasonId ? { seasonId: activeSeasonId } : {}),
           },
           isFree,
         ),
@@ -2181,9 +2214,12 @@ export class DashboardService {
           _count: { select: { subscriptions: true } },
         },
         orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
       });
+      const paginatedCourses = this.paginateItems(
+        this.preferSeasonFirst(courses, activeSeasonId),
+        page,
+        limit,
+      );
 
       return {
         year: {
@@ -2197,26 +2233,13 @@ export class DashboardService {
           total,
           totalPages: Math.ceil(total / limit),
         },
-        courses: courses.map((course) => this.buildCourseCard(course)),
+        courses: paginatedCourses.map((course) => this.buildCourseCard(course)),
       };
     };
 
     const hasCoursesInScopedFilters = yearsWithCourses.some((yearEntry) => yearEntry.courses.length > 0);
 
     if (!hasCoursesInScopedFilters) {
-      if (activeSeasonId) {
-        const activeSeasonNoYearEntry = await getNoYearCoursesEntry(true);
-
-        return {
-          college: {
-            id: college.id,
-            name: college.name,
-            universityId: college.universityId,
-          },
-          years: activeSeasonNoYearEntry ? [...yearsWithCourses, activeSeasonNoYearEntry] : yearsWithCourses,
-        };
-      }
-
       const fallbackYears = await this.prisma.collegeYear.findMany({
         where: {
           collegeId,
@@ -2246,9 +2269,12 @@ export class DashboardService {
               _count: { select: { subscriptions: true } },
             },
             orderBy: { createdAt: 'desc' },
-            skip: (page - 1) * limit,
-            take: limit,
           });
+          const paginatedCourses = this.paginateItems(
+            this.preferSeasonFirst(courses, activeSeasonId),
+            page,
+            limit,
+          );
 
           return {
             year: {
@@ -2262,12 +2288,12 @@ export class DashboardService {
               total,
               totalPages: Math.ceil(total / limit),
             },
-            courses: courses.map((course) => this.buildCourseCard(course)),
+            courses: paginatedCourses.map((course) => this.buildCourseCard(course)),
           };
         }),
       );
 
-      const fallbackNoYearEntry = await getNoYearCoursesEntry(false);
+      const fallbackNoYearEntry = await getNoYearCoursesEntry();
 
       return {
         college: {
@@ -2279,7 +2305,7 @@ export class DashboardService {
       };
     }
 
-    const noYearEntry = await getNoYearCoursesEntry(Boolean(activeSeasonId));
+    const noYearEntry = await getNoYearCoursesEntry();
 
     return {
       college: {
@@ -2316,15 +2342,6 @@ export class DashboardService {
 
       if (matched && !hasCoursesInScopedFilters) {
         const activeSeasonId = await this.getActiveHomeSeasonId();
-        if (activeSeasonId) {
-          return {
-            college: result.college,
-            mode: 'category',
-            category: matched.category,
-            years: matched.years,
-          };
-        }
-
         const { collegeId } = await this.getStudentCollege(user, guestFilter);
         const fallbackCourses = await this.prisma.course.findMany({
           where: this.withActiveCourseFilter(
@@ -2356,7 +2373,7 @@ export class DashboardService {
           }
         >();
 
-        for (const course of fallbackCourses) {
+        for (const course of this.preferSeasonFirst(fallbackCourses, activeSeasonId)) {
           const year = course.collegeYear?.academicYear
             ? {
                 id: course.collegeYear.id,

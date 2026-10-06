@@ -88,7 +88,7 @@ describe('DashboardService unified courses filters', () => {
     );
   });
 
-  it('applies the admin active home season when all years are requested', async () => {
+  it('prioritizes the admin active home season while keeping other seasons', async () => {
     const prisma = {
       collegeYear: {
         findMany: jest.fn().mockResolvedValue([
@@ -102,8 +102,39 @@ describe('DashboardService unified courses filters', () => {
         ]),
       },
       course: {
-        count: jest.fn().mockResolvedValue(0),
-        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValueOnce(2).mockResolvedValue(0),
+        findMany: jest.fn().mockResolvedValueOnce([
+          {
+            id: 'course-other-season',
+            name: 'Other season course',
+            description: null,
+            imageUrl: null,
+            price: 0,
+            isFree: false,
+            seasonId: 'other-season',
+            season: { id: 'other-season', seasonName: 'Second', seasonNumber: 2 },
+            collegeYear: {
+              academicYear: { id: 'academic-year-1', yearName: 'First year', yearNumber: 1 },
+            },
+            teacher: null,
+            _count: { subscriptions: 0 },
+          },
+          {
+            id: 'course-active-season',
+            name: 'Active season course',
+            description: null,
+            imageUrl: null,
+            price: 0,
+            isFree: false,
+            seasonId: 'active-season',
+            season: { id: 'active-season', seasonName: 'First', seasonNumber: 1 },
+            collegeYear: {
+              academicYear: { id: 'academic-year-1', yearName: 'First year', yearNumber: 1 },
+            },
+            teacher: null,
+            _count: { subscriptions: 0 },
+          },
+        ]).mockResolvedValue([]),
       },
     };
     const service = new DashboardService(prisma as any);
@@ -118,7 +149,7 @@ describe('DashboardService unified courses filters', () => {
       collegeYearId: 'student-year',
     });
     jest.spyOn(service as any, 'getActiveHomeSeasonId').mockResolvedValue('active-season');
-    await service.getCoursesByYear(user, 1, 10, guestFilter, undefined, true);
+    const result = await service.getCoursesByYear(user, 1, 10, guestFilter, undefined, true);
 
     expect(prisma.collegeYear.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -126,10 +157,14 @@ describe('DashboardService unified courses filters', () => {
       }),
     );
     const courseWhereClauses = prisma.course.count.mock.calls.map(([query]) => query.where);
-    expect(JSON.stringify(courseWhereClauses)).toContain('active-season');
+    expect(JSON.stringify(courseWhereClauses)).not.toContain('active-season');
+    expect(result.years[0].courses.map((course) => course.id)).toEqual([
+      'course-active-season',
+      'course-other-season',
+    ]);
   });
 
-  it('does not fall back to other seasons when the admin active home season has no courses', async () => {
+  it('shows courses from other seasons when they exist after the active season priority', async () => {
     const prisma = {
       collegeYear: {
         findMany: jest.fn().mockResolvedValue([
@@ -143,8 +178,24 @@ describe('DashboardService unified courses filters', () => {
         ]),
       },
       course: {
-        count: jest.fn().mockResolvedValue(0),
-        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValueOnce(1).mockResolvedValue(0),
+        findMany: jest.fn().mockResolvedValueOnce([
+          {
+            id: 'course-other-season',
+            name: 'Other season course',
+            description: null,
+            imageUrl: null,
+            price: 0,
+            isFree: false,
+            seasonId: 'other-season',
+            season: { id: 'other-season', seasonName: 'Second', seasonNumber: 2 },
+            collegeYear: {
+              academicYear: { id: 'academic-year-1', yearName: 'First year', yearNumber: 1 },
+            },
+            teacher: null,
+            _count: { subscriptions: 0 },
+          },
+        ]).mockResolvedValue([]),
       },
     };
     const service = new DashboardService(prisma as any);
@@ -163,9 +214,9 @@ describe('DashboardService unified courses filters', () => {
     const result = await service.getCoursesByYear(user, 1, 10, guestFilter, undefined, true);
 
     const courseWhereClauses = prisma.course.count.mock.calls.map(([query]) => query.where);
-    expect(JSON.stringify(courseWhereClauses)).toContain('active-season');
+    expect(JSON.stringify(courseWhereClauses)).not.toContain('active-season');
     expect(prisma.collegeYear.findMany).toHaveBeenCalledTimes(1);
-    expect(result.years[0].courses).toEqual([]);
+    expect(result.years[0].courses.map((course) => course.id)).toEqual(['course-other-season']);
   });
 
   it('returns only teachers whose user account is active in student college info', async () => {
