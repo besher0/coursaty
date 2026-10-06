@@ -20,6 +20,11 @@ export class UploadVideoDto {
   @IsBoolean()
   isFree?: boolean;
 
+  @ApiPropertyOptional({ default: true, description: 'Allow offline download sessions for this video' })
+  @IsOptional()
+  @IsBoolean()
+  offlineDownloadEnabled?: boolean;
+
   @ApiPropertyOptional({
     enum: BUNNY_STREAM_RESOLUTIONS,
     description: 'Preferred resolution label to return in response when available (Bunny Cloud).',

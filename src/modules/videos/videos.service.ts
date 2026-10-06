@@ -1,0 +1,500 @@
+import {
+  BadGatewayException,
+  BadRequestException,
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { ConfigService } from '@nestjs/config';
+import { Cache } from 'cache-manager';
+import { createPrivateKey, createPublicKey, randomUUID, sign } from 'crypto';
+import { PrismaService } from '@/prisma/prisma.service';
+import { BunnyService } from '@/shared/bunny/bunny.service';
+import { VideoSessionDto } from './dtos/video-session.dto';
+
+type TokenUser = { userId: string | number; type: string } | undefined;
+type SessionAction = 'playback' | 'download' | 'renew';
+
+type AccessContext = {
+  userId: string;
+  studentId: string;
+  deviceId: string;
+  video: {
+    id: string;
+    videoUrl: string;
+    bunnyVideoId: string | null;
+    size: string | null;
+    isFree: boolean;
+    contentVersion: number;
+    offlineDownloadEnabled: boolean;
+    lecture: {
+      id: string;
+      courseId: string;
+      course: {
+        id: string;
+        isFree: boolean;
+        expiresAt: Date | null;
+      };
+    };
+  };
+  bunnyVideoId: string;
+  subscriptionExpiresAt: Date | null;
+  courseExpiresAt: Date | null;
+};
+
+type OfflineLicensePayload = {
+  licenseId: string;
+  userId: string;
+  deviceId: string;
+  courseId: string;
+  lectureId: string;
+  videoId: string;
+  contentVersion: number;
+  issuedAt: string;
+  expiresAt: string;
+};
+
+const OFFLINE_LICENSE_PAYLOAD_KEYS: Array<keyof OfflineLicensePayload> = [
+  'licenseId',
+  'userId',
+  'deviceId',
+  'courseId',
+  'lectureId',
+  'videoId',
+  'contentVersion',
+  'issuedAt',
+  'expiresAt',
+];
+
+@Injectable()
+export class VideosService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly bunny: BunnyService,
+    private readonly config: ConfigService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
+  ) {}
+
+  async createPlaybackSession(videoId: string, dto: VideoSessionDto, user: TokenUser) {
+    const context = await this.resolveVideoAccess(videoId, dto, user, { requireDownload: false });
+    await this.enforceRateLimit('playback', context.userId, context.deviceId, context.video.id);
+
+    const ttlSeconds = this.readPositiveIntegerEnv('VIDEO_PLAYBACK_TTL_SECONDS', 300);
+    const playback = await this.bunny.createSignedHlsPlaybackUrl(
+      context.bunnyVideoId,
+      ttlSeconds,
+      dto.preferredResolution,
+    );
+
+    return {
+      playbackUrl: playback.url,
+      expiresAt: playback.expiresAt.toISOString(),
+      videoId: context.video.id,
+      bunnyVideoId: context.bunnyVideoId,
+      playbackSessionId: randomUUID(),
+    };
+  }
+
+  async createDownloadSession(videoId: string, dto: VideoSessionDto, user: TokenUser) {
+    const context = await this.resolveVideoAccess(videoId, dto, user, { requireDownload: true });
+    await this.enforceRateLimit('download', context.userId, context.deviceId, context.video.id);
+
+    const ttlSeconds = this.readPositiveIntegerEnv('VIDEO_DOWNLOAD_TTL_SECONDS', 600);
+    const download = await this.bunny.createSignedHlsPlaybackUrl(
+      context.bunnyVideoId,
+      ttlSeconds,
+      dto.preferredResolution,
+    );
+    const downloadSessionId = randomUUID();
+    const offlineLicense = await this.createOfflineLicense(context, downloadSessionId);
+
+    return {
+      downloadUrl: download.url,
+      downloadSessionId,
+      videoId: context.video.id,
+      bunnyVideoId: context.bunnyVideoId,
+      contentVersion: context.video.contentVersion,
+      fileSize: this.parseSize(context.video.size),
+      checksum: null,
+      offlineLicense,
+    };
+  }
+
+  async renewOfflineLicense(videoId: string, dto: VideoSessionDto, user: TokenUser) {
+    const context = await this.resolveVideoAccess(videoId, dto, user, { requireDownload: true });
+    await this.enforceRateLimit('renew', context.userId, context.deviceId, context.video.id);
+
+    const downloadSessionId = randomUUID();
+    const offlineLicense = await this.createOfflineLicense(context, downloadSessionId);
+
+    return {
+      downloadSessionId,
+      videoId: context.video.id,
+      bunnyVideoId: context.bunnyVideoId,
+      contentVersion: context.video.contentVersion,
+      offlineLicense,
+    };
+  }
+
+  getOfflineLicensePublicKey() {
+    return {
+      algorithm: 'Ed25519',
+      keyId: this.readEnv('OFFLINE_LICENSE_KEY_ID') || 'default',
+      publicKey: this.getOfflinePublicKeyPem(),
+      encoding: 'pem',
+    };
+  }
+
+  private async resolveVideoAccess(
+    videoId: string,
+    dto: VideoSessionDto,
+    user: TokenUser,
+    options: { requireDownload: boolean },
+  ): Promise<AccessContext> {
+    const deviceId = this.normalizeDeviceId(dto.deviceId);
+    const { userId, studentId } = await this.resolveStudentUser(user);
+
+    const video = await this.prisma.video.findUnique({
+      where: { id: String(videoId) },
+      select: {
+        id: true,
+        videoUrl: true,
+        bunnyVideoId: true,
+        size: true,
+        isFree: true,
+        contentVersion: true,
+        offlineDownloadEnabled: true,
+        lecture: {
+          select: {
+            id: true,
+            courseId: true,
+            course: {
+              select: {
+                id: true,
+                isFree: true,
+                status: true,
+                expiresAt: true,
+                teacher: { select: { isVisibleToStudents: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!video) throw new NotFoundException('الفيديو غير موجود');
+    if (options.requireDownload && !video.offlineDownloadEnabled) {
+      throw new ForbiddenException('التحميل غير متاح لهذا الفيديو');
+    }
+
+    const course = video.lecture.course;
+    if (!course.teacher.isVisibleToStudents || course.status !== 'APPROVED') {
+      throw new NotFoundException('الفيديو غير موجود');
+    }
+
+    const now = Date.now();
+    if (course.expiresAt && course.expiresAt.getTime() <= now) {
+      throw new ForbiddenException('انتهت صلاحية الوصول للكورس');
+    }
+
+    const subscription = await this.prisma.studentSubscription.findUnique({
+      where: { studentId_courseId: { studentId, courseId: course.id } },
+      select: { expiresAt: true },
+    });
+
+    const contentIsFree = course.isFree || video.isFree;
+    if (!contentIsFree) {
+      if (!subscription) throw new ForbiddenException('يلزم اشتراك');
+      if (subscription.expiresAt && subscription.expiresAt.getTime() <= now) {
+        throw new ForbiddenException('انتهت صلاحية الاشتراك على هذا الكورس');
+      }
+    }
+
+    await this.assertDeviceAllowed(userId, studentId, deviceId, dto.legacyDeviceId);
+
+    const bunnyVideoId = video.bunnyVideoId || this.bunny.extractBunnyVideoId(video.videoUrl);
+    if (!bunnyVideoId) {
+      throw new BadRequestException('هذا الفيديو لا يحتوي على معرف Bunny Stream صالح');
+    }
+
+    if (!video.bunnyVideoId) {
+      await this.prisma.video.update({
+        where: { id: video.id },
+        data: { bunnyVideoId },
+      }).catch(() => undefined);
+    }
+
+    return {
+      userId,
+      studentId,
+      deviceId,
+      video: {
+        ...video,
+        bunnyVideoId,
+        lecture: {
+          id: video.lecture.id,
+          courseId: video.lecture.courseId,
+          course: {
+            id: course.id,
+            isFree: course.isFree,
+            expiresAt: course.expiresAt,
+          },
+        },
+      },
+      bunnyVideoId,
+      subscriptionExpiresAt: subscription?.expiresAt ?? null,
+      courseExpiresAt: course.expiresAt ?? null,
+    };
+  }
+
+  private async resolveStudentUser(user: TokenUser) {
+    if (user?.type !== 'STUDENT') {
+      throw new ForbiddenException('يجب تسجيل الدخول بحساب طالب');
+    }
+
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+      select: { id: true, userableId: true, userableType: true, status: true },
+    });
+    if (!dbUser || dbUser.userableType !== 'STUDENT') {
+      throw new ForbiddenException('يجب تسجيل الدخول بحساب طالب');
+    }
+    if (dbUser.status !== 'active') {
+      throw new ForbiddenException('الحساب غير فعال');
+    }
+
+    const student = await this.prisma.student.findUnique({
+      where: { id: dbUser.userableId },
+      select: { id: true },
+    });
+    if (!student) throw new NotFoundException('الطالب غير موجود');
+
+    return { userId: dbUser.id, studentId: student.id };
+  }
+
+  private async assertDeviceAllowed(
+    userId: string,
+    studentId: string,
+    deviceId: string,
+    legacyDeviceId?: string | null,
+  ) {
+    const existing = await this.prisma.studentDevice.findUnique({
+      where: { userId_deviceId: { userId, deviceId } },
+    });
+
+    if (existing) {
+      if (existing.revokedAt) throw new ForbiddenException('هذا الجهاز غير مسموح');
+      await this.prisma.studentDevice.update({
+        where: { id: existing.id },
+        data: { lastSeenAt: new Date() },
+      });
+      return;
+    }
+
+    const limit = this.readPositiveIntegerEnv('VIDEO_DEVICE_LIMIT', 1);
+    const activeDevices = await this.prisma.studentDevice.findMany({
+      where: { userId, revokedAt: null },
+      orderBy: { firstSeenAt: 'asc' },
+    });
+
+    if (activeDevices.length < limit) {
+      await this.prisma.studentDevice.create({
+        data: { userId, studentId, deviceId },
+      }).catch(async () => {
+        const raced = await this.prisma.studentDevice.findUnique({
+          where: { userId_deviceId: { userId, deviceId } },
+        });
+        if (!raced || raced.revokedAt) throw new ForbiddenException('هذا الجهاز غير مسموح');
+      });
+      return;
+    }
+
+    if (await this.tryMigrateLegacyDevice(userId, deviceId, legacyDeviceId, activeDevices)) {
+      return;
+    }
+
+    throw new ForbiddenException('تم تجاوز عدد الأجهزة المسموح');
+  }
+
+  private async tryMigrateLegacyDevice(
+    userId: string,
+    deviceId: string,
+    legacyDeviceId: string | null | undefined,
+    activeDevices: Array<{
+      id: string;
+      deviceId: string;
+      previousDeviceId?: string | null;
+      replacedAt?: Date | null;
+    }>,
+  ) {
+    if (activeDevices.length !== 1) return false;
+
+    const current = activeDevices[0];
+    if (current.previousDeviceId || current.replacedAt) return false;
+
+    const normalizedLegacyDeviceId = String(legacyDeviceId ?? '').trim();
+    if (normalizedLegacyDeviceId && normalizedLegacyDeviceId !== current.deviceId) return false;
+    if (current.deviceId === deviceId) return true;
+
+    const now = new Date();
+    await this.prisma.studentDevice.update({
+      where: { id: current.id },
+      data: {
+        deviceId,
+        previousDeviceId: current.deviceId,
+        replacedAt: now,
+        lastSeenAt: now,
+      },
+    }).catch(() => {
+      throw new ForbiddenException('تعذر ترحيل الجهاز الحالي');
+    });
+
+    return true;
+  }
+
+  private async createOfflineLicense(context: AccessContext, downloadSessionId: string) {
+    const issuedAt = new Date();
+    const expiresAt = this.resolveOfflineExpiry(context, issuedAt);
+
+    const license = await this.prisma.offlineVideoLicense.create({
+      data: {
+        downloadSessionId,
+        userId: context.userId,
+        studentId: context.studentId,
+        deviceId: context.deviceId,
+        videoId: context.video.id,
+        courseId: context.video.lecture.courseId,
+        lectureId: context.video.lecture.id,
+        contentVersion: context.video.contentVersion,
+        issuedAt,
+        expiresAt,
+      },
+    });
+
+    const payload: OfflineLicensePayload = {
+      licenseId: license.id,
+      userId: context.userId,
+      deviceId: context.deviceId,
+      courseId: context.video.lecture.courseId,
+      lectureId: context.video.lecture.id,
+      videoId: context.video.id,
+      contentVersion: context.video.contentVersion,
+      issuedAt: issuedAt.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+    };
+    const signedPayloadBytes = this.serializeOfflineLicensePayload(payload);
+
+    return {
+      algorithm: 'Ed25519',
+      keyId: this.readEnv('OFFLINE_LICENSE_KEY_ID') || 'default',
+      signedPayload: signedPayloadBytes.toString('base64url'),
+      payload,
+      signature: this.signOfflinePayloadBytes(signedPayloadBytes),
+    };
+  }
+
+  private resolveOfflineExpiry(context: AccessContext, issuedAt: Date) {
+    const ttlDays = this.readPositiveIntegerEnv('OFFLINE_LICENSE_TTL_DAYS', 7);
+    const candidates = [issuedAt.getTime() + ttlDays * 24 * 60 * 60 * 1000];
+
+    if (context.subscriptionExpiresAt) candidates.push(context.subscriptionExpiresAt.getTime());
+    if (context.courseExpiresAt) candidates.push(context.courseExpiresAt.getTime());
+
+    const expiresAt = new Date(Math.min(...candidates));
+    if (expiresAt.getTime() <= issuedAt.getTime()) {
+      throw new ForbiddenException('لا يمكن إصدار رخصة Offline منتهية');
+    }
+    return expiresAt;
+  }
+
+  private serializeOfflineLicensePayload(payload: OfflineLicensePayload) {
+    const orderedPayload = OFFLINE_LICENSE_PAYLOAD_KEYS.reduce(
+      (acc, key) => {
+        acc[key] = payload[key] as never;
+        return acc;
+      },
+      {} as OfflineLicensePayload,
+    );
+
+    return Buffer.from(JSON.stringify(orderedPayload), 'utf8');
+  }
+
+  private signOfflinePayloadBytes(payloadBytes: Buffer) {
+    const privateKeyPem = this.readEnv('OFFLINE_LICENSE_PRIVATE_KEY_PEM');
+    if (!privateKeyPem) {
+      throw new BadGatewayException('Missing OFFLINE_LICENSE_PRIVATE_KEY_PEM for offline video licenses');
+    }
+
+    const privateKey = createPrivateKey(this.normalizePem(privateKeyPem));
+    const signature = sign(null, payloadBytes, privateKey);
+    return signature.toString('base64url');
+  }
+
+  private getOfflinePublicKeyPem() {
+    const publicKeyPem = this.readEnv('OFFLINE_LICENSE_PUBLIC_KEY_PEM');
+    if (publicKeyPem) return this.normalizePem(publicKeyPem);
+
+    const privateKeyPem = this.readEnv('OFFLINE_LICENSE_PRIVATE_KEY_PEM');
+    if (!privateKeyPem) {
+      throw new BadGatewayException('Missing OFFLINE_LICENSE_PUBLIC_KEY_PEM for offline video licenses');
+    }
+
+    return createPublicKey(createPrivateKey(this.normalizePem(privateKeyPem))).export({
+      type: 'spki',
+      format: 'pem',
+    }).toString();
+  }
+
+  private async enforceRateLimit(action: SessionAction, userId: string, deviceId: string, videoId: string) {
+    const windowSeconds = this.readPositiveIntegerEnv('VIDEO_RATE_LIMIT_WINDOW_SECONDS', 300);
+    const defaultLimit = action === 'download' ? 5 : action === 'playback' ? 20 : 10;
+    const envKey =
+      action === 'download'
+        ? 'VIDEO_DOWNLOAD_RATE_LIMIT'
+        : action === 'playback'
+          ? 'VIDEO_PLAYBACK_RATE_LIMIT'
+          : 'VIDEO_RENEW_RATE_LIMIT';
+    const limit = this.readPositiveIntegerEnv(envKey, defaultLimit);
+    const cacheKey = `video-session:${action}:${userId}:${deviceId}:${videoId}`;
+    const current = Number((await this.cache.get(cacheKey)) ?? 0);
+
+    if (current >= limit) {
+      throw new HttpException('تم تجاوز عدد المحاولات المسموح', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    await this.cache.set(cacheKey, current + 1, windowSeconds);
+  }
+
+  private normalizeDeviceId(deviceId?: string | null) {
+    const normalized = String(deviceId ?? '').trim();
+    if (!normalized) throw new BadRequestException('deviceId مطلوب');
+    if (normalized.length > 255) throw new BadRequestException('deviceId طويل جدًا');
+    return normalized;
+  }
+
+  private parseSize(size?: string | null): number | null {
+    const parsed = Number(size);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  }
+
+  private normalizePem(value: string) {
+    return String(value).replace(/\\n/g, '\n').trim();
+  }
+
+  private readEnv(key: string): string {
+    return (this.config.get<string>(key) ?? '').trim();
+  }
+
+  private readPositiveIntegerEnv(key: string, defaultValue: number): number {
+    const raw = this.readEnv(key);
+    if (!raw) return defaultValue;
+
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return defaultValue;
+    return Math.floor(parsed);
+  }
+}

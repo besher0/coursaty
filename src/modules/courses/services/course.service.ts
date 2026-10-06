@@ -889,6 +889,7 @@ export class CourseService {
       sortOrder?: number;
       size?: string | number;
       preferredResolution?: string;
+      offlineDownloadEnabled?: boolean;
     },
   ) {
     const lecture = await this.prisma.lecture.findUnique({ where: { id: lectureId } });
@@ -955,8 +956,10 @@ export class CourseService {
           videoName: title,
           description: options?.description,
           videoUrl: persistedVideoUrl,
+          bunnyVideoId: streamPlayback.streamVideoId ?? streamVideoId ?? this.bunny.extractBunnyVideoId(persistedVideoUrl),
           duration,
           isFree: options?.isFree ?? false,
+          offlineDownloadEnabled: options?.offlineDownloadEnabled ?? true,
           size,
           sortOrder,
         },
@@ -1024,6 +1027,9 @@ export class CourseService {
     if (existing) {
       const updateData: any = {};
       if (dto.sortOrder !== undefined && existing.sortOrder !== dto.sortOrder) updateData.sortOrder = dto.sortOrder;
+      if (dto.offlineDownloadEnabled !== undefined && existing.offlineDownloadEnabled !== dto.offlineDownloadEnabled) {
+        updateData.offlineDownloadEnabled = dto.offlineDownloadEnabled;
+      }
       if (dto.size !== undefined && existing.size !== this.resolveMediaSize(dto.size)) {
         updateData.size = this.resolveMediaSize(dto.size);
       }
@@ -1064,8 +1070,10 @@ export class CourseService {
           videoName: title,
           description: dto.description,
           videoUrl: streamPlayUrl,
+          bunnyVideoId: dto.videoId,
           duration,
           isFree: dto.isFree ?? false,
+          offlineDownloadEnabled: dto.offlineDownloadEnabled ?? true,
           size: this.resolveMediaSize(dto.size),
           sortOrder,
         },

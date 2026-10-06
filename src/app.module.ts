@@ -27,6 +27,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ProvincesModule } from './modules/provinces/provinces.module';
 import { SystemSettingsModule } from './modules/system-settings/system-settings.module';
+import { VideosModule } from './modules/videos/videos.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { SystemSettingsModule } from './modules/system-settings/system-settings.
     NotificationsModule,
     ProvincesModule,
     SystemSettingsModule,
+    VideosModule,
   ],
   providers: [
     {

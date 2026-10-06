@@ -262,6 +262,9 @@ export class UploadsService {
       enabledResolutions: dto.enabledResolutions,
       enableMp4Fallback: dto.enableMp4Fallback,
       allowDirectPlay: dto.allowDirectPlay,
+      playerTokenAuthenticationEnabled: dto.playerTokenAuthenticationEnabled,
+      enableTokenAuthentication: dto.enableTokenAuthentication,
+      keepOriginalFiles: dto.keepOriginalFiles,
     });
   }
 
@@ -334,31 +337,21 @@ export class UploadsService {
             mp4Resolutions: [],
           };
 
-    const playlistByResolution = Object.fromEntries(
-      (resolutions.playlistResolutions ?? [])
-        .filter((item) => item?.resolution && item?.path)
-        .map((item) => [item.resolution, item.path]),
-    );
-    const signedPlaylistUrl = playData.playlistUrl
-      ? this.bunny.signStreamPlaybackUrl(playData.playlistUrl, streamVideoId)
-      : null;
-    const signedFallbackUrl = playData.fallbackUrl
-      ? this.bunny.signStreamPlaybackUrl(playData.fallbackUrl, streamVideoId)
-      : null;
-
     return {
       requestedVideoId: videoId,
       resolvedVideoId: streamVideoId,
       resolvedFrom: 'db_video_id',
-      ...playData,
-      playlistUrl: signedPlaylistUrl,
-      fallbackUrl: signedFallbackUrl,
-      streamMasterPlaylistUrl: signedPlaylistUrl,
-      streamPlaylistUrl: signedPlaylistUrl,
       availableResolutions: resolutions.availableResolutions,
-      playlistResolutions: resolutions.playlistResolutions,
-      playlistByResolution,
-      mp4Resolutions: resolutions.mp4Resolutions,
+      playlistResolutions: (resolutions.playlistResolutions ?? []).map((item) => ({
+        resolution: item.resolution,
+        sizeBytes: item.sizeBytes ?? null,
+      })),
+      mp4Resolutions: (resolutions.mp4Resolutions ?? []).map((item) => ({
+        resolution: item.resolution,
+        sizeBytes: item.sizeBytes ?? null,
+      })),
+      isPlayable: playData.isPlayable,
+      isPlaylistPlayable: playData.isPlaylistPlayable,
     };
   }
 

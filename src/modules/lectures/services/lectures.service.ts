@@ -558,16 +558,21 @@ export class LecturesService {
   }
 
   private async mapVideosForPlayback(videos: any[], canAccessLockedVideos: boolean) {
-    return Promise.all(
-      videos.map(async (video) => {
-        const locked = canAccessLockedVideos ? false : !video.isFree;
-        return {
-          ...video,
-          videoUrl: locked ? null : await this.bunny.resolveSignedStoredStreamUrl(video.videoUrl),
-          locked,
-        };
-      }),
-    );
+    return videos.map((video) => {
+      const locked = canAccessLockedVideos ? false : !video.isFree;
+      return this.mapVideoMetadata(video, locked);
+    });
+  }
+
+  private mapVideoMetadata(video: any, locked: boolean) {
+    const { videoUrl: _videoUrl, ...metadata } = video;
+    return {
+      ...metadata,
+      bunnyVideoId: video.bunnyVideoId ?? this.bunny.extractBunnyVideoId(video.videoUrl),
+      contentVersion: video.contentVersion ?? 1,
+      offlineDownloadEnabled: video.offlineDownloadEnabled ?? true,
+      locked,
+    };
   }
 
   async createVideo(
@@ -578,6 +583,7 @@ export class LecturesService {
       videoUrl: string;
       duration?: number;
       isFree?: boolean;
+      offlineDownloadEnabled?: boolean;
       sortOrder?: number;
       size?: string ;
     },
@@ -599,8 +605,10 @@ export class LecturesService {
           videoName: dto.videoName,
           description: dto.description,
           videoUrl: dto.videoUrl,
+          bunnyVideoId: this.bunny.extractBunnyVideoId(dto.videoUrl),
           duration,
           isFree: dto.isFree ?? false,
+          offlineDownloadEnabled: dto.offlineDownloadEnabled ?? true,
           size: this.resolveMediaSize(dto.size),
           sortOrder,
         },
@@ -681,8 +689,10 @@ export class LecturesService {
           videoName: title,
           description: dto.description,
           videoUrl: persistedVideoUrl,
+          bunnyVideoId: streamPlayback.streamVideoId ?? streamVideoId ?? this.bunny.extractBunnyVideoId(persistedVideoUrl),
           duration,
           isFree: dto.isFree ?? false,
+          offlineDownloadEnabled: dto.offlineDownloadEnabled ?? true,
           size,
           sortOrder,
         },
@@ -748,6 +758,9 @@ export class LecturesService {
     if (existing) {
       const updateData: any = {};
       if (dto.sortOrder !== undefined && existing.sortOrder !== dto.sortOrder) updateData.sortOrder = dto.sortOrder;
+      if (dto.offlineDownloadEnabled !== undefined && existing.offlineDownloadEnabled !== dto.offlineDownloadEnabled) {
+        updateData.offlineDownloadEnabled = dto.offlineDownloadEnabled;
+      }
       if (dto.size !== undefined && existing.size !== this.resolveMediaSize(dto.size)) {
         updateData.size = this.resolveMediaSize(dto.size);
       }
@@ -788,8 +801,10 @@ export class LecturesService {
           videoName: title,
           description: dto.description,
           videoUrl: streamPlayUrl,
+          bunnyVideoId: dto.videoId,
           duration,
           isFree: dto.isFree ?? false,
+          offlineDownloadEnabled: dto.offlineDownloadEnabled ?? true,
           size: this.resolveMediaSize(dto.size),
           sortOrder,
         },
@@ -838,9 +853,14 @@ export class LecturesService {
 
     const data: any = {};
     if (dto.videoName !== undefined) data.videoName = dto.videoName;
-    if (dto.videoUrl !== undefined) data.videoUrl = dto.videoUrl;
+    if (dto.videoUrl !== undefined) {
+      data.videoUrl = dto.videoUrl;
+      data.bunnyVideoId = this.bunny.extractBunnyVideoId(dto.videoUrl);
+      data.contentVersion = { increment: 1 };
+    }
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
+    if (dto.offlineDownloadEnabled !== undefined) data.offlineDownloadEnabled = dto.offlineDownloadEnabled;
     if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
     if (dto.size !== undefined) data.size = this.resolveMediaSize(dto.size);
     if (dto.duration !== undefined) {
@@ -1223,9 +1243,12 @@ export class LecturesService {
       videoName: true,
       description: true,
       videoUrl: true,
+      bunnyVideoId: true,
       size: true,
       viewsCount: true,
       isFree: true,
+      contentVersion: true,
+      offlineDownloadEnabled: true,
     };
   }
 

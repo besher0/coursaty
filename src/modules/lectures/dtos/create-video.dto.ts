@@ -26,6 +26,11 @@ export class CreateVideoDto {
   @IsBoolean()
   isFree?: boolean;
 
+  @ApiPropertyOptional({ default: true, description: 'Allow offline download sessions for this video' })
+  @IsOptional()
+  @IsBoolean()
+  offlineDownloadEnabled?: boolean;
+
   @ApiPropertyOptional({ description: 'Video duration in seconds', default: 0 })
   @IsOptional()
   @IsInt()

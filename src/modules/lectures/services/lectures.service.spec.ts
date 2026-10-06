@@ -1,7 +1,7 @@
 import { LecturesService } from './lectures.service';
 
 describe('LecturesService media links and question ordering', () => {
-  it('signs accessible video URLs when listing lectures', async () => {
+  it('returns safe video metadata without playback URLs when listing lectures', async () => {
     const prisma = {
       lecture: {
         findMany: jest.fn().mockResolvedValue([
@@ -11,6 +11,9 @@ describe('LecturesService media links and question ordering', () => {
               {
                 id: 'video-1',
                 videoUrl: 'https://video.bunnycdn.com/play/123/11111111-1111-4111-8111-111111111111',
+                bunnyVideoId: null,
+                contentVersion: 1,
+                offlineDownloadEnabled: true,
                 isFree: false,
                 sortOrder: null,
               },
@@ -20,9 +23,7 @@ describe('LecturesService media links and question ordering', () => {
         ]),
       },
     } as any;
-    const bunny = {
-      resolveSignedStoredStreamUrl: jest.fn().mockResolvedValue('https://vz-test.b-cdn.net/bcdn_token=signed'),
-    };
+    const bunny = { extractBunnyVideoId: jest.fn().mockReturnValue('11111111-1111-4111-8111-111111111111') };
     const service = new LecturesService(prisma, bunny as any);
     jest.spyOn(service as any, 'getCourseAccess').mockResolvedValue({
       hasAccess: true,
@@ -32,14 +33,17 @@ describe('LecturesService media links and question ordering', () => {
 
     const result = await service.listLectures('course-1', { userId: 'student-user-1', type: 'STUDENT' });
 
-    expect(result[0].videos[0].videoUrl).toBe('https://vz-test.b-cdn.net/bcdn_token=signed');
+    expect(result[0].videos[0].videoUrl).toBeUndefined();
+    expect(result[0].videos[0].bunnyVideoId).toBe('11111111-1111-4111-8111-111111111111');
+    expect(result[0].videos[0].contentVersion).toBe(1);
+    expect(result[0].videos[0].offlineDownloadEnabled).toBe(true);
     expect(result[0].videos[0].locked).toBe(false);
-    expect(bunny.resolveSignedStoredStreamUrl).toHaveBeenCalledWith(
+    expect(bunny.extractBunnyVideoId).toHaveBeenCalledWith(
       'https://video.bunnycdn.com/play/123/11111111-1111-4111-8111-111111111111',
     );
   });
 
-  it('does not sign locked video URLs when listing lectures without access', async () => {
+  it('does not expose locked video URLs when listing lectures without access', async () => {
     const prisma = {
       lecture: {
         findMany: jest.fn().mockResolvedValue([
@@ -58,9 +62,7 @@ describe('LecturesService media links and question ordering', () => {
         ]),
       },
     } as any;
-    const bunny = {
-      resolveSignedStoredStreamUrl: jest.fn(),
-    };
+    const bunny = { extractBunnyVideoId: jest.fn().mockReturnValue('11111111-1111-4111-8111-111111111111') };
     const service = new LecturesService(prisma, bunny as any);
     jest.spyOn(service as any, 'getCourseAccess').mockResolvedValue({
       hasAccess: false,
@@ -70,9 +72,8 @@ describe('LecturesService media links and question ordering', () => {
 
     const result = await service.listLectures('course-1', { userId: 'student-user-1', type: 'STUDENT' });
 
-    expect(result[0].videos[0].videoUrl).toBeNull();
+    expect(result[0].videos[0].videoUrl).toBeUndefined();
     expect(result[0].videos[0].locked).toBe(true);
-    expect(bunny.resolveSignedStoredStreamUrl).not.toHaveBeenCalled();
   });
 
   it('updates a video URL without changing other video fields', async () => {
@@ -87,13 +88,18 @@ describe('LecturesService media links and question ordering', () => {
         update: jest.fn().mockResolvedValue({ id: 'video-1' }),
       },
     } as any;
-    const service = new LecturesService(prisma, {} as any);
+    const bunny = { extractBunnyVideoId: jest.fn().mockReturnValue(null) };
+    const service = new LecturesService(prisma, bunny as any);
 
     await service.updateVideo('video-1', { videoUrl: 'https://new.example/video.m3u8' });
 
     expect(prisma.video.update).toHaveBeenCalledWith({
       where: { id: 'video-1' },
-      data: { videoUrl: 'https://new.example/video.m3u8' },
+      data: {
+        videoUrl: 'https://new.example/video.m3u8',
+        bunnyVideoId: null,
+        contentVersion: { increment: 1 },
+      },
     });
   });
 

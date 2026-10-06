@@ -23,6 +23,11 @@ export class UpdateVideoDto {
   @IsBoolean()
   isFree?: boolean;
 
+  @ApiPropertyOptional({ description: 'Allow offline download sessions for this video' })
+  @IsOptional()
+  @IsBoolean()
+  offlineDownloadEnabled?: boolean;
+
   @ApiPropertyOptional({ description: 'Video duration in seconds' })
   @IsOptional()
   @IsInt()

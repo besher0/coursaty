@@ -134,6 +134,9 @@ export class BunnyService {
     enabledResolutions: BunnyStreamResolution[];
     enableMp4Fallback?: boolean;
     allowDirectPlay?: boolean;
+    playerTokenAuthenticationEnabled?: boolean;
+    enableTokenAuthentication?: boolean;
+    keepOriginalFiles?: boolean;
   }) {
     this.assertStreamConfigured();
     this.assertCoreApiConfigured();
@@ -153,8 +156,11 @@ export class BunnyService {
       url,
       {
         EnabledResolutions: uniqueResolutions.join(','),
-        EnableMP4Fallback: options.enableMp4Fallback ?? true,
-        AllowDirectPlay: options.allowDirectPlay ?? true,
+        EnableMP4Fallback: options.enableMp4Fallback ?? false,
+        AllowDirectPlay: options.allowDirectPlay ?? false,
+        PlayerTokenAuthenticationEnabled: options.playerTokenAuthenticationEnabled ?? true,
+        EnableTokenAuthentication: options.enableTokenAuthentication ?? true,
+        KeepOriginalFiles: options.keepOriginalFiles ?? false,
       },
       {
         headers: {
@@ -167,8 +173,13 @@ export class BunnyService {
     return {
       libraryId: response.data?.Id ?? Number(this.streamLibraryId),
       enabledResolutions: response.data?.EnabledResolutions ?? uniqueResolutions.join(','),
-      enableMp4Fallback: response.data?.EnableMP4Fallback ?? options.enableMp4Fallback ?? true,
-      allowDirectPlay: response.data?.AllowDirectPlay ?? options.allowDirectPlay ?? true,
+      enableMp4Fallback: response.data?.EnableMP4Fallback ?? options.enableMp4Fallback ?? false,
+      allowDirectPlay: response.data?.AllowDirectPlay ?? options.allowDirectPlay ?? false,
+      playerTokenAuthenticationEnabled:
+        response.data?.PlayerTokenAuthenticationEnabled ?? options.playerTokenAuthenticationEnabled ?? true,
+      enableTokenAuthentication:
+        response.data?.EnableTokenAuthentication ?? options.enableTokenAuthentication ?? true,
+      keepOriginalFiles: response.data?.KeepOriginalFiles ?? options.keepOriginalFiles ?? false,
     };
   }
 
@@ -253,6 +264,23 @@ export class BunnyService {
     };
   }
 
+  async createSignedHlsPlaybackUrl(videoId: string, expiresInSeconds?: number, _preferredResolution?: string) {
+    const playData = await this.getVideoPlayData(videoId);
+    if (playData.isPlayable === false || playData.isPlaylistPlayable === false) {
+      throw new BadGatewayException('Bunny Stream video is not playable yet');
+    }
+    if (!playData.playlistUrl) {
+      throw new BadGatewayException('Bunny Stream playlist URL is not available');
+    }
+
+    const expires = this.getPlaybackExpiration(expiresInSeconds);
+    return {
+      url: this.signStreamPlaybackUrlWithExpires(playData.playlistUrl, videoId, expires),
+      expiresAt: new Date(expires * 1000),
+      videoId,
+    };
+  }
+
   async resolveSignedStoredStreamUrl(url?: string | null): Promise<string | null> {
     if (!url) return null;
 
@@ -270,6 +298,11 @@ export class BunnyService {
   }
 
   signStreamPlaybackUrl(url: string, videoId: string, expiresInSeconds?: number): string {
+    const expires = this.getPlaybackExpiration(expiresInSeconds);
+    return this.signStreamPlaybackUrlWithExpires(url, videoId, expires);
+  }
+
+  private signStreamPlaybackUrlWithExpires(url: string, videoId: string, expires: number): string {
     if (!this.isBunnyStreamMediaUrl(url, videoId)) return url;
     this.assertCdnTokenConfigured();
 
@@ -277,7 +310,6 @@ export class BunnyService {
     if (!parsed) return url;
 
     const unsignedUrl = this.removeExistingCdnToken(parsed);
-    const expires = this.getPlaybackExpiration(expiresInSeconds);
     const videoDirectory = this.getVideoDirectoryPath(videoId);
 
     return this.signBunnyStreamMediaUrl(unsignedUrl, expires, videoDirectory);

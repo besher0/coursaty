@@ -74,6 +74,8 @@ model User {
 
   videoInteractions    VideoInteraction[]
   createdNotifications Notification[]     @relation("CreatedNotifications")
+  studentDevices       StudentDevice[]
+  offlineVideoLicenses OfflineVideoLicense[]
 
   @@index([userableId, userableType])
 }
@@ -93,6 +95,8 @@ model Student {
   courseRatings        CourseRating[]
   teacherLikes         TeacherLike[]
   usedCodes            Code[]                @relation("UsedCodes")
+  devices              StudentDevice[]
+  offlineVideoLicenses OfflineVideoLicense[]
 
   @@index([provinceId])
 }
@@ -396,6 +400,7 @@ model Course {
   subscriptionRequests SubscriptionRequest[]
   interests            StudentCourseInterest[]
   courseRatings        CourseRating[]
+  offlineVideoLicenses OfflineVideoLicense[]
 
   @@index([teacherId])
   @@index([subjectId])
@@ -458,28 +463,86 @@ model Lecture {
   videos    Video[]
   files     LectureFile[]
   questions Question[]
+  offlineVideoLicenses OfflineVideoLicense[]
 
   @@index([courseId])
 }
 
 model Video {
-  id          String  @id @default(uuid())
-  lectureId   String
-  videoName   String
-  description String?
-  videoUrl    String
-  size        String?
-  duration    Int     @default(0)
-  viewsCount  Int     @default(0)
-  isFree      Boolean @default(false)
-  sortOrder   Int?
+  id                     String  @id @default(uuid())
+  lectureId              String
+  videoName              String
+  description            String?
+  videoUrl               String
+  bunnyVideoId           String? @unique
+  size                   String?
+  duration               Int     @default(0)
+  viewsCount             Int     @default(0)
+  isFree                 Boolean @default(false)
+  sortOrder              Int?
+  contentVersion         Int     @default(1)
+  offlineDownloadEnabled Boolean @default(true)
 
   lecture      Lecture            @relation(fields: [lectureId], references: [id])
   interactions VideoInteraction[]
   segments     VideoSegment[]
+  offlineVideoLicenses OfflineVideoLicense[]
 
   @@index([lectureId])
   @@index([sortOrder])
+  @@index([bunnyVideoId])
+}
+
+model StudentDevice {
+  id               String    @id @default(uuid())
+  userId           String
+  studentId        String
+  deviceId         String
+  previousDeviceId String?
+  replacedAt       DateTime?
+  firstSeenAt      DateTime  @default(now())
+  lastSeenAt       DateTime  @default(now())
+  revokedAt        DateTime?
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceId])
+  @@index([studentId])
+  @@index([deviceId])
+  @@index([previousDeviceId])
+  @@index([replacedAt])
+  @@index([revokedAt])
+}
+
+model OfflineVideoLicense {
+  id                String    @id @default(uuid())
+  downloadSessionId String    @unique
+  userId            String
+  studentId         String
+  deviceId          String
+  videoId           String
+  courseId          String
+  lectureId         String
+  contentVersion    Int
+  issuedAt          DateTime
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  createdAt         DateTime  @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  video   Video   @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  course  Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lecture Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  @@index([userId, deviceId])
+  @@index([studentId])
+  @@index([videoId])
+  @@index([courseId])
+  @@index([lectureId])
+  @@index([expiresAt])
+  @@index([revokedAt])
 }
 
 model VideoSegment {

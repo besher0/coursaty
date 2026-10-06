@@ -74,6 +74,23 @@ describe('BunnyService CDN token authentication', () => {
     expect(signed).not.toContain(tokenKey);
   });
 
+  it('creates a signed HLS playback URL with a matching expiration date', async () => {
+    const service = createService({ BUNNY_CDN_TOKEN_KEY: tokenKey }) as any;
+    jest.spyOn(service, 'getVideoPlayData').mockResolvedValue({
+      videoId,
+      playlistUrl,
+      isPlayable: true,
+      isPlaylistPlayable: true,
+    });
+
+    const result = await service.createSignedHlsPlaybackUrl(videoId, 3600);
+
+    expect(result.url).toContain('/bcdn_token=HS256-');
+    expect(result.url).toContain('&expires=1700003600');
+    expect(result.expiresAt.toISOString()).toBe('2023-11-14T23:13:20.000Z');
+    expect(result.url).not.toContain(tokenKey);
+  });
+
   it('does not modify non-Bunny URLs', () => {
     const service = createService();
     const url = `https://cdn.example.com/${videoId}/playlist.m3u8`;

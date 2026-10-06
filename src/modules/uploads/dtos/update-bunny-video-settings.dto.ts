@@ -15,7 +15,7 @@ export class UpdateBunnyVideoSettingsDto {
   enabledResolutions!: BunnyStreamResolution[];
 
   @ApiPropertyOptional({
-    default: true,
+    default: false,
     description: 'Enable MP4 fallback generation for new uploads.',
   })
   @IsOptional()
@@ -23,10 +23,34 @@ export class UpdateBunnyVideoSettingsDto {
   enableMp4Fallback?: boolean;
 
   @ApiPropertyOptional({
-    default: true,
+    default: false,
     description: 'Allow Bunny direct play URLs.',
   })
   @IsOptional()
   @IsBoolean()
   allowDirectPlay?: boolean;
+
+  @ApiPropertyOptional({
+    default: true,
+    description: 'Enable Bunny Stream player token authentication.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  playerTokenAuthenticationEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    default: true,
+    description: 'Enable Bunny token authentication for direct/CDN playback URLs.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  enableTokenAuthentication?: boolean;
+
+  @ApiPropertyOptional({
+    default: false,
+    description: 'Keep original files after processing.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  keepOriginalFiles?: boolean;
 }
