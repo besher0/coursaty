@@ -76,6 +76,7 @@ model User {
   createdNotifications Notification[]     @relation("CreatedNotifications")
   studentDevices       StudentDevice[]
   offlineVideoLicenses OfflineVideoLicense[]
+  playbackSessions     VideoPlaybackSession[]
 
   @@index([userableId, userableType])
 }
@@ -97,6 +98,7 @@ model Student {
   usedCodes            Code[]                @relation("UsedCodes")
   devices              StudentDevice[]
   offlineVideoLicenses OfflineVideoLicense[]
+  playbackSessions     VideoPlaybackSession[]
 
   @@index([provinceId])
 }
@@ -487,6 +489,7 @@ model Video {
   interactions VideoInteraction[]
   segments     VideoSegment[]
   offlineVideoLicenses OfflineVideoLicense[]
+  playbackSessions     VideoPlaybackSession[]
 
   @@index([lectureId])
   @@index([sortOrder])
@@ -503,6 +506,10 @@ model StudentDevice {
   firstSeenAt      DateTime  @default(now())
   lastSeenAt       DateTime  @default(now())
   revokedAt        DateTime?
+  videoPublicKey   String?
+  videoKeyAlgorithm String?
+  videoKeyCreatedAt DateTime?
+  videoKeyVersion  Int       @default(1)
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -512,6 +519,45 @@ model StudentDevice {
   @@index([deviceId])
   @@index([previousDeviceId])
   @@index([replacedAt])
+  @@index([revokedAt])
+}
+
+model VideoPlaybackChallenge {
+  id            String    @id @default(uuid())
+  challengeHash String
+  userId        String
+  videoId       String
+  deviceId      String
+  createdAt     DateTime  @default(now())
+  expiresAt     DateTime
+  usedAt        DateTime?
+
+  @@index([userId, videoId, deviceId])
+  @@index([expiresAt])
+  @@index([usedAt])
+}
+
+model VideoPlaybackSession {
+  id              String    @id @default(uuid())
+  accessTokenHash String    @unique
+  userId          String
+  studentId       String
+  deviceId        String
+  videoId         String
+  bunnyVideoId    String
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  refreshedAt     DateTime?
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  video   Video   @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([userId, deviceId])
+  @@index([videoId])
+  @@index([bunnyVideoId])
+  @@index([expiresAt])
   @@index([revokedAt])
 }
 
