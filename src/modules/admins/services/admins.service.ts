@@ -1,13 +1,20 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '@/prisma/prisma.service';
-import { Prisma } from '@prisma/client';
-import { CreateAdminDto } from '../dtos/create-admin.dto';
-import { UsersDirectoryQueryDto, UsersDirectoryType } from '../dtos/users-directory-query.dto';
-import { AllowedUserStatus } from '../dtos/update-user-status.dto';
-import * as bcrypt from 'bcryptjs';
-import { UsersService } from '@/modules/users/services/users.service';
-import { AdminRevenueQueryDto } from '@/modules/revenues/dtos';
-import { RevenueService } from '@/modules/revenues/services/revenue.service';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { PrismaService } from "@/prisma/prisma.service";
+import { Prisma } from "@prisma/client";
+import { CreateAdminDto } from "../dtos/create-admin.dto";
+import {
+  UsersDirectoryQueryDto,
+  UsersDirectoryType,
+} from "../dtos/users-directory-query.dto";
+import { AllowedUserStatus } from "../dtos/update-user-status.dto";
+import * as bcrypt from "bcryptjs";
+import { UsersService } from "@/modules/users/services/users.service";
+import { AdminRevenueQueryDto } from "@/modules/revenues/dtos";
+import { RevenueService } from "@/modules/revenues/services/revenue.service";
 
 @Injectable()
 export class AdminsService {
@@ -54,10 +61,10 @@ export class AdminsService {
             id: course.teacher.id,
             name: course.teacher.name,
             image: course.teacher.image ?? null,
-            telegramUrl: course.teacher.telegramUrl ?? null,
             instagramUrl: course.teacher.instagramUrl ?? null,
           }
         : null,
+      telegramUrl: course.telegramUrl ?? null,
       subject: course.subject
         ? {
             id: course.subject.id,
@@ -89,7 +96,9 @@ export class AdminsService {
   }
 
   private async getCourseDurationsMap(courseIds: string[]) {
-    const uniqueCourseIds = Array.from(new Set(courseIds.map((id) => String(id))));
+    const uniqueCourseIds = Array.from(
+      new Set(courseIds.map((id) => String(id))),
+    );
     if (!uniqueCourseIds.length) return new Map<string, number>();
 
     const lectures = await this.prisma.lecture.findMany({
@@ -104,17 +113,27 @@ export class AdminsService {
       },
     });
 
-    const durationMap = new Map<string, number>(uniqueCourseIds.map((id) => [id, 0]));
+    const durationMap = new Map<string, number>(
+      uniqueCourseIds.map((id) => [id, 0]),
+    );
     for (const lecture of lectures) {
-      const lectureDuration = lecture.videos.reduce((sum, video) => sum + (video.duration ?? 0), 0);
-      durationMap.set(lecture.courseId, (durationMap.get(lecture.courseId) ?? 0) + lectureDuration);
+      const lectureDuration = lecture.videos.reduce(
+        (sum, video) => sum + (video.duration ?? 0),
+        0,
+      );
+      durationMap.set(
+        lecture.courseId,
+        (durationMap.get(lecture.courseId) ?? 0) + lectureDuration,
+      );
     }
 
     return durationMap;
   }
 
   private async withCourseDurations<T extends { id: string }>(courses: T[]) {
-    const durationMap = await this.getCourseDurationsMap(courses.map((course) => course.id));
+    const durationMap = await this.getCourseDurationsMap(
+      courses.map((course) => course.id),
+    );
     return courses.map((course) => ({
       ...course,
       resolvedDuration: durationMap.get(course.id) ?? 0,
@@ -122,10 +141,12 @@ export class AdminsService {
   }
 
   private normalizePagination(page?: number, limit?: number) {
-    const normalizedPage = Number.isFinite(page) && page! > 0 ? Math.floor(page!) : 1;
-    const normalizedLimit = Number.isFinite(limit) && limit! > 0
-      ? Math.min(50, Math.floor(limit!))
-      : 20;
+    const normalizedPage =
+      Number.isFinite(page) && page! > 0 ? Math.floor(page!) : 1;
+    const normalizedLimit =
+      Number.isFinite(limit) && limit! > 0
+        ? Math.min(50, Math.floor(limit!))
+        : 20;
     const skip = (normalizedPage - 1) * normalizedLimit;
 
     return {
@@ -159,13 +180,13 @@ export class AdminsService {
   }
 
   async list() {
-    return this.prisma.admin.findMany({ orderBy: { createdAt: 'desc' } });
+    return this.prisma.admin.findMany({ orderBy: { createdAt: "desc" } });
   }
 
   async getAdminProfile(userIdOrAdminId: string) {
     const normalizedId = userIdOrAdminId?.trim();
     if (!normalizedId) {
-      throw new BadRequestException('User id is required');
+      throw new BadRequestException("User id is required");
     }
 
     const user = await this.prisma.user.findUnique({
@@ -182,24 +203,28 @@ export class AdminsService {
     });
 
     if (user) {
-      if (user.userableType !== 'ADMIN') {
-        throw new NotFoundException('Admin not found');
+      if (user.userableType !== "ADMIN") {
+        throw new NotFoundException("Admin not found");
       }
 
-      const adminByUser = await this.prisma.admin.findUnique({ where: { id: user.userableId } });
-      if (!adminByUser) throw new NotFoundException('Admin not found');
+      const adminByUser = await this.prisma.admin.findUnique({
+        where: { id: user.userableId },
+      });
+      if (!adminByUser) throw new NotFoundException("Admin not found");
       return {
         ...adminByUser,
         user,
       };
     }
 
-    const admin = await this.prisma.admin.findUnique({ where: { id: normalizedId } });
-    if (!admin) throw new NotFoundException('Admin not found');
+    const admin = await this.prisma.admin.findUnique({
+      where: { id: normalizedId },
+    });
+    if (!admin) throw new NotFoundException("Admin not found");
 
     const userByAdmin = await this.prisma.user.findFirst({
       where: {
-        userableType: 'ADMIN',
+        userableType: "ADMIN",
         userableId: admin.id,
       },
       select: {
@@ -226,12 +251,12 @@ export class AdminsService {
   async updateUserPassword(userNumber: string, password: string) {
     const normalizedUserNumber = userNumber?.trim();
     if (!normalizedUserNumber) {
-      throw new BadRequestException('User number is required');
+      throw new BadRequestException("User number is required");
     }
 
     const resolvedPassword = password?.trim();
     if (!resolvedPassword || resolvedPassword.length < 8) {
-      throw new BadRequestException('Password must be at least 8 characters');
+      throw new BadRequestException("Password must be at least 8 characters");
     }
 
     const user = await this.prisma.user.findUnique({
@@ -241,7 +266,7 @@ export class AdminsService {
       },
     });
 
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException("User not found");
 
     const hashedPassword = await bcrypt.hash(resolvedPassword, 10);
 
@@ -269,7 +294,7 @@ export class AdminsService {
           ? {
               name: {
                 contains: search,
-                mode: 'insensitive' as const,
+                mode: "insensitive" as const,
               },
             }
           : {}),
@@ -289,7 +314,7 @@ export class AdminsService {
           where,
           skip: pagination.skip,
           take: pagination.take,
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: "desc" },
           select: {
             id: true,
             name: true,
@@ -308,7 +333,7 @@ export class AdminsService {
       const teacherIds = teachers.map((teacher) => teacher.id);
       const users = await this.prisma.user.findMany({
         where: {
-          userableType: 'TEACHER',
+          userableType: "TEACHER",
           userableId: { in: teacherIds },
         },
         select: {
@@ -317,7 +342,9 @@ export class AdminsService {
         },
       });
 
-      const statusByTeacherId = new Map(users.map((user) => [user.userableId, user.status]));
+      const statusByTeacherId = new Map(
+        users.map((user) => [user.userableId, user.status]),
+      );
 
       const likes = query.studentId
         ? await this.prisma.teacherLike.findMany({
@@ -335,7 +362,11 @@ export class AdminsService {
 
       return {
         type: UsersDirectoryType.TEACHER,
-        pagination: this.buildPagination(pagination.page, pagination.limit, total),
+        pagination: this.buildPagination(
+          pagination.page,
+          pagination.limit,
+          total,
+        ),
         items: teachers.map((teacher) => ({
           id: teacher.id,
           name: teacher.name,
@@ -351,10 +382,10 @@ export class AdminsService {
     const studentPhoneMatchedIds = search
       ? await this.prisma.user.findMany({
           where: {
-            userableType: 'STUDENT',
+            userableType: "STUDENT",
             phone: {
               contains: search,
-              mode: 'insensitive',
+              mode: "insensitive",
             },
           },
           select: {
@@ -380,7 +411,7 @@ export class AdminsService {
               {
                 name: {
                   contains: search,
-                  mode: 'insensitive' as const,
+                  mode: "insensitive" as const,
                 },
               },
               {
@@ -389,7 +420,7 @@ export class AdminsService {
                     isActive: true,
                     universityNumber: {
                       contains: search,
-                      mode: 'insensitive' as const,
+                      mode: "insensitive" as const,
                     },
                   },
                 },
@@ -398,7 +429,9 @@ export class AdminsService {
                 ? [
                     {
                       id: {
-                        in: studentPhoneMatchedIds.map((item) => item.userableId),
+                        in: studentPhoneMatchedIds.map(
+                          (item) => item.userableId,
+                        ),
                       },
                     },
                   ]
@@ -413,7 +446,7 @@ export class AdminsService {
         where,
         skip: pagination.skip,
         take: pagination.take,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         select: {
           id: true,
           name: true,
@@ -443,7 +476,7 @@ export class AdminsService {
     const studentIds = students.map((student) => student.id);
     const users = await this.prisma.user.findMany({
       where: {
-        userableType: 'STUDENT',
+        userableType: "STUDENT",
         userableId: { in: studentIds },
       },
       select: {
@@ -452,11 +485,17 @@ export class AdminsService {
       },
     });
 
-    const statusByStudentId = new Map(users.map((user) => [user.userableId, user.status]));
+    const statusByStudentId = new Map(
+      users.map((user) => [user.userableId, user.status]),
+    );
 
     return {
       type: UsersDirectoryType.STUDENT,
-      pagination: this.buildPagination(pagination.page, pagination.limit, total),
+      pagination: this.buildPagination(
+        pagination.page,
+        pagination.limit,
+        total,
+      ),
       items: students.map((student) => {
         const enrollment = student.enrollments?.[0] ?? null;
         return {
@@ -488,7 +527,7 @@ export class AdminsService {
           ? {
               subjectName: {
                 contains: name,
-                mode: 'insensitive',
+                mode: "insensitive",
               },
             }
           : {}),
@@ -510,7 +549,7 @@ export class AdminsService {
         },
       },
       orderBy: {
-        subjectName: 'asc',
+        subjectName: "asc",
       },
     });
   }
@@ -523,7 +562,7 @@ export class AdminsService {
           ? {
               subjectName: {
                 contains: name,
-                mode: 'insensitive',
+                mode: "insensitive",
               },
             }
           : {}),
@@ -545,7 +584,7 @@ export class AdminsService {
         },
       },
       orderBy: {
-        subjectName: 'asc',
+        subjectName: "asc",
       },
     });
   }
@@ -565,7 +604,7 @@ export class AdminsService {
                 isActive: true,
                 universityNumber: {
                   contains: searchQuery,
-                  mode: 'insensitive',
+                  mode: "insensitive",
                 },
               },
             },
@@ -573,7 +612,7 @@ export class AdminsService {
           {
             name: {
               contains: searchQuery,
-              mode: 'insensitive',
+              mode: "insensitive",
             },
           },
         ],
@@ -620,17 +659,17 @@ export class AdminsService {
         },
       },
       orderBy: {
-        name: 'asc',
+        name: "asc",
       },
     });
 
     // Also search by phone in User table
     const phoneUsers = await this.prisma.user.findMany({
       where: {
-        userableType: 'STUDENT',
+        userableType: "STUDENT",
         phone: {
           contains: searchQuery,
-          mode: 'insensitive',
+          mode: "insensitive",
         },
       },
       select: {
@@ -705,18 +744,20 @@ export class AdminsService {
     T extends {
       id: string;
       name: string;
-      enrollments?:
-        | Array<{
-            universityNumber: string | null;
-            university: { id: string; name: string } | null;
-            college: { id: string; name: string } | null;
-            department: { id: string; name: string } | null;
-            collegeYear?: {
-              id: string;
-              academicYear: { id: string; yearName: string; yearNumber: number } | null;
-            } | null;
-          }>
-        | null;
+      enrollments?: Array<{
+        universityNumber: string | null;
+        university: { id: string; name: string } | null;
+        college: { id: string; name: string } | null;
+        department: { id: string; name: string } | null;
+        collegeYear?: {
+          id: string;
+          academicYear: {
+            id: string;
+            yearName: string;
+            yearNumber: number;
+          } | null;
+        } | null;
+      }> | null;
     },
   >(student: T) {
     const enrollment = student.enrollments?.[0] ?? null;
@@ -774,7 +815,7 @@ export class AdminsService {
         },
       },
       orderBy: {
-        subjectName: 'asc',
+        subjectName: "asc",
       },
     });
   }
@@ -822,7 +863,7 @@ export class AdminsService {
         },
       },
       orderBy: {
-        subjectName: 'asc',
+        subjectName: "asc",
       },
     });
   }
@@ -870,7 +911,7 @@ export class AdminsService {
         },
       },
       orderBy: {
-        subjectName: 'asc',
+        subjectName: "asc",
       },
     });
   }
@@ -885,7 +926,10 @@ export class AdminsService {
       },
     });
 
-    if (!subject) throw new NotFoundException('ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
+    if (!subject)
+      throw new NotFoundException(
+        "ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯",
+      );
 
     const permissions = await this.prisma.teacherSubjectPermission.findMany({
       where: { subjectId },
@@ -905,7 +949,7 @@ export class AdminsService {
         },
       },
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
     });
 
@@ -913,7 +957,7 @@ export class AdminsService {
     const users = teacherIds.length
       ? await this.prisma.user.findMany({
           where: {
-            userableType: 'TEACHER',
+            userableType: "TEACHER",
             userableId: { in: teacherIds },
           },
           select: {
@@ -923,7 +967,9 @@ export class AdminsService {
         })
       : [];
 
-    const statusByTeacherId = new Map(users.map((user) => [user.userableId, user.status]));
+    const statusByTeacherId = new Map(
+      users.map((user) => [user.userableId, user.status]),
+    );
 
     return {
       subject: {
@@ -946,10 +992,18 @@ export class AdminsService {
   async getAvailableTeachersForSubject(subjectId: string) {
     const subject = await this.prisma.subject.findUnique({
       where: { id: subjectId },
-      select: { id: true, collegeId: true, departmentId: true, isProgram: true },
+      select: {
+        id: true,
+        collegeId: true,
+        departmentId: true,
+        isProgram: true,
+      },
     });
 
-    if (!subject) throw new NotFoundException('ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
+    if (!subject)
+      throw new NotFoundException(
+        "ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯",
+      );
 
     const assigned = await this.prisma.teacherSubjectPermission.findMany({
       where: { subjectId },
@@ -990,13 +1044,13 @@ export class AdminsService {
         },
         _count: { select: { courses: true } },
       },
-      orderBy: { name: 'asc' },
+      orderBy: { name: "asc" },
     });
 
     const teacherIds = teachers.map((t) => t.id);
     const users = teacherIds.length
       ? await this.prisma.user.findMany({
-          where: { userableType: 'TEACHER', userableId: { in: teacherIds } },
+          where: { userableType: "TEACHER", userableId: { in: teacherIds } },
           select: { userableId: true, status: true },
         })
       : [];
@@ -1039,8 +1093,12 @@ export class AdminsService {
       }),
     ]);
 
-    if (!subject) throw new NotFoundException('ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
-    if (!teacher) throw new NotFoundException('ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
+    if (!subject)
+      throw new NotFoundException(
+        "ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯",
+      );
+    if (!teacher)
+      throw new NotFoundException("ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
 
     const existing = await this.prisma.teacherSubjectPermission.findUnique({
       where: {
@@ -1059,7 +1117,8 @@ export class AdminsService {
     if (existing) {
       return {
         assigned: false,
-        message: 'ط§ظ„ط£ط³طھط§ط° ظ…ط±طھط¨ط· ظ…ط³ط¨ظ‚ط§ظ‹ ط¨ظ‡ط°ظ‡ ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬',
+        message:
+          "ط§ظ„ط£ط³طھط§ط° ظ…ط±طھط¨ط· ظ…ط³ط¨ظ‚ط§ظ‹ ط¨ظ‡ط°ظ‡ ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬",
         subject: {
           id: subject.id,
           name: subject.subjectName,
@@ -1117,8 +1176,12 @@ export class AdminsService {
       }),
     ]);
 
-    if (!subject) throw new NotFoundException('ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
-    if (!teacher) throw new NotFoundException('ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
+    if (!subject)
+      throw new NotFoundException(
+        "ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯",
+      );
+    if (!teacher)
+      throw new NotFoundException("ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
 
     const removed = await this.prisma.teacherSubjectPermission.deleteMany({
       where: {
@@ -1128,7 +1191,9 @@ export class AdminsService {
     });
 
     if (!removed.count) {
-      throw new NotFoundException('ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ط±طھط¨ط· ط¨ظ‡ط°ظ‡ ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬');
+      throw new NotFoundException(
+        "ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ط±طھط¨ط· ط¨ظ‡ط°ظ‡ ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬",
+      );
     }
 
     return {
@@ -1154,7 +1219,8 @@ export class AdminsService {
       },
     });
 
-    if (!teacher) throw new NotFoundException('ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
+    if (!teacher)
+      throw new NotFoundException("ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
 
     const permissions = await this.prisma.teacherSubjectPermission.findMany({
       where: { teacherId },
@@ -1191,7 +1257,7 @@ export class AdminsService {
           },
         },
       },
-      orderBy: [{ subject: { subjectName: 'asc' } }],
+      orderBy: [{ subject: { subjectName: "asc" } }],
     });
 
     return {
@@ -1246,7 +1312,7 @@ export class AdminsService {
         },
       },
       orderBy: {
-        name: 'asc',
+        name: "asc",
       },
     });
   }
@@ -1303,11 +1369,13 @@ export class AdminsService {
         },
       },
       orderBy: {
-        name: 'asc',
+        name: "asc",
       },
     });
 
-    return students.map((student) => this.mapStudentWithActiveEnrollment(student));
+    return students.map((student) =>
+      this.mapStudentWithActiveEnrollment(student),
+    );
   }
 
   async getTeachersByCollegeId(collegeId: string) {
@@ -1332,7 +1400,7 @@ export class AdminsService {
         },
       },
       orderBy: {
-        name: 'asc',
+        name: "asc",
       },
     });
   }
@@ -1359,7 +1427,7 @@ export class AdminsService {
         },
       },
       orderBy: {
-        name: 'asc',
+        name: "asc",
       },
     });
   }
@@ -1379,7 +1447,7 @@ export class AdminsService {
         yearName: true,
       },
       orderBy: {
-        yearNumber: 'asc',
+        yearNumber: "asc",
       },
     });
   }
@@ -1405,7 +1473,8 @@ export class AdminsService {
         },
       });
 
-      if (!foundSubject) throw new NotFoundException('ط§ظ„ظ…ط§ط¯ط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط©');
+      if (!foundSubject)
+        throw new NotFoundException("ط§ظ„ظ…ط§ط¯ط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط©");
       subject = {
         id: foundSubject.id,
         name: foundSubject.subjectName,
@@ -1437,7 +1506,7 @@ export class AdminsService {
           teacher: true,
           _count: { select: { subscriptions: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
       }),
       this.prisma.course.count({ where }),
     ]);
@@ -1455,7 +1524,11 @@ export class AdminsService {
               }
             : null,
         })),
-        pagination: this.buildPagination(pagination.page, pagination.limit, total),
+        pagination: this.buildPagination(
+          pagination.page,
+          pagination.limit,
+          total,
+        ),
       },
     };
   }
@@ -1481,7 +1554,8 @@ export class AdminsService {
         },
       });
 
-      if (!foundProgram) throw new NotFoundException('ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
+      if (!foundProgram)
+        throw new NotFoundException("ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
       program = {
         id: foundProgram.id,
         name: foundProgram.subjectName,
@@ -1513,7 +1587,7 @@ export class AdminsService {
           teacher: true,
           _count: { select: { subscriptions: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
       }),
       this.prisma.course.count({ where }),
     ]);
@@ -1531,7 +1605,11 @@ export class AdminsService {
               }
             : null,
         })),
-        pagination: this.buildPagination(pagination.page, pagination.limit, total),
+        pagination: this.buildPagination(
+          pagination.page,
+          pagination.limit,
+          total,
+        ),
       },
     };
   }
@@ -1541,7 +1619,10 @@ export class AdminsService {
       where: { id: subjectId },
       select: { id: true, subjectName: true, isProgram: true },
     });
-    if (!subject) throw new NotFoundException('ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
+    if (!subject)
+      throw new NotFoundException(
+        "ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯",
+      );
 
     const courses = await this.prisma.course.findMany({
       where: { subjectId },
@@ -1555,13 +1636,19 @@ export class AdminsService {
         category: { select: { id: true, name: true, isProgram: true } },
         _count: { select: { subscriptions: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
     const coursesWithDurations = await this.withCourseDurations(courses);
 
     return {
-      subject: { id: subject.id, name: subject.subjectName, isProgram: subject.isProgram },
-      courses: coursesWithDurations.map((course) => this.buildCourseCardWithTeacher(course)),
+      subject: {
+        id: subject.id,
+        name: subject.subjectName,
+        isProgram: subject.isProgram,
+      },
+      courses: coursesWithDurations.map((course) =>
+        this.buildCourseCardWithTeacher(course),
+      ),
     };
   }
 
@@ -1571,7 +1658,8 @@ export class AdminsService {
       where: { id: programId },
       select: { id: true, subjectName: true, isProgram: true },
     });
-    if (!program) throw new NotFoundException('ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
+    if (!program)
+      throw new NotFoundException("ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
 
     const courses = await this.prisma.course.findMany({
       where: { subjectId: programId },
@@ -1585,36 +1673,36 @@ export class AdminsService {
         category: { select: { id: true, name: true, isProgram: true } },
         _count: { select: { subscriptions: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
     const coursesWithDurations = await this.withCourseDurations(courses);
 
     return {
       program: { id: program.id, name: program.subjectName },
-      courses: coursesWithDurations.map((course) => this.buildCourseCardWithTeacher(course)),
+      courses: coursesWithDurations.map((course) =>
+        this.buildCourseCardWithTeacher(course),
+      ),
     };
   }
 
-  async getCoursesOfTeacher(
-    teacherId: string,
-    status?: 'active' | 'expired',
-  ) {
+  async getCoursesOfTeacher(teacherId: string, status?: "active" | "expired") {
     const teacher = await this.prisma.teacher.findUnique({
       where: { id: teacherId },
       select: { id: true, name: true },
     });
-    if (!teacher) throw new NotFoundException('ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
+    if (!teacher)
+      throw new NotFoundException("ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
 
     const now = new Date();
     const statusFilter: Prisma.CourseWhereInput =
-      status === 'active'
+      status === "active"
         ? {
-            status: 'APPROVED',
+            status: "APPROVED",
             OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
           }
-        : status === 'expired'
+        : status === "expired"
           ? {
-              status: 'APPROVED',
+              status: "APPROVED",
               expiresAt: { lt: now },
             }
           : {};
@@ -1625,7 +1713,9 @@ export class AdminsService {
         ...statusFilter,
       },
       include: {
-        teacher: { select: { id: true, name: true, image: true, telegramUrl: true, instagramUrl: true } },
+        teacher: {
+          select: { id: true, name: true, image: true, instagramUrl: true },
+        },
         subject: { select: { id: true, subjectName: true, isProgram: true } },
         college: { select: { id: true, name: true } },
         department: { select: { id: true, name: true } },
@@ -1634,7 +1724,7 @@ export class AdminsService {
         category: { select: { id: true, name: true, isProgram: true } },
         _count: { select: { subscriptions: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
     const coursesWithDurations = await this.withCourseDurations(courses);
 
@@ -1666,7 +1756,7 @@ export class AdminsService {
         },
       },
     });
-    if (!student) throw new NotFoundException('ط§ظ„ط·ط§ظ„ط¨ ط؛ظٹط± ظ…ظˆط¬ظˆط¯');
+    if (!student) throw new NotFoundException("ط§ظ„ط·ط§ظ„ط¨ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
 
     const enrollment = student.enrollments?.[0] ?? null;
 
@@ -1675,20 +1765,28 @@ export class AdminsService {
       include: {
         course: {
           include: {
-            teacher: { select: { id: true, name: true, image: true, telegramUrl: true, instagramUrl: true } },
-            subject: { select: { id: true, subjectName: true, isProgram: true } },
+            teacher: {
+              select: { id: true, name: true, image: true, instagramUrl: true },
+            },
+            subject: {
+              select: { id: true, subjectName: true, isProgram: true },
+            },
             college: { select: { id: true, name: true } },
             department: { select: { id: true, name: true } },
-            season: { select: { id: true, seasonName: true, seasonNumber: true } },
+            season: {
+              select: { id: true, seasonName: true, seasonNumber: true },
+            },
             collegeYear: { include: { academicYear: true } },
             category: { select: { id: true, name: true, isProgram: true } },
             _count: { select: { subscriptions: true } },
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
-    const coursesWithDurations = await this.withCourseDurations(subs.map((subscription) => subscription.course));
+    const coursesWithDurations = await this.withCourseDurations(
+      subs.map((subscription) => subscription.course),
+    );
 
     return {
       student: {
@@ -1706,8 +1804,8 @@ export class AdminsService {
 
   async searchCourses(
     name?: string,
-    relatedTo?: 'subject' | 'program',
-    status: 'active' | 'expired' | 'deleted' | 'pending' = 'pending',
+    relatedTo?: "subject" | "program",
+    status: "active" | "expired" | "deleted" | "pending" = "pending",
   ) {
     const now = new Date();
 
@@ -1717,7 +1815,7 @@ export class AdminsService {
           ? {
               name: {
                 contains: name,
-                mode: 'insensitive',
+                mode: "insensitive",
               },
             }
           : {}),
@@ -1761,14 +1859,14 @@ export class AdminsService {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     const mapped = courses.map((course) => {
       const resolvedIsProgram =
         course.subject?.isProgram ?? course.category?.isProgram ?? false;
 
-      const relationType = resolvedIsProgram ? 'program' : 'subject';
+      const relationType = resolvedIsProgram ? "program" : "subject";
 
       return {
         id: course.id,
@@ -1792,19 +1890,23 @@ export class AdminsService {
 
     const activeCourses = filtered.filter(
       (course) =>
-        course.status === 'APPROVED' &&
+        course.status === "APPROVED" &&
         (!course.expiresAt || new Date(course.expiresAt) >= now),
     );
 
     const expiredCourses = filtered.filter(
       (course) =>
-        course.status === 'APPROVED' &&
+        course.status === "APPROVED" &&
         !!course.expiresAt &&
         new Date(course.expiresAt) < now,
     );
 
-    const deletedCourses = filtered.filter((course) => course.status === 'REJECTED');
-    const pendingCourses = filtered.filter((course) => course.status === 'PENDING');
+    const deletedCourses = filtered.filter(
+      (course) => course.status === "REJECTED",
+    );
+    const pendingCourses = filtered.filter(
+      (course) => course.status === "PENDING",
+    );
 
     const statusMap = {
       active: activeCourses,
@@ -1858,10 +1960,10 @@ export class AdminsService {
 
     const round = (value: number) =>
       Math.round((value + Number.EPSILON) * 100) / 100;
-    const monthFormatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Damascus',
-      year: 'numeric',
-      month: 'numeric',
+    const monthFormatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Damascus",
+      year: "numeric",
+      month: "numeric",
     });
     const periodYearsMap = new Map<
       number,
@@ -1879,10 +1981,10 @@ export class AdminsService {
     for (const transaction of transactions) {
       const dateParts = monthFormatter.formatToParts(transaction.purchasedAt);
       const yearKey = Number(
-        dateParts.find((part) => part.type === 'year')?.value,
+        dateParts.find((part) => part.type === "year")?.value,
       );
       const monthKey = Number(
-        dateParts.find((part) => part.type === 'month')?.value,
+        dateParts.find((part) => part.type === "month")?.value,
       );
       const price = Number(transaction.finalPrice);
       const teacherShare = Number(transaction.teacherRevenue);
@@ -1995,7 +2097,7 @@ export class AdminsService {
           existing.teacherRevenue += teacherShare;
         } else {
           collegeMap.set(collegeId, {
-            collegeName: transaction.collegeName ?? 'Unknown',
+            collegeName: transaction.collegeName ?? "Unknown",
             subscribersCount: 1,
             totalRevenue: price,
             platformRevenue: platformShare,
@@ -2073,7 +2175,7 @@ export class AdminsService {
         existing.teacherRevenue += teacherShare;
       } else {
         universityMap.set(universityId, {
-          universityName: transaction.universityName ?? 'Unknown',
+          universityName: transaction.universityName ?? "Unknown",
           subscribersCount: 1,
           totalRevenue: price,
           platformRevenue: platformShare,
@@ -2216,11 +2318,11 @@ export class AdminsService {
       },
     });
 
-    if (!student) throw new NotFoundException('Student not found');
+    if (!student) throw new NotFoundException("Student not found");
 
     const studentUser = await this.prisma.user.findFirst({
       where: {
-        userableType: 'STUDENT',
+        userableType: "STUDENT",
         userableId: student.id,
       },
       select: {
@@ -2232,7 +2334,9 @@ export class AdminsService {
       },
     });
 
-    const subscribedCourseIds = student.subscriptions.map((subscription) => subscription.course.id);
+    const subscribedCourseIds = student.subscriptions.map(
+      (subscription) => subscription.course.id,
+    );
     const durationMap = await this.getCourseDurationsMap(subscribedCourseIds);
 
     const mappedCourses = student.subscriptions.map((subscription) => {
@@ -2294,25 +2398,29 @@ export class AdminsService {
         phone: studentUser?.phone ?? null,
         password: null,
         passwordHash: studentUser?.password ?? null,
-        status: studentUser?.status ?? 'active',
+        status: studentUser?.status ?? "active",
         hasUserAccount: !!studentUser,
         academicYear: studentYear,
         year: studentYear,
         subscriptionsCount: student.subscriptions.length,
         accountCreatedAt: studentUser?.createdAt ?? student.createdAt,
         activeCoursesCount: mappedCourses.filter(
-          (course) => course.status === 'APPROVED' && !courseHasEnded(course, now),
+          (course) =>
+            course.status === "APPROVED" && !courseHasEnded(course, now),
         ).length,
-        finishedCoursesCount: mappedCourses.filter((course) => courseHasEnded(course, now)).length,
+        finishedCoursesCount: mappedCourses.filter((course) =>
+          courseHasEnded(course, now),
+        ).length,
       },
       coursesByStatus: {
         activeCourses: mappedCourses.filter(
-          (course) => course.status === 'APPROVED' && !courseHasEnded(course, now),
+          (course) =>
+            course.status === "APPROVED" && !courseHasEnded(course, now),
         ),
         inactiveCourses: mappedCourses.filter(
           (course) =>
-            course.status !== 'APPROVED' ||
-            (course.status === 'APPROVED' && courseHasEnded(course, now)),
+            course.status !== "APPROVED" ||
+            (course.status === "APPROVED" && courseHasEnded(course, now)),
         ),
       },
     };
@@ -2348,13 +2456,13 @@ export class AdminsService {
       },
     });
 
-    if (!student) throw new NotFoundException('Student not found');
+    if (!student) throw new NotFoundException("Student not found");
 
     const enrollment = student.enrollments?.[0] ?? null;
 
     const studentUser = await this.prisma.user.findFirst({
       where: {
-        userableType: 'STUDENT',
+        userableType: "STUDENT",
         userableId: student.id,
       },
       select: {
@@ -2363,11 +2471,13 @@ export class AdminsService {
       },
     });
 
-    if (!studentUser) throw new NotFoundException('Student account not found');
+    if (!studentUser) throw new NotFoundException("Student account not found");
 
-    const resolvedPassword = (newPassword?.trim() || this.generateTemporaryPassword()).trim();
+    const resolvedPassword = (
+      newPassword?.trim() || this.generateTemporaryPassword()
+    ).trim();
     if (resolvedPassword.length < 6) {
-      throw new BadRequestException('Password must be at least 6 characters');
+      throw new BadRequestException("Password must be at least 6 characters");
     }
 
     const hashedPassword = await bcrypt.hash(resolvedPassword, 10);
@@ -2387,8 +2497,8 @@ export class AdminsService {
   }
 
   private generateTemporaryPassword(length: number = 8) {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-    let result = '';
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    let result = "";
     for (let i = 0; i < length; i += 1) {
       result += chars[Math.floor(Math.random() * chars.length)];
     }
@@ -2459,14 +2569,14 @@ export class AdminsService {
               },
             },
             orderBy: {
-              createdAt: 'desc',
+              createdAt: "desc",
             },
           },
         },
       }),
       this.prisma.user.findFirst({
         where: {
-          userableType: 'TEACHER',
+          userableType: "TEACHER",
           userableId: teacherId,
         },
         select: {
@@ -2478,7 +2588,7 @@ export class AdminsService {
       }),
     ]);
 
-    if (!teacher) throw new NotFoundException('Teacher not found');
+    if (!teacher) throw new NotFoundException("Teacher not found");
 
     const courseIds = teacher.courses.map((course) => course.id);
     const [teacherLikes, courseRatings, videoInteractions, ratingsByCourse] =
@@ -2486,14 +2596,14 @@ export class AdminsService {
         this.prisma.teacherLike.findMany({
           where: { teacherId },
           select: { studentId: true },
-          distinct: ['studentId'],
+          distinct: ["studentId"],
         }),
         this.prisma.courseRating.findMany({
           where: {
             course: { teacherId },
           },
           select: { studentId: true },
-          distinct: ['studentId'],
+          distinct: ["studentId"],
         }),
         this.prisma.videoInteraction.findMany({
           where: {
@@ -2505,7 +2615,7 @@ export class AdminsService {
               },
             },
             user: {
-              userableType: 'STUDENT',
+              userableType: "STUDENT",
             },
           },
           select: {
@@ -2515,11 +2625,11 @@ export class AdminsService {
               },
             },
           },
-          distinct: ['userId'],
+          distinct: ["userId"],
         }),
         courseIds.length
           ? this.prisma.courseRating.groupBy({
-              by: ['courseId'],
+              by: ["courseId"],
               where: { courseId: { in: courseIds } },
               _avg: { rating: true },
             })
@@ -2530,18 +2640,19 @@ export class AdminsService {
     teacherLikes.forEach((item) => interactiveStudentIds.add(item.studentId));
     courseRatings.forEach((item) => interactiveStudentIds.add(item.studentId));
     videoInteractions.forEach((item) => {
-      if (item.user?.userableId) interactiveStudentIds.add(item.user.userableId);
+      if (item.user?.userableId)
+        interactiveStudentIds.add(item.user.userableId);
     });
 
     const ratingMap = new Map<string, number>(
       ratingsByCourse.map((item) => [
         item.courseId,
-        Number((Number(item._avg.rating ?? 0)).toFixed(2)),
+        Number(Number(item._avg.rating ?? 0).toFixed(2)),
       ]),
     );
 
     const coursesForResponse = teacher.courses
-      .filter((course) => course.status === 'APPROVED')
+      .filter((course) => course.status === "APPROVED")
       .map((course) => ({
         id: course.id,
         name: course.name,
@@ -2593,8 +2704,12 @@ export class AdminsService {
           college: a.college,
           department: a.department ?? null,
         })),
-        activeCoursesCount: coursesForResponse.filter((course) => !course.endDate || course.endDate > now).length,
-        finishedCoursesCount: coursesForResponse.filter((course) => !!course.endDate && course.endDate <= now).length,
+        activeCoursesCount: coursesForResponse.filter(
+          (course) => !course.endDate || course.endDate > now,
+        ).length,
+        finishedCoursesCount: coursesForResponse.filter(
+          (course) => !!course.endDate && course.endDate <= now,
+        ).length,
       },
       coursesByStatus: {
         activeCourses: coursesForResponse.filter(
@@ -2608,10 +2723,6 @@ export class AdminsService {
   }
 }
 
-function courseHasEnded(
-  course: { expiresAt?: Date | null },
-  now: Date,
-) {
+function courseHasEnded(course: { expiresAt?: Date | null }, now: Date) {
   return !!course.expiresAt && course.expiresAt <= now;
 }
-

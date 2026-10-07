@@ -1,12 +1,18 @@
-﻿import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
-import { PrismaService } from '@/prisma/prisma.service';
-import { CreateTeacherDto } from '../dtos/create-teacher.dto';
-import { TeacherSummaryDto } from '../dtos/teacher-summary.dto';
-import { Prisma } from '@prisma/client';
-import { RevenueService } from '@/modules/revenues/services/revenue.service';
-import { RevenuePeriodQueryDto } from '@/modules/revenues/dtos';
+﻿import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { CACHE_MANAGER } from "@nestjs/cache-manager";
+import { Cache } from "cache-manager";
+import { PrismaService } from "@/prisma/prisma.service";
+import { CreateTeacherDto } from "../dtos/create-teacher.dto";
+import { TeacherSummaryDto } from "../dtos/teacher-summary.dto";
+import { Prisma } from "@prisma/client";
+import { RevenueService } from "@/modules/revenues/services/revenue.service";
+import { RevenuePeriodQueryDto } from "@/modules/revenues/dtos";
 
 @Injectable()
 export class TeachersService {
@@ -18,13 +24,10 @@ export class TeachersService {
 
   async create(dto: CreateTeacherDto, tx?: Prisma.TransactionClient) {
     const client = tx ?? this.prisma;
-    const normalizedTelegramUrl = dto.telegramUrl?.trim();
-    if (!normalizedTelegramUrl) {
-      throw new BadRequestException('رابط تلغرام الأستاذ مطلوب');
-    }
-
     const hasLegacyAffiliationFields =
-      dto.universityId !== undefined || dto.collegeId !== undefined || dto.departmentId !== undefined;
+      dto.universityId !== undefined ||
+      dto.collegeId !== undefined ||
+      dto.departmentId !== undefined;
 
     const rawAffiliations = [...(dto.affiliations ?? [])];
     if (hasLegacyAffiliationFields) {
@@ -41,7 +44,9 @@ export class TeachersService {
       const departmentId = affiliation.departmentId;
 
       if (!universityId || !collegeId) {
-        throw new BadRequestException('كل انتساب يجب أن يحتوي الحقلين universityId و collegeId');
+        throw new BadRequestException(
+          "كل انتساب يجب أن يحتوي الحقلين universityId و collegeId",
+        );
       }
 
       return {
@@ -54,7 +59,7 @@ export class TeachersService {
     const uniqueAffiliations = Array.from(
       new Map(
         normalizedAffiliations.map((affiliation) => [
-          `${affiliation.universityId}:${affiliation.collegeId}:${affiliation.departmentId ?? ''}`,
+          `${affiliation.universityId}:${affiliation.collegeId}:${affiliation.departmentId ?? ""}`,
           affiliation,
         ]),
       ).values(),
@@ -75,7 +80,6 @@ export class TeachersService {
           name: dto.name,
           description: dto.description,
           image: dto.image,
-          telegramUrl: normalizedTelegramUrl,
           instagramUrl: dto.instagramUrl,
           isVisibleToStudents: false,
         },
@@ -96,7 +100,9 @@ export class TeachersService {
     };
 
     if (tx) return createTeacher(tx);
-    return this.prisma.$transaction((transaction) => createTeacher(transaction));
+    return this.prisma.$transaction((transaction) =>
+      createTeacher(transaction),
+    );
   }
 
   private toNumber(value: unknown) {
@@ -105,7 +111,9 @@ export class TeachersService {
   }
 
   private async getCourseDurationsMap(courseIds: string[]) {
-    const uniqueCourseIds = Array.from(new Set(courseIds.map((id) => String(id))));
+    const uniqueCourseIds = Array.from(
+      new Set(courseIds.map((id) => String(id))),
+    );
     if (!uniqueCourseIds.length) return new Map<string, number>();
 
     const lectures = await this.prisma.lecture.findMany({
@@ -120,10 +128,18 @@ export class TeachersService {
       },
     });
 
-    const durationMap = new Map<string, number>(uniqueCourseIds.map((id) => [id, 0]));
+    const durationMap = new Map<string, number>(
+      uniqueCourseIds.map((id) => [id, 0]),
+    );
     for (const lecture of lectures) {
-      const lectureDuration = lecture.videos.reduce((sum, video) => sum + (video.duration ?? 0), 0);
-      durationMap.set(lecture.courseId, (durationMap.get(lecture.courseId) ?? 0) + lectureDuration);
+      const lectureDuration = lecture.videos.reduce(
+        (sum, video) => sum + (video.duration ?? 0),
+        0,
+      );
+      durationMap.set(
+        lecture.courseId,
+        (durationMap.get(lecture.courseId) ?? 0) + lectureDuration,
+      );
     }
 
     return durationMap;
@@ -131,33 +147,54 @@ export class TeachersService {
 
   private getMonthBounds(date: Date) {
     const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-    const startOfNextMonth = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+    const startOfNextMonth = new Date(
+      date.getFullYear(),
+      date.getMonth() + 1,
+      1,
+    );
     return { startOfMonth, startOfNextMonth };
   }
 
-  private async getTeacherContext(user: { userId: string | number; type: string }) {
-    if (!user || user.type !== 'TEACHER') throw new ForbiddenException('صلاحية مدرس مطلوبة');
+  private async getTeacherContext(user: {
+    userId: string | number;
+    type: string;
+  }) {
+    if (!user || user.type !== "TEACHER")
+      throw new ForbiddenException("صلاحية مدرس مطلوبة");
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new NotFoundException('المستخدم غير موجود');
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+    });
+    if (!dbUser) throw new NotFoundException("المستخدم غير موجود");
 
-    const teacher = await this.prisma.teacher.findUnique({ where: { id: dbUser.userableId } });
-    if (!teacher) throw new NotFoundException('المدرس غير موجود');
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { id: dbUser.userableId },
+    });
+    if (!teacher) throw new NotFoundException("المدرس غير موجود");
 
     return { dbUser, teacher };
   }
 
   private async getTeacherById(teacherId: string) {
-    const teacher = await this.prisma.teacher.findUnique({ where: { id: teacherId } });
-    if (!teacher) throw new NotFoundException('المدرس غير موجود');
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { id: teacherId },
+    });
+    if (!teacher) throw new NotFoundException("المدرس غير موجود");
     return teacher;
   }
 
-  private async getAdminContext(user: { userId: string | number; type: string }) {
-    if (!user || user.type !== 'ADMIN') throw new ForbiddenException('صلاحية مدير مطلوبة');
+  private async getAdminContext(user: {
+    userId: string | number;
+    type: string;
+  }) {
+    if (!user || user.type !== "ADMIN")
+      throw new ForbiddenException("صلاحية مدير مطلوبة");
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser || dbUser.userableType !== 'ADMIN') throw new NotFoundException('المدير غير موجود');
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+    });
+    if (!dbUser || dbUser.userableType !== "ADMIN")
+      throw new NotFoundException("المدير غير موجود");
 
     return dbUser;
   }
@@ -166,23 +203,23 @@ export class TeachersService {
     user: { userId: string | number; type: string },
     teacherId?: string,
   ) {
-    if (user?.type === 'TEACHER') {
+    if (user?.type === "TEACHER") {
       const { teacher } = await this.getTeacherContext(user);
       return teacher.id;
     }
 
-    if (user?.type === 'ADMIN') {
+    if (user?.type === "ADMIN") {
       await this.getAdminContext(user);
 
       if (!teacherId) {
-        throw new BadRequestException('teacherId مطلوب للمدير');
+        throw new BadRequestException("teacherId مطلوب للمدير");
       }
 
       const teacher = await this.getTeacherById(teacherId);
       return teacher.id;
     }
 
-    throw new ForbiddenException('صلاحية مدرس أو مدير مطلوبة');
+    throw new ForbiddenException("صلاحية مدرس أو مدير مطلوبة");
   }
 
   private roundCurrency(value: number) {
@@ -203,15 +240,18 @@ export class TeachersService {
 
   private async ensureSubjectsExist(subjectIds: string[]) {
     const subjectIdsBig = this.normalizeSubjectIds(subjectIds);
-    const subjects = await this.prisma.subject.findMany({ where: { id: { in: subjectIdsBig } } });
+    const subjects = await this.prisma.subject.findMany({
+      where: { id: { in: subjectIdsBig } },
+    });
     if (subjects.length !== subjectIdsBig.length) {
-      throw new NotFoundException('بعض المواد غير موجودة');
+      throw new NotFoundException("بعض المواد غير موجودة");
     }
   }
 
   private normalizePagination(page?: number, limit?: number, maxLimit = 50) {
     const safePage = page && page > 0 ? Math.floor(page) : 1;
-    const safeLimit = limit && limit > 0 ? Math.min(Math.floor(limit), maxLimit) : 20;
+    const safeLimit =
+      limit && limit > 0 ? Math.min(Math.floor(limit), maxLimit) : 20;
     const skip = (safePage - 1) * safeLimit;
     return { page: safePage, limit: safeLimit, skip, take: safeLimit };
   }
@@ -222,20 +262,26 @@ export class TeachersService {
     departmentId?: string,
     client: Prisma.TransactionClient | PrismaService = this.prisma,
   ) {
-    const university = await client.university.findUnique({ where: { id: universityId } });
-    if (!university) throw new NotFoundException('الجامعة غير موجودة');
+    const university = await client.university.findUnique({
+      where: { id: universityId },
+    });
+    if (!university) throw new NotFoundException("الجامعة غير موجودة");
 
-    const college = await client.college.findUnique({ where: { id: collegeId } });
-    if (!college) throw new NotFoundException('الكلية غير موجودة');
+    const college = await client.college.findUnique({
+      where: { id: collegeId },
+    });
+    if (!college) throw new NotFoundException("الكلية غير موجودة");
     if (college.universityId !== universityId) {
-      throw new ForbiddenException('الكلية لا تتبع للجامعة');
+      throw new ForbiddenException("الكلية لا تتبع للجامعة");
     }
 
     if (departmentId !== undefined) {
-      const department = await client.department.findUnique({ where: { id: departmentId } });
-      if (!department) throw new NotFoundException('القسم غير موجود');
+      const department = await client.department.findUnique({
+        where: { id: departmentId },
+      });
+      if (!department) throw new NotFoundException("القسم غير موجود");
       if (department.collegeId !== collegeId) {
-        throw new ForbiddenException('القسم لا يتبع للكلية');
+        throw new ForbiddenException("القسم لا يتبع للكلية");
       }
     }
   }
@@ -246,25 +292,25 @@ export class TeachersService {
   ) {
     let targetTeacherId: string | undefined;
 
-    if (user?.type === 'TEACHER') {
+    if (user?.type === "TEACHER") {
       const { teacher } = await this.getTeacherContext(user);
       if (teacherId && teacherId !== teacher.id) {
-        throw new ForbiddenException('لا يمكن للمدرس عرض انتسابات مدرس آخر');
+        throw new ForbiddenException("لا يمكن للمدرس عرض انتسابات مدرس آخر");
       }
       targetTeacherId = teacher.id;
-    } else if (user?.type === 'ADMIN') {
+    } else if (user?.type === "ADMIN") {
       await this.getAdminContext(user);
       if (teacherId) {
         targetTeacherId = (await this.getTeacherById(teacherId)).id;
       }
     } else {
-      throw new ForbiddenException('صلاحية مدرس أو مدير مطلوبة');
+      throw new ForbiddenException("صلاحية مدرس أو مدير مطلوبة");
     }
 
     return this.prisma.teacherAffiliation.findMany({
       where: targetTeacherId ? { teacherId: targetTeacherId } : undefined,
       include: { university: true, college: true, department: true },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
   }
 
@@ -275,7 +321,10 @@ export class TeachersService {
     departmentId?: string,
     teacherId?: string,
   ) {
-    const targetTeacherId = await this.resolveAffiliationTargetTeacherId(user, teacherId);
+    const targetTeacherId = await this.resolveAffiliationTargetTeacherId(
+      user,
+      teacherId,
+    );
     await this.validateAffiliationScope(universityId, collegeId, departmentId);
 
     const existing = await this.prisma.teacherAffiliation.findFirst({
@@ -306,7 +355,10 @@ export class TeachersService {
     departmentId?: string,
     teacherId?: string,
   ) {
-    const targetTeacherId = await this.resolveAffiliationTargetTeacherId(user, teacherId);
+    const targetTeacherId = await this.resolveAffiliationTargetTeacherId(
+      user,
+      teacherId,
+    );
     const affiliation = await this.prisma.teacherAffiliation.findFirst({
       where: {
         teacherId: targetTeacherId,
@@ -316,33 +368,46 @@ export class TeachersService {
       },
     });
 
-    if (!affiliation) throw new NotFoundException('الانتساب غير موجود');
+    if (!affiliation) throw new NotFoundException("الانتساب غير موجود");
 
-    return this.prisma.teacherAffiliation.delete({ where: { id: affiliation.id } });
+    return this.prisma.teacherAffiliation.delete({
+      where: { id: affiliation.id },
+    });
   }
 
   async getTeacherSummary(
     user: { userId: string | number; type: string },
-    params?: { coursesPage?: number; coursesLimit?: number; pendingPage?: number; pendingLimit?: number },
+    params?: {
+      coursesPage?: number;
+      coursesLimit?: number;
+      pendingPage?: number;
+      pendingLimit?: number;
+    },
   ): Promise<TeacherSummaryDto> {
     const { dbUser, teacher } = await this.getTeacherContext(user);
 
-    const coursesPagination = this.normalizePagination(params?.coursesPage, params?.coursesLimit);
-    const pendingPagination = this.normalizePagination(params?.pendingPage, params?.pendingLimit);
+    const coursesPagination = this.normalizePagination(
+      params?.coursesPage,
+      params?.coursesLimit,
+    );
+    const pendingPagination = this.normalizePagination(
+      params?.pendingPage,
+      params?.pendingLimit,
+    );
 
     const now = new Date();
     const monthNumber = now.getMonth() + 1;
     const { startOfMonth, startOfNextMonth } = this.getMonthBounds(now);
 
     const cacheKey = [
-      'teacher-summary',
+      "teacher-summary",
       teacher.id.toString(),
       `${now.getFullYear()}-${monthNumber}`,
       coursesPagination.page,
       coursesPagination.limit,
       pendingPagination.page,
       pendingPagination.limit,
-    ].join(':');
+    ].join(":");
 
     const cached = await this.cacheManager.get<TeacherSummaryDto>(cacheKey);
     if (cached) return cached;
@@ -369,7 +434,9 @@ export class TeachersService {
         },
       }),
       this.prisma.course.count({ where: { teacherId: teacher.id } }),
-      this.prisma.studentSubscription.count({ where: { course: { teacherId: teacher.id } } }),
+      this.prisma.studentSubscription.count({
+        where: { course: { teacherId: teacher.id } },
+      }),
       this.prisma.teacherLike.count({ where: { teacherId: teacher.id } }),
       this.prisma.videoInteraction.aggregate({
         _avg: { rating: true },
@@ -379,33 +446,37 @@ export class TeachersService {
         },
       }),
       this.prisma.course.findMany({
-        where: { teacherId: teacher.id, status: 'PENDING' },
+        where: { teacherId: teacher.id, status: "PENDING" },
         select: {
           id: true,
           name: true,
           imageUrl: true,
           duration: true,
           isCompleted: true,
-          season: { select: { id: true, seasonName: true, seasonNumber: true } },
+          season: {
+            select: { id: true, seasonName: true, seasonNumber: true },
+          },
           collegeYear: {
             select: {
               id: true,
-              academicYear: { select: { id: true, yearName: true, yearNumber: true } },
+              academicYear: {
+                select: { id: true, yearName: true, yearNumber: true },
+              },
             },
           },
           _count: { select: { subscriptions: true } },
           createdAt: true,
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         skip: coursesPagination.skip,
         take: coursesPagination.take,
       }),
       this.prisma.notification.count({
-        where: { createdById: dbUser.id, status: 'PENDING' },
+        where: { createdById: dbUser.id, status: "PENDING" },
       }),
       this.prisma.notification.findMany({
-        where: { createdById: dbUser.id, status: 'PENDING' },
-        orderBy: { createdAt: 'desc' },
+        where: { createdById: dbUser.id, status: "PENDING" },
+        orderBy: { createdAt: "desc" },
         select: {
           id: true,
           title: true,
@@ -426,13 +497,20 @@ export class TeachersService {
       }),
     ]);
 
-    const totalMonthlyEarnings = monthlySubscriptions.reduce((sum, subscription) => {
-      const finalPrice = this.toNumber(subscription.finalPrice);
-      const percentage = this.toNumber(subscription.course?.teacherPercentage);
-      return sum + (finalPrice * percentage) / 100;
-    }, 0);
+    const totalMonthlyEarnings = monthlySubscriptions.reduce(
+      (sum, subscription) => {
+        const finalPrice = this.toNumber(subscription.finalPrice);
+        const percentage = this.toNumber(
+          subscription.course?.teacherPercentage,
+        );
+        return sum + (finalPrice * percentage) / 100;
+      },
+      0,
+    );
     const avgRating = this.toNumber(coursesRatings._avg.rating);
-    const durationMap = await this.getCourseDurationsMap(courses.map((course) => course.id));
+    const durationMap = await this.getCourseDurationsMap(
+      courses.map((course) => course.id),
+    );
 
     const summary: TeacherSummaryDto = {
       teacherName: teacher.name,
@@ -452,7 +530,6 @@ export class TeachersService {
           id: teacher.id,
           name: teacher.name,
           image: teacher.image ?? null,
-          telegramUrl: teacher.telegramUrl ?? null,
           instagramUrl: teacher.instagramUrl ?? null,
         },
         season: course.season
@@ -500,7 +577,7 @@ export class TeachersService {
 
     const where: any = {
       teacherId: teacher.id,
-      status: { not: 'PENDING' },
+      status: { not: "PENDING" },
       ...(isExpired
         ? { expiresAt: { not: null, lte: now } }
         : { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }),
@@ -516,7 +593,7 @@ export class TeachersService {
           imageUrl: true,
           duration: true,
           isCompleted: true,
-          expiresAt: true,      
+          expiresAt: true,
           status: true,
           university: { select: { id: true, name: true } },
           college: { select: { id: true, name: true } },
@@ -524,19 +601,25 @@ export class TeachersService {
           collegeYear: {
             select: {
               id: true,
-              academicYear: { select: { id: true, yearName: true, yearNumber: true } },
+              academicYear: {
+                select: { id: true, yearName: true, yearNumber: true },
+              },
             },
           },
-          season: { select: { id: true, seasonName: true, seasonNumber: true } },
+          season: {
+            select: { id: true, seasonName: true, seasonNumber: true },
+          },
           _count: { select: { subscriptions: true } },
           createdAt: true,
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         skip: pagination.skip,
         take: pagination.take,
       }),
     ]);
-    const durationMap = await this.getCourseDurationsMap(courses.map((course) => course.id));
+    const durationMap = await this.getCourseDurationsMap(
+      courses.map((course) => course.id),
+    );
 
     const universityMap = new Map<
       string,
@@ -562,7 +645,6 @@ export class TeachersService {
                 id: string;
                 name: string;
                 image: string | null;
-                telegramUrl: string | null;
                 instagramUrl: string | null;
               };
               season: { id: string; name: string; number: number } | null;
@@ -573,7 +655,9 @@ export class TeachersService {
     >();
 
     courses.forEach((course) => {
-      const universityKey = course.university ? course.university.id.toString() : 'null';
+      const universityKey = course.university
+        ? course.university.id.toString()
+        : "null";
       if (!universityMap.has(universityKey)) {
         universityMap.set(universityKey, {
           university: course.university
@@ -586,7 +670,9 @@ export class TeachersService {
       const universityEntry = universityMap.get(universityKey);
       if (!universityEntry) return;
 
-      const yearKey = course.collegeYear?.academicYear ? course.collegeYear.academicYear.id.toString() : 'null';
+      const yearKey = course.collegeYear?.academicYear
+        ? course.collegeYear.academicYear.id.toString()
+        : "null";
       if (!universityEntry.years.has(yearKey)) {
         universityEntry.years.set(yearKey, {
           year: course.collegeYear?.academicYear
@@ -613,17 +699,24 @@ export class TeachersService {
         status: course.status,
         createdAt: course.createdAt,
         studentsCount: course._count.subscriptions,
-        college: course.college ? { id: course.college.id, name: course.college.name } : null,
-        department: course.department ? { id: course.department.id, name: course.department.name } : null,
+        college: course.college
+          ? { id: course.college.id, name: course.college.name }
+          : null,
+        department: course.department
+          ? { id: course.department.id, name: course.department.name }
+          : null,
         teacher: {
           id: teacher.id,
           name: teacher.name,
           image: teacher.image ?? null,
-          telegramUrl: teacher.telegramUrl ?? null,
           instagramUrl: teacher.instagramUrl ?? null,
         },
         season: course.season
-          ? { id: course.season.id, name: course.season.seasonName, number: course.season.seasonNumber }
+          ? {
+              id: course.season.id,
+              name: course.season.seasonName,
+              number: course.season.seasonNumber,
+            }
           : null,
       });
     });
@@ -642,8 +735,6 @@ export class TeachersService {
       },
     };
   }
-
-  
 
   async listAllowedSubjects(teacherId: string) {
     await this.getTeacherById(teacherId);
@@ -664,14 +755,18 @@ export class TeachersService {
             collegeYear: {
               select: {
                 id: true,
-                academicYear: { select: { id: true, yearName: true, yearNumber: true } },
+                academicYear: {
+                  select: { id: true, yearName: true, yearNumber: true },
+                },
               },
             },
-            season: { select: { id: true, seasonName: true, seasonNumber: true } },
+            season: {
+              select: { id: true, seasonName: true, seasonNumber: true },
+            },
           },
         },
       },
-      orderBy: [{ subject: { subjectName: 'asc' } }],
+      orderBy: [{ subject: { subjectName: "asc" } }],
     });
 
     return {
@@ -743,7 +838,10 @@ export class TeachersService {
     return this.getTeacherCoursesRevenue(teacher.id, query);
   }
 
-  async getTeacherCoursesRevenue(teacherId: string, query: RevenuePeriodQueryDto = {}) {
+  async getTeacherCoursesRevenue(
+    teacherId: string,
+    query: RevenuePeriodQueryDto = {},
+  ) {
     const teacher = await this.getTeacherById(teacherId);
 
     const courses = await this.prisma.course.findMany({
@@ -757,7 +855,7 @@ export class TeachersService {
         isCompleted: true,
         teacherPercentage: true,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     const courseIds = courses.map((course) => course.id);
@@ -765,7 +863,12 @@ export class TeachersService {
       { teacherId, ...query },
       courses.map((course) => ({ id: course.id, name: course.name })),
     );
-    const hasPeriod = Boolean(query.dateFrom || query.dateTo || query.year !== undefined || query.month !== undefined);
+    const hasPeriod = Boolean(
+      query.dateFrom ||
+      query.dateTo ||
+      query.year !== undefined ||
+      query.month !== undefined,
+    );
     const allTimeInvoicePromise = hasPeriod
       ? this.revenueService.buildInvoice(
           { teacherId },
@@ -773,12 +876,18 @@ export class TeachersService {
         )
       : invoicePromise;
 
-    const [invoice, allTimeInvoice, ratingsByCourse, withdrawals, withdrawnAgg] = await Promise.all([
+    const [
+      invoice,
+      allTimeInvoice,
+      ratingsByCourse,
+      withdrawals,
+      withdrawnAgg,
+    ] = await Promise.all([
       invoicePromise,
       allTimeInvoicePromise,
       courseIds.length
         ? this.prisma.courseRating.groupBy({
-            by: ['courseId'],
+            by: ["courseId"],
             where: { courseId: { in: courseIds } },
             _avg: { rating: true },
             _count: { _all: true },
@@ -786,21 +895,27 @@ export class TeachersService {
         : Promise.resolve([]),
       this.prisma.teacherWithdrawal.findMany({
         where: { teacherId },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
       }),
       this.prisma.teacherWithdrawal.aggregate({
         where: {
           teacherId,
-          status: 'APPROVED',
+          status: "APPROVED",
         },
         _sum: { amount: true },
       }),
     ]);
 
-    const ratingsMap = new Map<string, { average: number; ratersCount: number }>(
+    const ratingsMap = new Map<
+      string,
+      { average: number; ratersCount: number }
+    >(
       ratingsByCourse.map((item) => [
         item.courseId,
-        { average: this.toNumber(item._avg.rating), ratersCount: item._count._all },
+        {
+          average: this.toNumber(item._avg.rating),
+          ratersCount: item._count._all,
+        },
       ]),
     );
 
@@ -826,7 +941,9 @@ export class TeachersService {
           publishedAt: course?.createdAt ?? null,
           expiresAt: course?.expiresAt ?? null,
           price: this.roundCurrency(
-            course ? this.toNumber(course.price) : (courseInvoice.lineItems[0]?.coursePrice ?? 0),
+            course
+              ? this.toNumber(course.price)
+              : (courseInvoice.lineItems[0]?.coursePrice ?? 0),
           ),
           isCompleted: course?.isCompleted ?? false,
         },
@@ -849,7 +966,9 @@ export class TeachersService {
     const teacherEarnings = allTimeInvoice.summary.teacherRevenue;
     const withdrawnAmount = this.toNumber(withdrawnAgg._sum.amount);
     const remainingAmount = Math.max(0, teacherEarnings - withdrawnAmount);
-    const withdrawalCount = withdrawals.filter((w) => w.status === 'APPROVED').length;
+    const withdrawalCount = withdrawals.filter(
+      (w) => w.status === "APPROVED",
+    ).length;
 
     return {
       teacher: {
@@ -873,9 +992,15 @@ export class TeachersService {
     };
   }
 
-  async getTeacherRevenueByPeriod(teacherId: string, query: RevenuePeriodQueryDto = {}) {
+  async getTeacherRevenueByPeriod(
+    teacherId: string,
+    query: RevenuePeriodQueryDto = {},
+  ) {
     const teacher = await this.getTeacherById(teacherId);
-    const transactions = await this.revenueService.findTransactions({ teacherId, ...query });
+    const transactions = await this.revenueService.findTransactions({
+      teacherId,
+      ...query,
+    });
 
     // Group by year and month
     const yearsMap = new Map<
@@ -891,15 +1016,16 @@ export class TeachersService {
       >
     >();
 
-    const periodFormatter = new Intl.DateTimeFormat('en', {
-      timeZone: 'Asia/Damascus',
-      year: 'numeric',
-      month: 'long',
+    const periodFormatter = new Intl.DateTimeFormat("en", {
+      timeZone: "Asia/Damascus",
+      year: "numeric",
+      month: "long",
     });
     transactions.forEach((transaction) => {
       const parts = periodFormatter.formatToParts(transaction.purchasedAt);
-      const year = Number(parts.find((part) => part.type === 'year')?.value);
-      const monthName = parts.find((part) => part.type === 'month')?.value ?? '';
+      const year = Number(parts.find((part) => part.type === "year")?.value);
+      const monthName =
+        parts.find((part) => part.type === "month")?.value ?? "";
       const month = new Date(`${monthName} 1, 2000`).getMonth();
 
       if (!yearsMap.has(year)) {
@@ -954,29 +1080,33 @@ export class TeachersService {
     return this.getTeacherWithdrawals(teacher.id, params);
   }
 
-  async getTeacherWithdrawals(teacherId: string, params?: { page?: number; limit?: number }) {
+  async getTeacherWithdrawals(
+    teacherId: string,
+    params?: { page?: number; limit?: number },
+  ) {
     await this.getTeacherById(teacherId);
     const pagination = this.normalizePagination(params?.page, params?.limit);
 
-    const [total, withdrawals, withdrawnAgg, teacherEarnings] = await Promise.all([
-      this.prisma.teacherWithdrawal.count({
-        where: { teacherId },
-      }),
-      this.prisma.teacherWithdrawal.findMany({
-        where: { teacherId },
-        orderBy: { createdAt: 'desc' },
-        skip: pagination.skip,
-        take: pagination.take,
-      }),
-      this.prisma.teacherWithdrawal.aggregate({
-        where: {
-          teacherId,
-          status: 'APPROVED',
-        },
-        _sum: { amount: true },
-      }),
-      this.getTeacherEarningsTotal(teacherId),
-    ]);
+    const [total, withdrawals, withdrawnAgg, teacherEarnings] =
+      await Promise.all([
+        this.prisma.teacherWithdrawal.count({
+          where: { teacherId },
+        }),
+        this.prisma.teacherWithdrawal.findMany({
+          where: { teacherId },
+          orderBy: { createdAt: "desc" },
+          skip: pagination.skip,
+          take: pagination.take,
+        }),
+        this.prisma.teacherWithdrawal.aggregate({
+          where: {
+            teacherId,
+            status: "APPROVED",
+          },
+          _sum: { amount: true },
+        }),
+        this.getTeacherEarningsTotal(teacherId),
+      ]);
 
     const withdrawnAmount = this.toNumber(withdrawnAgg._sum.amount);
     const remainingAmount = Math.max(0, teacherEarnings - withdrawnAmount);
@@ -1009,7 +1139,7 @@ export class TeachersService {
     await this.getTeacherById(teacherId);
 
     if (!Number.isFinite(amount) || amount <= 0) {
-      throw new BadRequestException('قيمة السحب يجب أن تكون أكبر من صفر');
+      throw new BadRequestException("قيمة السحب يجب أن تكون أكبر من صفر");
     }
 
     const [teacherEarnings, withdrawnAgg] = await Promise.all([
@@ -1017,7 +1147,7 @@ export class TeachersService {
       this.prisma.teacherWithdrawal.aggregate({
         where: {
           teacherId,
-          status: 'APPROVED',
+          status: "APPROVED",
         },
         _sum: { amount: true },
       }),
@@ -1026,14 +1156,14 @@ export class TeachersService {
     const withdrawnAmount = this.toNumber(withdrawnAgg._sum.amount);
     const remainingAmount = Math.max(0, teacherEarnings - withdrawnAmount);
     if (amount > remainingAmount) {
-      throw new BadRequestException('قيمة السحب أكبر من الرصيد المتاح');
+      throw new BadRequestException("قيمة السحب أكبر من الرصيد المتاح");
     }
 
     let createdAt: Date | undefined;
     if (withdrawnAt) {
       createdAt = new Date(withdrawnAt);
       if (Number.isNaN(createdAt.getTime())) {
-        throw new BadRequestException('تاريخ السحب غير صالح');
+        throw new BadRequestException("تاريخ السحب غير صالح");
       }
     }
 
@@ -1041,7 +1171,7 @@ export class TeachersService {
       data: {
         teacherId,
         amount: amount as any,
-        status: 'APPROVED',
+        status: "APPROVED",
         ...(createdAt ? { createdAt } : {}),
       },
     });
@@ -1056,5 +1186,3 @@ export class TeachersService {
     };
   }
 }
-
-

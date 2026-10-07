@@ -476,7 +476,6 @@ describe('LecturesService media links and question ordering', () => {
               name: 'Teacher',
               description: null,
               image: null,
-              telegramUrl: null,
               instagramUrl: null,
               _count: { teacherLikes: 0 },
             },

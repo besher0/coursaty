@@ -1,54 +1,48 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString, Matches } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { IsEnum, IsOptional, IsString, Matches } from "class-validator";
 
 export enum UserGender {
-  MALE = 'MALE',
-  FEMALE = 'FEMALE',
+  MALE = "MALE",
+  FEMALE = "FEMALE",
 }
 
 export class UpdateProfileDto {
   // User fields
-  @ApiPropertyOptional({ enum: UserGender, description: 'User gender' })
+  @ApiPropertyOptional({ enum: UserGender, description: "User gender" })
   @IsEnum(UserGender)
   @IsOptional()
   gender?: UserGender;
 
-  @ApiPropertyOptional({ description: 'FCM token for push notifications' })
+  @ApiPropertyOptional({ description: "FCM token for push notifications" })
   @IsString()
   @IsOptional()
   fcmToken?: string;
 
-  @ApiPropertyOptional({ description: 'Phone number' })
+  @ApiPropertyOptional({ description: "Phone number" })
   @IsString()
   @IsOptional()
-  @Matches(/^\d{10}$/, { message: 'phone must be exactly 10 digits' })
+  @Matches(/^\d{10}$/, { message: "phone must be exactly 10 digits" })
   phone?: string;
 
   // Student fields (optional, only for students)
-  @ApiPropertyOptional({ description: 'Student name' })
+  @ApiPropertyOptional({ description: "Student name" })
   @IsString()
   @IsOptional()
   name?: string;
 
   // Teacher fields (optional, only for teachers)
-  @ApiPropertyOptional({ description: 'Teacher description' })
+  @ApiPropertyOptional({ description: "Teacher description" })
   @IsString()
   @IsOptional()
   description?: string;
 
-  @ApiPropertyOptional({ description: 'Teacher image URL' })
+  @ApiPropertyOptional({ description: "Teacher image URL" })
   @IsString()
   @IsOptional()
   image?: string;
 
-  @ApiPropertyOptional({ description: 'Teacher Telegram URL' })
-  @IsString()
-  @IsOptional()
-  telegramUrl?: string;
-
-  @ApiPropertyOptional({ description: 'Teacher Instagram URL' })
+  @ApiPropertyOptional({ description: "Teacher Instagram URL" })
   @IsString()
   @IsOptional()
   instagramUrl?: string;
-
 }

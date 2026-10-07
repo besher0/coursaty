@@ -1,6 +1,15 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsDateString, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { Transform } from "class-transformer";
+import {
+  IsBoolean,
+  IsDateString,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  Min,
+} from "class-validator";
 
 export class CreateCourseDto {
   @ApiProperty()
@@ -13,17 +22,19 @@ export class CreateCourseDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ description: 'Course image URL' })
+  @ApiPropertyOptional({ description: "Course image URL" })
   @IsOptional()
   @IsString()
   imageUrl?: string;
 
-  @ApiPropertyOptional({ description: 'Required only for ADMIN; TEACHER taken from token (UUID)' })
+  @ApiPropertyOptional({
+    description: "Required only for ADMIN; TEACHER taken from token (UUID)",
+  })
   @IsOptional()
   @IsUUID()
   teacherId?: string;
 
-  @ApiProperty({ description: 'Required subject/program ID (UUID)' })
+  @ApiProperty({ description: "Required subject/program ID (UUID)" })
   @IsUUID()
   subjectId: string;
 
@@ -52,7 +63,7 @@ export class CreateCourseDto {
   @IsUUID()
   departmentId?: string;
 
-  @ApiProperty({ description: 'Course category ID (UUID)' })
+  @ApiProperty({ description: "Course category ID (UUID)" })
   @IsUUID()
   categoryId: string;
 
@@ -62,7 +73,8 @@ export class CreateCourseDto {
   price: number;
 
   @ApiPropertyOptional({
-    description: 'Final course price after discount. Kept under the legacy name for API compatibility.',
+    description:
+      "Final course price after discount. Kept under the legacy name for API compatibility.",
     example: 300,
   })
   @IsOptional()
@@ -70,39 +82,52 @@ export class CreateCourseDto {
   @Min(0)
   courseDiscountPercentage?: number;
 
-  @ApiPropertyOptional({ description: 'Final course price after discount', example: 300 })
+  @ApiPropertyOptional({
+    description: "Final course price after discount",
+    example: 300,
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)
   discountedPrice?: number;
 
-  @ApiPropertyOptional({ default: 0, description: 'Deprecated input. Course duration is auto-calculated from videos in seconds.' })
+  @ApiPropertyOptional({
+    default: 0,
+    description:
+      "Deprecated input. Course duration is auto-calculated from videos in seconds.",
+  })
   @IsOptional()
   @IsNumber()
   duration?: number;
 
-  @ApiPropertyOptional({ default: false, description: 'Whether the course is free' })
+  @ApiPropertyOptional({
+    default: false,
+    description: "Whether the course is free",
+  })
   @IsOptional()
   @IsBoolean()
   isFree?: boolean;
 
-  @ApiPropertyOptional({ default: false, description: 'Whether the course is completed' })
+  @ApiPropertyOptional({
+    default: false,
+    description: "Whether the course is completed",
+  })
   @IsOptional()
   @IsBoolean()
   isCompleted?: boolean;
 
-  @ApiPropertyOptional({ description: 'Course expiry date (ISO string)' })
+  @ApiPropertyOptional({ description: "Course expiry date (ISO string)" })
   @IsOptional()
   @Transform(({ value }) => {
-    if (value === '' || value === null || value === undefined) return undefined;
-    if (typeof value !== 'string') return value;
+    if (value === "" || value === null || value === undefined) return undefined;
+    if (typeof value !== "string") return value;
 
     // Accept inputs like 2026-6-11T00:00:00.000Z by zero-padding month/day.
     const normalized = value.replace(
       /^(\d{4})-(\d{1,2})-(\d{1,2})(T.*)$/,
       (_, year: string, month: string, day: string, rest: string) => {
-        const mm = month.padStart(2, '0');
-        const dd = day.padStart(2, '0');
+        const mm = month.padStart(2, "0");
+        const dd = day.padStart(2, "0");
         return `${year}-${mm}-${dd}${rest}`;
       },
     );
@@ -121,5 +146,10 @@ export class CreateCourseDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  discussionGroupUrl?: string;
+  discussionGroupUrl?: string | null;
+
+  @ApiPropertyOptional({ description: "Course-specific Telegram URL" })
+  @IsOptional()
+  @IsString()
+  telegramUrl?: string | null;
 }

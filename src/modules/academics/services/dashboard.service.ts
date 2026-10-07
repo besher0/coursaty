@@ -1,6 +1,11 @@
-﻿import { Injectable, NotFoundException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
-import { PrismaService } from '@/prisma/prisma.service';
-import { EnrollmentsService } from '@/modules/students/services/enrollments.service';
+﻿import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
+import { PrismaService } from "@/prisma/prisma.service";
+import { EnrollmentsService } from "@/modules/students/services/enrollments.service";
 
 type DashboardGuestFilter = {
   deviceId?: string;
@@ -14,11 +19,15 @@ type DashboardGuestFilter = {
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async resolveGuestFilter(guestFilter?: DashboardGuestFilter): Promise<DashboardGuestFilter> {
+  private async resolveGuestFilter(
+    guestFilter?: DashboardGuestFilter,
+  ): Promise<DashboardGuestFilter> {
     if (guestFilter?.collegeId) return guestFilter;
 
     if (!guestFilter?.deviceId) {
-      throw new BadRequestException('للزائر يجب إرسال deviceId أو collegeId في الفلاتر');
+      throw new BadRequestException(
+        "للزائر يجب إرسال deviceId أو collegeId في الفلاتر",
+      );
     }
 
     const guestPreferenceRepo = (this.prisma as any).guestPreference;
@@ -27,15 +36,17 @@ export class DashboardService {
     });
 
     if (!savedPreference) {
-      throw new BadRequestException('لا يوجد تفضيل محفوظ لهذا الجهاز');
+      throw new BadRequestException("لا يوجد تفضيل محفوظ لهذا الجهاز");
     }
 
     return {
       ...guestFilter,
       universityId: guestFilter.universityId ?? savedPreference.universityId,
       collegeId: savedPreference.collegeId,
-      departmentId: guestFilter.departmentId ?? savedPreference.departmentId ?? undefined,
-      collegeYearId: guestFilter.collegeYearId ?? savedPreference.collegeYearId ?? undefined,
+      departmentId:
+        guestFilter.departmentId ?? savedPreference.departmentId ?? undefined,
+      collegeYearId:
+        guestFilter.collegeYearId ?? savedPreference.collegeYearId ?? undefined,
     };
   }
 
@@ -50,12 +61,15 @@ export class DashboardService {
 
   private activeCourseConstraint(now: Date = new Date()) {
     return {
-      status: 'APPROVED' as const,
+      status: "APPROVED" as const,
       OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
     };
   }
 
-  private withActiveCourseFilter(where: Record<string, any> = {}, now: Date = new Date()) {
+  private withActiveCourseFilter(
+    where: Record<string, any> = {},
+    now: Date = new Date(),
+  ) {
     return {
       AND: [
         where,
@@ -81,7 +95,7 @@ export class DashboardService {
   }
 
   private applyFreeCourseFilter(where: Record<string, any>, isFree?: boolean) {
-    if (typeof isFree !== 'boolean') return where;
+    if (typeof isFree !== "boolean") return where;
 
     const freeClause = this.freeCourseFilterClause();
     if (isFree) return { AND: [where, freeClause] };
@@ -107,7 +121,10 @@ export class DashboardService {
     return items.slice((page - 1) * limit, page * limit);
   }
 
-  private buildTeacherCourseScope(collegeId: string, departmentId?: string | null) {
+  private buildTeacherCourseScope(
+    collegeId: string,
+    departmentId?: string | null,
+  ) {
     if (departmentId) {
       return {
         OR: [
@@ -129,8 +146,13 @@ export class DashboardService {
   }
 
   private async resolveCollegeById(collegeId: string) {
-    const college = await this.prisma.college.findUnique({ where: { id: collegeId } });
-    if (!college) throw new ServiceUnavailableException('لا يوجد تسجيل أكاديمي فعال لهذا الطالب');
+    const college = await this.prisma.college.findUnique({
+      where: { id: collegeId },
+    });
+    if (!college)
+      throw new ServiceUnavailableException(
+        "لا يوجد تسجيل أكاديمي فعال لهذا الطالب",
+      );
     return college;
   }
 
@@ -138,43 +160,51 @@ export class DashboardService {
     user?: { userId: string | number; type: string },
     guestFilter?: DashboardGuestFilter,
   ) {
-  if(user){
-    if (user?.type === 'STUDENT') {
-      const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-      if (!dbUser) throw new NotFoundException('المستخدم غير موجود');
+    if (user) {
+      if (user?.type === "STUDENT") {
+        const dbUser = await this.prisma.user.findUnique({
+          where: { id: String(user.userId) },
+        });
+        if (!dbUser) throw new NotFoundException("المستخدم غير موجود");
 
-      const student = await this.prisma.student.findUnique({
-        where: { id: dbUser.userableId },
-        include: EnrollmentsService.activeEnrollmentInclude(),
-      });
-      if (!student) throw new NotFoundException('الطالب غير موجود');
+        const student = await this.prisma.student.findUnique({
+          where: { id: dbUser.userableId },
+          include: EnrollmentsService.activeEnrollmentInclude(),
+        });
+        if (!student) throw new NotFoundException("الطالب غير موجود");
 
-      const enrollment = student.enrollments?.[0];
-      if (!enrollment) {
-        throw new ServiceUnavailableException('لا يوجد تسجيل أكاديمي فعال لهذا الطالب');
+        const enrollment = student.enrollments?.[0];
+        if (!enrollment) {
+          throw new ServiceUnavailableException(
+            "لا يوجد تسجيل أكاديمي فعال لهذا الطالب",
+          );
+        }
+
+        const college =
+          enrollment.college ??
+          (await this.resolveCollegeById(enrollment.collegeId));
+
+        return {
+          collegeId: enrollment.collegeId,
+          college,
+          departmentId: enrollment.departmentId,
+          collegeYearId: enrollment.collegeYearId,
+        };
       }
-
-      const college = enrollment.college ?? (await this.resolveCollegeById(enrollment.collegeId));
-
-      return {
-        collegeId: enrollment.collegeId,
-        college,
-        departmentId: enrollment.departmentId,
-        collegeYearId: enrollment.collegeYearId,
-      };    }
-  }
+    }
     const resolvedGuestFilter = await this.resolveGuestFilter(guestFilter);
 
     const college = await this.prisma.college.findUnique({
       where: { id: String(resolvedGuestFilter.collegeId) },
     });
-    if (!college) throw new NotFoundException('الكلية غير موجودة');
+    if (!college) throw new NotFoundException("الكلية غير موجودة");
 
     if (
       resolvedGuestFilter.universityId &&
-      college.universityId.toString() !== String(resolvedGuestFilter.universityId)
+      college.universityId.toString() !==
+        String(resolvedGuestFilter.universityId)
     ) {
-      throw new BadRequestException('الكلية لا تتبع للجامعة المحددة');
+      throw new BadRequestException("الكلية لا تتبع للجامعة المحددة");
     }
 
     if (resolvedGuestFilter.departmentId) {
@@ -182,9 +212,9 @@ export class DashboardService {
         where: { id: String(resolvedGuestFilter.departmentId) },
       });
 
-      if (!department) throw new NotFoundException('القسم غير موجود');
+      if (!department) throw new NotFoundException("القسم غير موجود");
       if (department.collegeId.toString() !== college.id.toString()) {
-        throw new BadRequestException('القسم لا يتبع للكلية المحددة');
+        throw new BadRequestException("القسم لا يتبع للكلية المحددة");
       }
     }
 
@@ -193,24 +223,29 @@ export class DashboardService {
         where: { id: String(resolvedGuestFilter.collegeYearId) },
       });
 
-      if (!collegeYear) throw new NotFoundException('السنة غير موجودة');
+      if (!collegeYear) throw new NotFoundException("السنة غير موجودة");
       if (collegeYear.collegeId.toString() !== college.id.toString()) {
-        throw new BadRequestException('السنة لا تتبع للكلية المحددة');
+        throw new BadRequestException("السنة لا تتبع للكلية المحددة");
       }
       if (
         resolvedGuestFilter.departmentId &&
         collegeYear.departmentId &&
-        collegeYear.departmentId.toString() !== String(resolvedGuestFilter.departmentId)
+        collegeYear.departmentId.toString() !==
+          String(resolvedGuestFilter.departmentId)
       ) {
-        throw new BadRequestException('السنة لا تتبع للقسم المحدد');
+        throw new BadRequestException("السنة لا تتبع للقسم المحدد");
       }
     }
 
     return {
       collegeId: college.id,
       college,
-      departmentId: resolvedGuestFilter.departmentId ? String(resolvedGuestFilter.departmentId) : null,
-      collegeYearId: resolvedGuestFilter.collegeYearId ? String(resolvedGuestFilter.collegeYearId) : null,
+      departmentId: resolvedGuestFilter.departmentId
+        ? String(resolvedGuestFilter.departmentId)
+        : null,
+      collegeYearId: resolvedGuestFilter.collegeYearId
+        ? String(resolvedGuestFilter.collegeYearId)
+        : null,
     };
   }
 
@@ -242,10 +277,10 @@ export class DashboardService {
             id: course.teacher.id,
             name: course.teacher.name,
             image: course.teacher.image ?? null,
-            telegramUrl: course.teacher.telegramUrl ?? null,
             instagramUrl: course.teacher.instagramUrl ?? null,
           }
         : null,
+      telegramUrl: course.telegramUrl ?? null,
       studentsCount: course._count?.subscriptions ?? 0,
     };
   }
@@ -255,7 +290,9 @@ export class DashboardService {
   }
 
   private async getCourseDurationsMap(courseIds: string[]) {
-    const uniqueCourseIds = Array.from(new Set(courseIds.map((id) => String(id))));
+    const uniqueCourseIds = Array.from(
+      new Set(courseIds.map((id) => String(id))),
+    );
     if (!uniqueCourseIds.length) return new Map<string, number>();
 
     const lectures = await this.prisma.lecture.findMany({
@@ -270,17 +307,27 @@ export class DashboardService {
       },
     });
 
-    const durationMap = new Map<string, number>(uniqueCourseIds.map((id) => [id, 0]));
+    const durationMap = new Map<string, number>(
+      uniqueCourseIds.map((id) => [id, 0]),
+    );
     for (const lecture of lectures) {
-      const lectureDuration = lecture.videos.reduce((sum, video) => sum + (video.duration ?? 0), 0);
-      durationMap.set(lecture.courseId, (durationMap.get(lecture.courseId) ?? 0) + lectureDuration);
+      const lectureDuration = lecture.videos.reduce(
+        (sum, video) => sum + (video.duration ?? 0),
+        0,
+      );
+      durationMap.set(
+        lecture.courseId,
+        (durationMap.get(lecture.courseId) ?? 0) + lectureDuration,
+      );
     }
 
     return durationMap;
   }
 
   private async withCourseDurations<T extends { id: string }>(courses: T[]) {
-    const durationMap = await this.getCourseDurationsMap(courses.map((course) => course.id));
+    const durationMap = await this.getCourseDurationsMap(
+      courses.map((course) => course.id),
+    );
     return courses.map((course) => ({
       ...course,
       resolvedDuration: durationMap.get(course.id) ?? 0,
@@ -294,7 +341,6 @@ export class DashboardService {
       id: string;
       name: string;
       image: string | null;
-      telegramUrl: string | null;
       instagramUrl: string | null;
     }>,
   ) {
@@ -346,7 +392,6 @@ export class DashboardService {
         id: string;
         name: string;
         image: string | null;
-        telegramUrl: string | null;
         instagramUrl: string | null;
       }>
     >();
@@ -365,12 +410,11 @@ export class DashboardService {
               id: true,
               name: true,
               image: true,
-              telegramUrl: true,
               instagramUrl: true,
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
       }),
       this.prisma.teacherSubjectPermission.findMany({
         where: {
@@ -384,12 +428,11 @@ export class DashboardService {
               id: true,
               name: true,
               image: true,
-              telegramUrl: true,
               instagramUrl: true,
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
       }),
     ]);
 
@@ -399,7 +442,6 @@ export class DashboardService {
         id: string;
         name: string;
         image: string | null;
-        telegramUrl: string | null;
         instagramUrl: string | null;
       } | null,
     ) => {
@@ -410,7 +452,6 @@ export class DashboardService {
         id: teacher.id,
         name: teacher.name,
         image: teacher.image ?? null,
-        telegramUrl: teacher.telegramUrl ?? null,
         instagramUrl: teacher.instagramUrl ?? null,
       });
       teachersBySubjectId.set(subjectId, current);
@@ -433,21 +474,26 @@ export class DashboardService {
     defaultCollegeYearId?: string | null,
     options?: { collegeYearId?: string; seasonId?: string },
   ) {
-    const normalizedCollegeYearId = options?.collegeYearId?.trim() || defaultCollegeYearId || null;
+    const normalizedCollegeYearId =
+      options?.collegeYearId?.trim() || defaultCollegeYearId || null;
     const normalizedSeasonId = options?.seasonId?.trim() || null;
 
     if (
       normalizedCollegeYearId &&
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizedCollegeYearId)
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        normalizedCollegeYearId,
+      )
     ) {
-      throw new BadRequestException('collegeYearId يجب أن يكون UUID v4 صالح');
+      throw new BadRequestException("collegeYearId يجب أن يكون UUID v4 صالح");
     }
 
     if (
       normalizedSeasonId &&
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizedSeasonId)
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        normalizedSeasonId,
+      )
     ) {
-      throw new BadRequestException('seasonId يجب أن يكون UUID v4 صالح');
+      throw new BadRequestException("seasonId يجب أن يكون UUID v4 صالح");
     }
 
     if (normalizedCollegeYearId) {
@@ -456,9 +502,9 @@ export class DashboardService {
         select: { id: true, collegeId: true },
       });
 
-      if (!collegeYear) throw new NotFoundException('السنة غير موجودة');
+      if (!collegeYear) throw new NotFoundException("السنة غير موجودة");
       if (collegeYear.collegeId.toString() !== collegeId.toString()) {
-        throw new BadRequestException('السنة لا تتبع للكلية المحددة');
+        throw new BadRequestException("السنة لا تتبع للكلية المحددة");
       }
     }
 
@@ -467,7 +513,7 @@ export class DashboardService {
         where: { id: normalizedSeasonId },
         select: { id: true },
       });
-      if (!season) throw new NotFoundException('الفصل غير موجود');
+      if (!season) throw new NotFoundException("الفصل غير موجود");
     }
 
     return {
@@ -481,18 +527,27 @@ export class DashboardService {
     options?: { collegeYearId?: string; seasonId?: string },
     guestFilter?: DashboardGuestFilter,
   ) {
-    const { collegeId, college, departmentId, collegeYearId } = await this.getStudentCollege(user, guestFilter);
+    const { collegeId, college, departmentId, collegeYearId } =
+      await this.getStudentCollege(user, guestFilter);
     // For this endpoint, only apply explicit year/season filters when provided.
     // Default response should include all years and all seasons for the college scope.
-    const filters = await this.resolveSubjectFiltersForCollege(collegeId, null, options);
+    const filters = await this.resolveSubjectFiltersForCollege(
+      collegeId,
+      null,
+      options,
+    );
 
     const subjects = await this.prisma.subject.findMany({
       where: {
         collegeId,
         isProgram: false,
-        ...(filters.collegeYearId ? { collegeYearId: filters.collegeYearId } : {}),
+        ...(filters.collegeYearId
+          ? { collegeYearId: filters.collegeYearId }
+          : {}),
         ...(filters.seasonId ? { seasonId: filters.seasonId } : {}),
-        ...(departmentId ? { OR: [{ departmentId: null }, { departmentId }] } : {}),
+        ...(departmentId
+          ? { OR: [{ departmentId: null }, { departmentId }] }
+          : {}),
       },
       include: {
         college: true,
@@ -508,15 +563,22 @@ export class DashboardService {
         _count: { select: { courses: true } },
       },
       orderBy: [
-        { collegeYear: { academicYear: { yearNumber: 'asc' } } },
-        { season: { seasonNumber: 'asc' } },
-        { subjectName: 'asc' },
+        { collegeYear: { academicYear: { yearNumber: "asc" } } },
+        { season: { seasonNumber: "asc" } },
+        { subjectName: "asc" },
       ],
     });
 
-    const teachersBySubjectId = await this.getTeachersBySubjectIds(subjects.map((subject) => subject.id));
-    const activeSeasonId = filters.seasonId ? null : await this.getActiveHomeSeasonId();
-    const mappedSubjects = this.preferSeasonFirst(subjects, filters.seasonId ?? activeSeasonId).map((subject) =>
+    const teachersBySubjectId = await this.getTeachersBySubjectIds(
+      subjects.map((subject) => subject.id),
+    );
+    const activeSeasonId = filters.seasonId
+      ? null
+      : await this.getActiveHomeSeasonId();
+    const mappedSubjects = this.preferSeasonFirst(
+      subjects,
+      filters.seasonId ?? activeSeasonId,
+    ).map((subject) =>
       this.buildSubjectCard(
         subject,
         subject.imageUrl ?? null,
@@ -531,7 +593,11 @@ export class DashboardService {
         seasonsMap: Map<
           string,
           {
-            season: { id: string | null; name: string | null; number: number | null };
+            season: {
+              id: string | null;
+              name: string | null;
+              number: number | null;
+            };
             subjects: any[];
           }
         >;
@@ -562,8 +628,8 @@ export class DashboardService {
             number: null,
           };
 
-      const yearKey = year.id ?? 'no-year';
-      const seasonKey = season.id ?? 'no-season';
+      const yearKey = year.id ?? "no-year";
+      const seasonKey = season.id ?? "no-season";
 
       if (!yearsMap.has(yearKey)) {
         yearsMap.set(yearKey, {
@@ -616,7 +682,7 @@ export class DashboardService {
       },
       scope: {
         departmentId: departmentId ?? null,
-        source: user?.type === 'STUDENT' ? 'token' : 'deviceId',
+        source: user?.type === "STUDENT" ? "token" : "deviceId",
         studentCollegeYearId: collegeYearId ?? null,
       },
       filters: {
@@ -633,7 +699,10 @@ export class DashboardService {
     _options?: { collegeYearId?: string; seasonId?: string },
     guestFilter?: DashboardGuestFilter,
   ) {
-    const { collegeId, college } = await this.getStudentCollege(user, guestFilter);
+    const { collegeId, college } = await this.getStudentCollege(
+      user,
+      guestFilter,
+    );
 
     const programs = await this.prisma.subject.findMany({
       where: {
@@ -654,13 +723,15 @@ export class DashboardService {
         _count: { select: { courses: true } },
       },
       orderBy: [
-        { collegeYear: { academicYear: { yearNumber: 'asc' } } },
-        { season: { seasonNumber: 'asc' } },
-        { subjectName: 'asc' },
+        { collegeYear: { academicYear: { yearNumber: "asc" } } },
+        { season: { seasonNumber: "asc" } },
+        { subjectName: "asc" },
       ],
     });
 
-    const teachersByProgramId = await this.getTeachersBySubjectIds(programs.map((program) => program.id));
+    const teachersByProgramId = await this.getTeachersBySubjectIds(
+      programs.map((program) => program.id),
+    );
 
     const filters: { collegeYearId: string | null; seasonId: string | null } = {
       collegeYearId: null,
@@ -707,35 +778,36 @@ export class DashboardService {
             name: true,
           },
         },
-        collegeYear: { 
-          include: { 
-            academicYear: { 
-              select: { 
-                id: true, 
-                yearName: true, 
-                yearNumber: true 
-              } 
-            } 
-          } 
+        collegeYear: {
+          include: {
+            academicYear: {
+              select: {
+                id: true,
+                yearName: true,
+                yearNumber: true,
+              },
+            },
+          },
         },
         season: true,
         college: {
-    select: {
-      id: true,
-      name: true,
-    },
-  },
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
       orderBy: [
-        { collegeYear: { academicYear: { yearNumber: 'asc' } } },
-        { season: { seasonNumber: 'asc' } },
-        { subjectName: 'asc' },
+        { collegeYear: { academicYear: { yearNumber: "asc" } } },
+        { season: { seasonNumber: "asc" } },
+        { subjectName: "asc" },
       ],
     });
 
     const allProgramIds = programs.map((p) => p.id);
     const courseImagesByProgramId = new Map<string, string>();
-    const teachersByProgramId = await this.getTeachersBySubjectIds(allProgramIds);
+    const teachersByProgramId =
+      await this.getTeachersBySubjectIds(allProgramIds);
 
     if (allProgramIds.length > 0) {
       const coursesWithImages = await this.prisma.course.findMany({
@@ -747,21 +819,27 @@ export class DashboardService {
           subjectId: true,
           imageUrl: true,
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
       });
 
       for (const course of coursesWithImages) {
-        if (course.subjectId && course.imageUrl && !courseImagesByProgramId.has(course.subjectId)) {
+        if (
+          course.subjectId &&
+          course.imageUrl &&
+          !courseImagesByProgramId.has(course.subjectId)
+        ) {
           courseImagesByProgramId.set(course.subjectId, course.imageUrl);
         }
       }
     }
 
-    return programs.map((program) => this.buildSubjectCard(
-      program, 
-      program.imageUrl ?? courseImagesByProgramId.get(program.id) ?? null,
-      teachersByProgramId.get(program.id),
-    ));
+    return programs.map((program) =>
+      this.buildSubjectCard(
+        program,
+        program.imageUrl ?? courseImagesByProgramId.get(program.id) ?? null,
+        teachersByProgramId.get(program.id),
+      ),
+    );
   }
 
   async getStudentCollegeInfo(
@@ -770,10 +848,15 @@ export class DashboardService {
     guestFilter?: DashboardGuestFilter,
     options?: { collegeYearId?: string; seasonId?: string },
   ) {
-    const { collegeId, college, departmentId, collegeYearId } = await this.getStudentCollege(user, guestFilter);
+    const { collegeId, college, departmentId, collegeYearId } =
+      await this.getStudentCollege(user, guestFilter);
     const hasExplicitSeasonFilter = Boolean(options?.seasonId?.trim());
     const activeSeasonId = await this.getActiveHomeSeasonId();
-    const filters = await this.resolveSubjectFiltersForCollege(collegeId, collegeYearId, options);
+    const filters = await this.resolveSubjectFiltersForCollege(
+      collegeId,
+      collegeYearId,
+      options,
+    );
     const preferredSeasonId = filters.seasonId ?? activeSeasonId;
 
     // Get ads targeted by department/college/university, plus global ads for all students.
@@ -786,19 +869,21 @@ export class DashboardService {
           ...(departmentId ? [{ departmentId }] : []),
         ],
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     const activeTeacherUsers = await this.prisma.user.findMany({
       where: {
-        userableType: 'TEACHER',
-        status: 'active',
+        userableType: "TEACHER",
+        status: "active",
       },
       select: {
         userableId: true,
       },
     });
-    const activeTeacherIds = activeTeacherUsers.map((teacherUser) => teacherUser.userableId);
+    const activeTeacherIds = activeTeacherUsers.map(
+      (teacherUser) => teacherUser.userableId,
+    );
 
     // Get accepted teachers teaching in this college
     const teachers = await this.prisma.teacher.findMany({
@@ -823,11 +908,15 @@ export class DashboardService {
                 OR: [
                   {
                     college: { id: collegeId },
-                    ...(hasExplicitSeasonFilter && filters.seasonId ? { seasonId: filters.seasonId } : {}),
+                    ...(hasExplicitSeasonFilter && filters.seasonId
+                      ? { seasonId: filters.seasonId }
+                      : {}),
                   },
                   {
                     subject: { collegeId: collegeId },
-                    ...(hasExplicitSeasonFilter && filters.seasonId ? { seasonId: filters.seasonId } : {}),
+                    ...(hasExplicitSeasonFilter && filters.seasonId
+                      ? { seasonId: filters.seasonId }
+                      : {}),
                   },
                 ],
               }),
@@ -838,7 +927,7 @@ export class DashboardService {
       include: {
         _count: { select: { courses: true, teacherLikes: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       take: limit,
     });
 
@@ -853,8 +942,12 @@ export class DashboardService {
 
     const scopedSubjectWhere = {
       ...baseSubjectWhere,
-      ...(filters.collegeYearId ? { collegeYearId: filters.collegeYearId } : {}),
-      ...(hasExplicitSeasonFilter && filters.seasonId ? { seasonId: filters.seasonId } : {}),
+      ...(filters.collegeYearId
+        ? { collegeYearId: filters.collegeYearId }
+        : {}),
+      ...(hasExplicitSeasonFilter && filters.seasonId
+        ? { seasonId: filters.seasonId }
+        : {}),
     };
 
     let subjects = await this.prisma.subject.findMany({
@@ -869,9 +962,9 @@ export class DashboardService {
         season: true,
       },
       orderBy: [
-        { collegeYear: { academicYear: { yearNumber: 'asc' } } },
-        { season: { seasonNumber: 'asc' } },
-        { subjectName: 'asc' },
+        { collegeYear: { academicYear: { yearNumber: "asc" } } },
+        { season: { seasonNumber: "asc" } },
+        { subjectName: "asc" },
       ],
     });
 
@@ -888,9 +981,9 @@ export class DashboardService {
           season: true,
         },
         orderBy: [
-          { collegeYear: { academicYear: { yearNumber: 'asc' } } },
-          { season: { seasonNumber: 'asc' } },
-          { subjectName: 'asc' },
+          { collegeYear: { academicYear: { yearNumber: "asc" } } },
+          { season: { seasonNumber: "asc" } },
+          { subjectName: "asc" },
         ],
         take: 1,
       });
@@ -905,18 +998,24 @@ export class DashboardService {
       const coursesWithImages = await this.prisma.course.findMany({
         where: this.withActiveCourseFilter({
           subjectId: { in: allSubjectIds },
-          ...(hasExplicitSeasonFilter && filters.seasonId ? { seasonId: filters.seasonId } : {}),
+          ...(hasExplicitSeasonFilter && filters.seasonId
+            ? { seasonId: filters.seasonId }
+            : {}),
           imageUrl: { not: null },
         }),
         select: {
           subjectId: true,
           imageUrl: true,
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
       });
 
       for (const course of coursesWithImages) {
-        if (course.subjectId && course.imageUrl && !courseImagesBySubjectId.has(course.subjectId)) {
+        if (
+          course.subjectId &&
+          course.imageUrl &&
+          !courseImagesBySubjectId.has(course.subjectId)
+        ) {
           courseImagesBySubjectId.set(course.subjectId, course.imageUrl);
         }
       }
@@ -930,10 +1029,14 @@ export class DashboardService {
       },
       advertisements,
       teachers,
-      subjects: this.preferSeasonFirst(subjects, preferredSeasonId).map((subject) =>
-        this.buildSubjectCard(subject, subject.imageUrl ?? courseImagesBySubjectId.get(subject.id) ?? null),
+      subjects: this.preferSeasonFirst(subjects, preferredSeasonId).map(
+        (subject) =>
+          this.buildSubjectCard(
+            subject,
+            subject.imageUrl ?? courseImagesBySubjectId.get(subject.id) ?? null,
+          ),
       ),
-      programs: programs.slice(0, limit),  // Take limited programs
+      programs: programs.slice(0, limit), // Take limited programs
     };
   }
 
@@ -946,7 +1049,8 @@ export class DashboardService {
   ) {
     const searchText = query?.trim();
     const normalizedPage = Number.isFinite(page) && page > 0 ? page : 1;
-    const normalizedLimit = Number.isFinite(limit) && limit > 0 ? Math.min(100, limit) : 10;
+    const normalizedLimit =
+      Number.isFinite(limit) && limit > 0 ? Math.min(100, limit) : 10;
 
     if (!searchText) {
       return {
@@ -968,7 +1072,10 @@ export class DashboardService {
       };
     }
 
-    const { collegeId, departmentId } = await this.getStudentCollege(user, guestFilter);
+    const { collegeId, departmentId } = await this.getStudentCollege(
+      user,
+      guestFilter,
+    );
 
     const scopedDepartmentWhere = departmentId
       ? {
@@ -983,7 +1090,7 @@ export class DashboardService {
         {
           subjectName: {
             contains: searchText,
-            mode: 'insensitive' as const,
+            mode: "insensitive" as const,
           },
         },
         {
@@ -991,7 +1098,7 @@ export class DashboardService {
             some: this.withActiveCourseFilter({
               name: {
                 contains: searchText,
-                mode: 'insensitive' as const,
+                mode: "insensitive" as const,
               },
               collegeId,
               ...scopedDepartmentWhere,
@@ -1008,7 +1115,7 @@ export class DashboardService {
         {
           subjectName: {
             contains: searchText,
-            mode: 'insensitive' as const,
+            mode: "insensitive" as const,
           },
         },
         {
@@ -1016,7 +1123,7 @@ export class DashboardService {
             some: this.withActiveCourseFilter({
               name: {
                 contains: searchText,
-                mode: 'insensitive' as const,
+                mode: "insensitive" as const,
               },
               collegeId,
               ...scopedDepartmentWhere,
@@ -1039,9 +1146,9 @@ export class DashboardService {
           season: true,
         },
         orderBy: [
-          { collegeYear: { academicYear: { yearNumber: 'asc' } } },
-          { season: { seasonNumber: 'asc' } },
-          { subjectName: 'asc' },
+          { collegeYear: { academicYear: { yearNumber: "asc" } } },
+          { season: { seasonNumber: "asc" } },
+          { subjectName: "asc" },
         ],
       }),
       this.prisma.subject.findMany({
@@ -1053,9 +1160,9 @@ export class DashboardService {
           season: true,
         },
         orderBy: [
-          { collegeYear: { academicYear: { yearNumber: 'asc' } } },
-          { season: { seasonNumber: 'asc' } },
-          { subjectName: 'asc' },
+          { collegeYear: { academicYear: { yearNumber: "asc" } } },
+          { season: { seasonNumber: "asc" } },
+          { subjectName: "asc" },
         ],
       }),
     ]);
@@ -1067,7 +1174,7 @@ export class DashboardService {
           {
             name: {
               contains: searchText,
-              mode: 'insensitive' as const,
+              mode: "insensitive" as const,
             },
           },
           {
@@ -1123,7 +1230,7 @@ export class DashboardService {
           },
         },
       },
-      orderBy: { name: 'asc' },
+      orderBy: { name: "asc" },
       take: Math.min(50, normalizedLimit),
     });
 
@@ -1140,17 +1247,23 @@ export class DashboardService {
           subjectId: true,
           imageUrl: true,
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
       });
 
       for (const course of coursesWithImages) {
-        if (course.subjectId && course.imageUrl && !courseImagesBySubjectId.has(course.subjectId)) {
+        if (
+          course.subjectId &&
+          course.imageUrl &&
+          !courseImagesBySubjectId.has(course.subjectId)
+        ) {
           courseImagesBySubjectId.set(course.subjectId, course.imageUrl);
         }
       }
     }
 
-    const teachersByProgramId = await this.getTeachersBySubjectIds(programs.map((program) => program.id));
+    const teachersByProgramId = await this.getTeachersBySubjectIds(
+      programs.map((program) => program.id),
+    );
 
     const skip = (normalizedPage - 1) * normalizedLimit;
     const coursesWhere = this.withActiveCourseFilter({
@@ -1162,7 +1275,7 @@ export class DashboardService {
         : {}),
       name: {
         contains: searchText,
-        mode: 'insensitive' as const,
+        mode: "insensitive" as const,
       },
     }) as any;
 
@@ -1177,7 +1290,7 @@ export class DashboardService {
           teacher: true,
           _count: { select: { subscriptions: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         skip,
         take: normalizedLimit,
       }),
@@ -1205,7 +1318,6 @@ export class DashboardService {
         name: teacher.name,
         description: teacher.description,
         image: teacher.image,
-        telegramUrl: teacher.telegramUrl ?? null,
         instagramUrl: teacher.instagramUrl ?? null,
         coursesCount: teacher._count.courses,
         likesCount: teacher._count.teacherLikes,
@@ -1246,16 +1358,20 @@ export class DashboardService {
       collegeYearId: userCollegeYearId,
     } = await this.getStudentCollege(user, guestFilter);
     const activeSeasonId = await this.getActiveHomeSeasonId();
-    const filters = await this.resolveSubjectFiltersForCollege(collegeId, userCollegeYearId, {
-      collegeYearId,
-      seasonId,
-    });
+    const filters = await this.resolveSubjectFiltersForCollege(
+      collegeId,
+      userCollegeYearId,
+      {
+        collegeYearId,
+        seasonId,
+      },
+    );
     const selectedCollegeYearId = filters.collegeYearId ?? undefined;
     const selectedSeasonId = filters.seasonId ?? null;
     const preferredSeasonId = selectedSeasonId ?? activeSeasonId;
     const seasons = await this.prisma.season.findMany({
       where: selectedSeasonId ? { id: selectedSeasonId } : undefined,
-      orderBy: { seasonNumber: 'asc' },
+      orderBy: { seasonNumber: "asc" },
     });
     const orderedSeasons = this.preferSeasonFirst(seasons, preferredSeasonId);
 
@@ -1267,7 +1383,7 @@ export class DashboardService {
         ...(selectedCollegeYearId ? { id: selectedCollegeYearId } : {}),
       },
       include: { academicYear: true },
-      orderBy: { academicYear: { yearNumber: 'asc' } },
+      orderBy: { academicYear: { yearNumber: "asc" } },
     });
 
     // For each year, return all seasons and attach the subjects available in each season.
@@ -1288,7 +1404,10 @@ export class DashboardService {
           include: {
             season: true,
           },
-          orderBy: [{ season: { seasonNumber: 'asc' } }, { subjectName: 'asc' }],
+          orderBy: [
+            { season: { seasonNumber: "asc" } },
+            { subjectName: "asc" },
+          ],
         });
 
         const seasonsArray = orderedSeasons.map((season) => ({
@@ -1332,8 +1451,13 @@ export class DashboardService {
     guestFilter?: DashboardGuestFilter,
   ) {
     const universityId = guestFilter?.universityId?.trim() || null;
-    if (universityId && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(universityId)) {
-      throw new BadRequestException('universityId يجب أن يكون UUID v4 صالح');
+    if (
+      universityId &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        universityId,
+      )
+    ) {
+      throw new BadRequestException("universityId يجب أن يكون UUID v4 صالح");
     }
 
     if (universityId) {
@@ -1341,7 +1465,7 @@ export class DashboardService {
         where: { id: universityId },
         select: { id: true },
       });
-      if (!university) throw new NotFoundException('الجامعة غير موجودة');
+      if (!university) throw new NotFoundException("الجامعة غير موجودة");
 
       return {
         universityId,
@@ -1365,7 +1489,10 @@ export class DashboardService {
     limit: number = 10,
     guestFilter?: DashboardGuestFilter,
   ) {
-    const { universityId, collegeId } = await this.resolveCourseScope(user, guestFilter);
+    const { universityId, collegeId } = await this.resolveCourseScope(
+      user,
+      guestFilter,
+    );
 
     const subject = await this.prisma.subject.findFirst({
       where: {
@@ -1375,7 +1502,7 @@ export class DashboardService {
       },
     });
 
-    if (!subject) throw new NotFoundException('المادة غير موجودة');
+    if (!subject) throw new NotFoundException("المادة غير موجودة");
 
     const skip = (page - 1) * limit;
     const where = this.withActiveCourseFilter({
@@ -1393,7 +1520,7 @@ export class DashboardService {
         teacher: true,
         _count: { select: { subscriptions: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       skip,
       take: limit,
     });
@@ -1430,7 +1557,10 @@ export class DashboardService {
     guestFilter?: DashboardGuestFilter,
     options?: { collegeYearId?: string; seasonId?: string },
   ) {
-    const { universityId, collegeId } = await this.resolveCourseScope(user, guestFilter);
+    const { universityId, collegeId } = await this.resolveCourseScope(
+      user,
+      guestFilter,
+    );
     const validatedFilters = collegeId
       ? await this.resolveSubjectFiltersForCollege(collegeId, null, options)
       : {
@@ -1444,9 +1574,11 @@ export class DashboardService {
 
     if (
       normalizedProgramId &&
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizedProgramId)
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        normalizedProgramId,
+      )
     ) {
-      throw new BadRequestException('id يجب أن يكون UUID v4 صالح');
+      throw new BadRequestException("id يجب أن يكون UUID v4 صالح");
     }
 
     if (!normalizedProgramId) {
@@ -1470,7 +1602,7 @@ export class DashboardService {
       },
     });
 
-    if (!foundProgram) throw new NotFoundException('البرنامج غير موجود');
+    if (!foundProgram) throw new NotFoundException("البرنامج غير موجود");
     program = {
       id: foundProgram.id,
       name: foundProgram.subjectName,
@@ -1481,7 +1613,9 @@ export class DashboardService {
       ...(collegeId ? { collegeId } : {}),
       ...(universityId ? { universityId } : {}),
       subject: { isProgram: true },
-      ...(resolvedCollegeYearId ? { collegeYearId: resolvedCollegeYearId } : {}),
+      ...(resolvedCollegeYearId
+        ? { collegeYearId: resolvedCollegeYearId }
+        : {}),
       ...(resolvedSeasonId ? { seasonId: resolvedSeasonId } : {}),
       subjectId: normalizedProgramId,
     }) as any;
@@ -1496,7 +1630,7 @@ export class DashboardService {
         teacher: true,
         _count: { select: { subscriptions: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       skip,
       take: limit,
     });
@@ -1531,7 +1665,10 @@ export class DashboardService {
     limit: number = 10,
     guestFilter?: DashboardGuestFilter,
   ) {
-    const { universityId, collegeId } = await this.resolveCourseScope(user, guestFilter);
+    const { universityId, collegeId } = await this.resolveCourseScope(
+      user,
+      guestFilter,
+    );
 
     const skip = (page - 1) * limit;
     const where = this.withActiveCourseFilter({
@@ -1550,7 +1687,7 @@ export class DashboardService {
         teacher: true,
         _count: { select: { subscriptions: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       skip,
       take: limit,
     });
@@ -1596,19 +1733,20 @@ export class DashboardService {
 
   async getMixedCourses(
     user: { userId: string | number; type: string },
-    type: 'all' | 'subject' | 'program' = 'all',
+    type: "all" | "subject" | "program" = "all",
     subjectId?: string,
     programId?: string,
     page: number = 1,
     limit: number = 10,
     guestFilter?: DashboardGuestFilter,
   ) {
-    if (type === 'subject') {
-      if (!subjectId) throw new BadRequestException('subjectId مطلوب عند type=subject');
+    if (type === "subject") {
+      if (!subjectId)
+        throw new BadRequestException("subjectId مطلوب عند type=subject");
       return this.getSubjectCourses(user, subjectId, page, limit, guestFilter);
     }
 
-    if (type === 'program') {
+    if (type === "program") {
       return this.getProgramCourses(user, programId, page, limit, guestFilter);
     }
 
@@ -1620,7 +1758,7 @@ export class DashboardService {
     ]);
 
     return {
-      type: 'all',
+      type: "all",
       subjectsCourses,
       programsCourses,
     };
@@ -1630,17 +1768,22 @@ export class DashboardService {
     user: { userId: string | number; type: string },
     guestFilter?: DashboardGuestFilter,
   ) {
-    const { collegeId, college, departmentId } = await this.getStudentCollege(user, guestFilter);
+    const { collegeId, college, departmentId } = await this.getStudentCollege(
+      user,
+      guestFilter,
+    );
     const activeTeacherUsers = await this.prisma.user.findMany({
       where: {
-        userableType: 'TEACHER',
-        status: 'active',
+        userableType: "TEACHER",
+        status: "active",
       },
       select: {
         userableId: true,
       },
     });
-    const activeTeacherIds = activeTeacherUsers.map((teacherUser) => teacherUser.userableId);
+    const activeTeacherIds = activeTeacherUsers.map(
+      (teacherUser) => teacherUser.userableId,
+    );
 
     // Teacher directory should include anyone affiliated with this college,
     // even if they currently have no courses in the active season/year.
@@ -1676,7 +1819,7 @@ export class DashboardService {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     const teacherIds = teachers.map((teacher) => teacher.id);
@@ -1688,7 +1831,7 @@ export class DashboardService {
       }) as any;
 
       const courseCounts = await this.prisma.course.groupBy({
-        by: ['teacherId'],
+        by: ["teacherId"],
         where: scopedCoursesWhere,
         _count: { _all: true },
       });
@@ -1709,7 +1852,6 @@ export class DashboardService {
         name: teacher.name,
         description: teacher.description,
         image: teacher.image,
-        telegramUrl: teacher.telegramUrl ?? null,
         instagramUrl: teacher.instagramUrl ?? null,
         coursesCount: scopedCoursesCount.get(teacher.id) ?? 0,
         likesCount: teacher._count.teacherLikes,
@@ -1720,16 +1862,19 @@ export class DashboardService {
   async getLikedTeachers(user?: { userId: string | number; type: string }) {
     let studentId: string;
 
-    if (user?.type === 'STUDENT') {
-      const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-      if (!dbUser) throw new NotFoundException('المستخدم غير موجود');
+    if (user?.type === "STUDENT") {
+      const dbUser = await this.prisma.user.findUnique({
+        where: { id: String(user.userId) },
+      });
+      if (!dbUser) throw new NotFoundException("المستخدم غير موجود");
       studentId = dbUser.userableId;
     } else {
       const fallbackStudent = await this.prisma.student.findFirst({
         select: { id: true },
-        orderBy: { createdAt: 'asc' },
+        orderBy: { createdAt: "asc" },
       });
-      if (!fallbackStudent) throw new NotFoundException('لا يوجد طالب متاح في النظام');
+      if (!fallbackStudent)
+        throw new NotFoundException("لا يوجد طالب متاح في النظام");
       studentId = fallbackStudent.id;
     }
 
@@ -1750,7 +1895,7 @@ export class DashboardService {
           },
         },
       },
-      orderBy: { teacher: { createdAt: 'desc' } },
+      orderBy: { teacher: { createdAt: "desc" } },
     });
 
     return {
@@ -1759,7 +1904,6 @@ export class DashboardService {
         name: item.teacher.name,
         description: item.teacher.description,
         image: item.teacher.image,
-        telegramUrl: item.teacher.telegramUrl ?? null,
         instagramUrl: item.teacher.instagramUrl ?? null,
         coursesCount: item.teacher._count.courses,
         likesCount: item.teacher._count.teacherLikes,
@@ -1788,13 +1932,13 @@ export class DashboardService {
       },
     });
 
-    if (!teacher) throw new NotFoundException('المدرس غير موجود');
+    if (!teacher) throw new NotFoundException("المدرس غير موجود");
 
     const skip = (page - 1) * limit;
 
     // If requester is a student, restrict courses to student's college and department
     let scopedWhere: any = { teacherId: String(teacherId) };
-    if (user && user.type === 'STUDENT') {
+    if (user && user.type === "STUDENT") {
       const { collegeId, departmentId } = await this.getStudentCollege(user);
       scopedWhere = {
         teacherId: String(teacherId),
@@ -1819,12 +1963,14 @@ export class DashboardService {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       skip,
       take: limit,
     });
 
-    const durationMap = new Map<string, number>(courses.map((course) => [course.id, 0]));
+    const durationMap = new Map<string, number>(
+      courses.map((course) => [course.id, 0]),
+    );
     if (courses.length > 0) {
       const lectures = await this.prisma.lecture.findMany({
         where: { courseId: { in: courses.map((course) => course.id) } },
@@ -1839,8 +1985,14 @@ export class DashboardService {
       });
 
       for (const lecture of lectures) {
-        const lectureDuration = lecture.videos.reduce((sum, video) => sum + (video.duration ?? 0), 0);
-        durationMap.set(lecture.courseId, (durationMap.get(lecture.courseId) ?? 0) + lectureDuration);
+        const lectureDuration = lecture.videos.reduce(
+          (sum, video) => sum + (video.duration ?? 0),
+          0,
+        );
+        durationMap.set(
+          lecture.courseId,
+          (durationMap.get(lecture.courseId) ?? 0) + lectureDuration,
+        );
       }
     }
 
@@ -1871,10 +2023,10 @@ export class DashboardService {
             id: course.teacher.id,
             name: course.teacher.name,
             image: course.teacher.image ?? null,
-            telegramUrl: course.teacher.telegramUrl ?? null,
             instagramUrl: course.teacher.instagramUrl ?? null,
           }
         : null,
+      telegramUrl: course.telegramUrl ?? null,
     }));
 
     return {
@@ -1883,7 +2035,6 @@ export class DashboardService {
         name: teacher.name,
         description: teacher.description,
         image: teacher.image,
-        telegramUrl: teacher.telegramUrl ?? null,
         instagramUrl: teacher.instagramUrl ?? null,
         likesCount: teacher._count.teacherLikes,
         coursesCount: totalCourses,
@@ -1910,7 +2061,10 @@ export class DashboardService {
     isFree?: boolean,
     includeAllYears: boolean = false,
   ) {
-    const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
+    const { collegeId, college, collegeYearId } = await this.getStudentCollege(
+      user,
+      guestFilter,
+    );
     const scopedCollegeYearId = includeAllYears ? null : collegeYearId;
     const activeSeasonId = await this.getActiveHomeSeasonId();
 
@@ -1920,11 +2074,11 @@ export class DashboardService {
         ...(scopedCollegeYearId ? { id: scopedCollegeYearId } : {}),
       },
       include: { academicYear: true },
-      orderBy: { academicYear: { yearNumber: 'asc' } },
+      orderBy: { academicYear: { yearNumber: "asc" } },
     });
 
     const categories = await this.prisma.courseCategory.findMany({
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
 
     const categoriesWithYears = await Promise.all(
@@ -1951,7 +2105,7 @@ export class DashboardService {
                 teacher: true,
                 _count: { select: { subscriptions: true } },
               },
-              orderBy: { createdAt: 'desc' },
+              orderBy: { createdAt: "desc" },
             });
             const paginatedCourses = this.paginateItems(
               this.preferSeasonFirst(courses, activeSeasonId),
@@ -1971,7 +2125,9 @@ export class DashboardService {
                 total,
                 totalPages: Math.ceil(total / limit),
               },
-              courses: paginatedCourses.map((course) => this.buildCourseCard(course)),
+              courses: paginatedCourses.map((course) =>
+                this.buildCourseCard(course),
+              ),
             };
           }),
         );
@@ -2004,7 +2160,10 @@ export class DashboardService {
     isFree?: boolean,
     includeAllYears: boolean = false,
   ) {
-    const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
+    const { collegeId, college, collegeYearId } = await this.getStudentCollege(
+      user,
+      guestFilter,
+    );
     const scopedCollegeYearId = includeAllYears ? null : collegeYearId;
     const activeSeasonId = await this.getActiveHomeSeasonId();
 
@@ -2014,7 +2173,7 @@ export class DashboardService {
         ...(scopedCollegeYearId ? { id: scopedCollegeYearId } : {}),
       },
       include: { academicYear: true },
-      orderBy: { academicYear: { yearNumber: 'asc' } },
+      orderBy: { academicYear: { yearNumber: "asc" } },
     });
 
     const yearsWithCourses = await Promise.all(
@@ -2038,7 +2197,7 @@ export class DashboardService {
             teacher: true,
             _count: { select: { subscriptions: true } },
           },
-          orderBy: { subscriptions: { _count: 'desc' } },
+          orderBy: { subscriptions: { _count: "desc" } },
         });
         const paginatedCourses = this.paginateItems(
           this.preferSeasonFirst(courses, activeSeasonId),
@@ -2058,14 +2217,21 @@ export class DashboardService {
             total,
             totalPages: Math.ceil(total / limit),
           },
-          courses: paginatedCourses.map((course) => this.buildCourseCard(course)),
+          courses: paginatedCourses.map((course) =>
+            this.buildCourseCard(course),
+          ),
         };
       }),
     );
 
     let noYearEntry: {
       year: { id: null; name: null; number: null };
-      pagination: { page: number; limit: number; total: number; totalPages: number };
+      pagination: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+      };
       courses: any[];
     } | null = null;
 
@@ -2080,7 +2246,9 @@ export class DashboardService {
           isFree,
         ),
       ) as any;
-      const noYearTotal = await this.prisma.course.count({ where: noYearWhere });
+      const noYearTotal = await this.prisma.course.count({
+        where: noYearWhere,
+      });
       if (noYearTotal > 0) {
         const noYearCourses = await this.prisma.course.findMany({
           where: noYearWhere,
@@ -2090,7 +2258,7 @@ export class DashboardService {
             teacher: true,
             _count: { select: { subscriptions: true } },
           },
-          orderBy: { subscriptions: { _count: 'desc' } },
+          orderBy: { subscriptions: { _count: "desc" } },
         });
         const paginatedNoYearCourses = this.paginateItems(
           this.preferSeasonFirst(noYearCourses, activeSeasonId),
@@ -2110,7 +2278,9 @@ export class DashboardService {
             total: noYearTotal,
             totalPages: Math.ceil(noYearTotal / limit),
           },
-          courses: paginatedNoYearCourses.map((course) => this.buildCourseCard(course)),
+          courses: paginatedNoYearCourses.map((course) =>
+            this.buildCourseCard(course),
+          ),
         };
       }
     }
@@ -2121,7 +2291,9 @@ export class DashboardService {
         name: college.name,
         universityId: college.universityId,
       },
-      years: noYearEntry ? [...yearsWithCourses, noYearEntry] : yearsWithCourses,
+      years: noYearEntry
+        ? [...yearsWithCourses, noYearEntry]
+        : yearsWithCourses,
     };
   }
 
@@ -2133,7 +2305,10 @@ export class DashboardService {
     isFree?: boolean,
     includeAllYears: boolean = false,
   ) {
-    const { collegeId, college, collegeYearId } = await this.getStudentCollege(user, guestFilter);
+    const { collegeId, college, collegeYearId } = await this.getStudentCollege(
+      user,
+      guestFilter,
+    );
     const scopedCollegeYearId = includeAllYears ? null : collegeYearId;
     const activeSeasonId = await this.getActiveHomeSeasonId();
 
@@ -2143,7 +2318,7 @@ export class DashboardService {
         ...(scopedCollegeYearId ? { id: scopedCollegeYearId } : {}),
       },
       include: { academicYear: true },
-      orderBy: { academicYear: { yearNumber: 'asc' } },
+      orderBy: { academicYear: { yearNumber: "asc" } },
     });
 
     const yearsWithCourses = await Promise.all(
@@ -2166,7 +2341,7 @@ export class DashboardService {
             teacher: true,
             _count: { select: { subscriptions: true } },
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: "desc" },
         });
         const paginatedCourses = this.paginateItems(
           this.preferSeasonFirst(courses, activeSeasonId),
@@ -2186,7 +2361,9 @@ export class DashboardService {
             total,
             totalPages: Math.ceil(total / limit),
           },
-          courses: paginatedCourses.map((course) => this.buildCourseCard(course)),
+          courses: paginatedCourses.map((course) =>
+            this.buildCourseCard(course),
+          ),
         };
       }),
     );
@@ -2213,7 +2390,7 @@ export class DashboardService {
           teacher: true,
           _count: { select: { subscriptions: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
       });
       const paginatedCourses = this.paginateItems(
         this.preferSeasonFirst(courses, activeSeasonId),
@@ -2237,7 +2414,9 @@ export class DashboardService {
       };
     };
 
-    const hasCoursesInScopedFilters = yearsWithCourses.some((yearEntry) => yearEntry.courses.length > 0);
+    const hasCoursesInScopedFilters = yearsWithCourses.some(
+      (yearEntry) => yearEntry.courses.length > 0,
+    );
 
     if (!hasCoursesInScopedFilters) {
       const fallbackYears = await this.prisma.collegeYear.findMany({
@@ -2245,7 +2424,7 @@ export class DashboardService {
           collegeId,
         },
         include: { academicYear: true },
-        orderBy: { academicYear: { yearNumber: 'asc' } },
+        orderBy: { academicYear: { yearNumber: "asc" } },
       });
 
       const fallbackYearsWithCourses = await Promise.all(
@@ -2268,7 +2447,7 @@ export class DashboardService {
               teacher: true,
               _count: { select: { subscriptions: true } },
             },
-            orderBy: { createdAt: 'desc' },
+            orderBy: { createdAt: "desc" },
           });
           const paginatedCourses = this.paginateItems(
             this.preferSeasonFirst(courses, activeSeasonId),
@@ -2288,7 +2467,9 @@ export class DashboardService {
               total,
               totalPages: Math.ceil(total / limit),
             },
-            courses: paginatedCourses.map((course) => this.buildCourseCard(course)),
+            courses: paginatedCourses.map((course) =>
+              this.buildCourseCard(course),
+            ),
           };
         }),
       );
@@ -2301,7 +2482,9 @@ export class DashboardService {
           name: college.name,
           universityId: college.universityId,
         },
-        years: fallbackNoYearEntry ? [...fallbackYearsWithCourses, fallbackNoYearEntry] : fallbackYearsWithCourses,
+        years: fallbackNoYearEntry
+          ? [...fallbackYearsWithCourses, fallbackNoYearEntry]
+          : fallbackYearsWithCourses,
       };
     }
 
@@ -2313,29 +2496,49 @@ export class DashboardService {
         name: college.name,
         universityId: college.universityId,
       },
-      years: noYearEntry ? [...yearsWithCourses, noYearEntry] : yearsWithCourses,
+      years: noYearEntry
+        ? [...yearsWithCourses, noYearEntry]
+        : yearsWithCourses,
     };
   }
 
   async getCoursesUnified(
     user: { userId: string | number; type: string },
-    filter: string = 'all',
+    filter: string = "all",
     categoryId?: string,
     page: number = 1,
     limit: number = 10,
     guestFilter?: DashboardGuestFilter,
   ) {
-    const normalizedFilter = (filter || 'all').trim().toLowerCase();
-    const isFree = normalizedFilter === 'free' ? true : undefined;
-    const includeAllYears = ['all', 'popular', 'free'].includes(normalizedFilter);
+    const normalizedFilter = (filter || "all").trim().toLowerCase();
+    const isFree = normalizedFilter === "free" ? true : undefined;
+    const includeAllYears = ["all", "popular", "free"].includes(
+      normalizedFilter,
+    );
 
-    if (normalizedFilter === 'popular') {
-      return this.getCoursesByPopular(user, page, limit, guestFilter, isFree, includeAllYears);
+    if (normalizedFilter === "popular") {
+      return this.getCoursesByPopular(
+        user,
+        page,
+        limit,
+        guestFilter,
+        isFree,
+        includeAllYears,
+      );
     }
 
     if (categoryId) {
-      const result = await this.getCoursesByCategory(user, page, limit, guestFilter, isFree, includeAllYears);
-      const matched = result.categories.find((c) => c.category.id === categoryId);
+      const result = await this.getCoursesByCategory(
+        user,
+        page,
+        limit,
+        guestFilter,
+        isFree,
+        includeAllYears,
+      );
+      const matched = result.categories.find(
+        (c) => c.category.id === categoryId,
+      );
       const hasCoursesInScopedFilters = Boolean(
         matched?.years?.some((yearEntry) => yearEntry.courses.length > 0),
       );
@@ -2360,20 +2563,27 @@ export class DashboardService {
             _count: { select: { subscriptions: true } },
           },
           orderBy: [
-            { collegeYear: { academicYear: { yearNumber: 'asc' } } },
-            { createdAt: 'desc' },
+            { collegeYear: { academicYear: { yearNumber: "asc" } } },
+            { createdAt: "desc" },
           ],
         });
 
         const groupedByYear = new Map<
           string,
           {
-            year: { id: string | null; name: string | null; number: number | null };
+            year: {
+              id: string | null;
+              name: string | null;
+              number: number | null;
+            };
             courses: any[];
           }
         >();
 
-        for (const course of this.preferSeasonFirst(fallbackCourses, activeSeasonId)) {
+        for (const course of this.preferSeasonFirst(
+          fallbackCourses,
+          activeSeasonId,
+        )) {
           const year = course.collegeYear?.academicYear
             ? {
                 id: course.collegeYear.id,
@@ -2385,14 +2595,16 @@ export class DashboardService {
                 name: null,
                 number: null,
               };
-          const yearKey = year.id ?? 'no-year';
+          const yearKey = year.id ?? "no-year";
           if (!groupedByYear.has(yearKey)) {
             groupedByYear.set(yearKey, {
               year,
               courses: [],
             });
           }
-          groupedByYear.get(yearKey)!.courses.push(this.buildCourseCard(course));
+          groupedByYear
+            .get(yearKey)!
+            .courses.push(this.buildCourseCard(course));
         }
 
         const fallbackYears = Array.from(groupedByYear.values())
@@ -2419,7 +2631,7 @@ export class DashboardService {
 
         return {
           college: result.college,
-          mode: 'category',
+          mode: "category",
           category: matched.category,
           years: fallbackYears,
         };
@@ -2427,12 +2639,19 @@ export class DashboardService {
 
       return {
         college: result.college,
-        mode: 'category',
+        mode: "category",
         category: matched?.category ?? null,
         years: matched?.years ?? [],
       };
     }
 
-    return this.getCoursesByYear(user, page, limit, guestFilter, isFree, includeAllYears);
+    return this.getCoursesByYear(
+      user,
+      page,
+      limit,
+      guestFilter,
+      isFree,
+      includeAllYears,
+    );
   }
 }

@@ -1,18 +1,23 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { $Enums, Prisma } from '@prisma/client';
-import { PrismaService } from '@/prisma/prisma.service';
-import { HttpStatus } from '@nestjs/common';
-import { ApiCodeException } from '@/common/errors/api-code.exception';
-import { FirebaseService } from '@/shared/firebase/firebase.service';
-import { UpdateCodeGroupDto } from '../dtos/update-code-group.dto';
-import { UpdateCodeDto } from '../dtos/update-code.dto';
-import { CreateBulkCodesDto } from '../dtos/create-bulk-codes.dto';
-import { CreateSubscriptionRequestDto } from '../dtos/create-subscription-request.dto';
-import { ListSubscriptionRequestsQueryDto } from '../dtos/list-subscription-requests-query.dto';
-import { ReviewSubscriptionRequestDto } from '../dtos/review-subscription-request.dto';
-import { RejectSubscriptionRequestDto } from '../dtos/reject-subscription-request.dto';
-import { randomInt } from 'crypto';
-import { SystemSettingsService } from '@/modules/system-settings/services/system-settings.service';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { $Enums, Prisma } from "@prisma/client";
+import { PrismaService } from "@/prisma/prisma.service";
+import { HttpStatus } from "@nestjs/common";
+import { ApiCodeException } from "@/common/errors/api-code.exception";
+import { FirebaseService } from "@/shared/firebase/firebase.service";
+import { UpdateCodeGroupDto } from "../dtos/update-code-group.dto";
+import { UpdateCodeDto } from "../dtos/update-code.dto";
+import { CreateBulkCodesDto } from "../dtos/create-bulk-codes.dto";
+import { CreateSubscriptionRequestDto } from "../dtos/create-subscription-request.dto";
+import { ListSubscriptionRequestsQueryDto } from "../dtos/list-subscription-requests-query.dto";
+import { ReviewSubscriptionRequestDto } from "../dtos/review-subscription-request.dto";
+import { RejectSubscriptionRequestDto } from "../dtos/reject-subscription-request.dto";
+import { randomInt } from "crypto";
+import { SystemSettingsService } from "@/modules/system-settings/services/system-settings.service";
 
 @Injectable()
 export class FinancialsService {
@@ -35,7 +40,6 @@ export class FinancialsService {
             name: true,
             description: true,
             image: true,
-            telegramUrl: true,
             instagramUrl: true,
             likesCount: true,
             createdAt: true,
@@ -139,7 +143,7 @@ export class FinancialsService {
             },
           },
           orderBy: {
-            sortOrder: 'asc',
+            sortOrder: "asc",
           },
         },
       },
@@ -167,7 +171,9 @@ export class FinancialsService {
             collegeYear: {
               select: {
                 id: true,
-                academicYear: { select: { id: true, yearName: true, yearNumber: true } },
+                academicYear: {
+                  select: { id: true, yearName: true, yearNumber: true },
+                },
               },
             },
           },
@@ -200,7 +206,13 @@ export class FinancialsService {
    * active enrollment.
    */
   private mapSubscriptionRequestStudent<
-    T extends { student: { id: string; name: string; enrollments?: Array<Record<string, any>> } | null },
+    T extends {
+      student: {
+        id: string;
+        name: string;
+        enrollments?: Array<Record<string, any>>;
+      } | null;
+    },
   >(request: T, systemPaymentQrUrl?: string | null) {
     const course = (request as any).course;
     const requestWithSystemQr =
@@ -245,7 +257,9 @@ export class FinancialsService {
   }) {
     const basePrice = Number(course.price);
     const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
-    const courseDiscountAmount = Number(((basePrice * courseDiscountPct) / 100).toFixed(2));
+    const courseDiscountAmount = Number(
+      ((basePrice * courseDiscountPct) / 100).toFixed(2),
+    );
     const finalAmount = Number((basePrice - courseDiscountAmount).toFixed(2));
 
     return {
@@ -266,10 +280,12 @@ export class FinancialsService {
     try {
       pathname = new URL(receiptUrl).pathname;
     } catch {
-      throw new BadRequestException('رابط إثبات الدفع غير صالح');
+      throw new BadRequestException("رابط إثبات الدفع غير صالح");
     }
-    if (!pathname.includes('/uploads/subscription-receipts/')) {
-      throw new BadRequestException('يجب رفع إثبات الدفع عبر رفع الفواتير المخصص');
+    if (!pathname.includes("/uploads/subscription-receipts/")) {
+      throw new BadRequestException(
+        "يجب رفع إثبات الدفع عبر رفع الفواتير المخصص",
+      );
     }
   }
 
@@ -278,8 +294,8 @@ export class FinancialsService {
     if (!paymentQrUrl) {
       throw new ApiCodeException(
         HttpStatus.BAD_REQUEST,
-        'PAYMENT_QR_MISSING',
-        'QR الدفع غير متوفر حاليًا',
+        "PAYMENT_QR_MISSING",
+        "QR الدفع غير متوفر حاليًا",
       );
     }
     return paymentQrUrl;
@@ -298,15 +314,17 @@ export class FinancialsService {
     const course = await this.prisma.course.findUnique({
       where: { id: courseId },
       include: {
-        teacher: { select: { id: true, name: true, isVisibleToStudents: true } },
+        teacher: {
+          select: { id: true, name: true, isVisibleToStudents: true },
+        },
       },
     });
 
     if (!course || !course.teacher.isVisibleToStudents) {
-      throw new NotFoundException('الكورس غير موجود');
+      throw new NotFoundException("الكورس غير موجود");
     }
-    if (course.status !== 'APPROVED') {
-      throw new BadRequestException('الكورس غير معتمد');
+    if (course.status !== "APPROVED") {
+      throw new BadRequestException("الكورس غير معتمد");
     }
     const snapshot = this.computePriceSnapshot(course);
     if (
@@ -317,33 +335,39 @@ export class FinancialsService {
     ) {
       throw new ApiCodeException(
         HttpStatus.FORBIDDEN,
-        'COURSE_NOT_AVAILABLE_FOR_SUBSCRIPTION',
-        'الكورس غير متاح للاشتراك',
+        "COURSE_NOT_AVAILABLE_FOR_SUBSCRIPTION",
+        "الكورس غير متاح للاشتراك",
       );
     }
     const paymentQrUrl = await this.assertSystemPaymentQrAvailable();
 
-    const activeSubscription = await this.prisma.studentSubscription.findUnique({
-      where: { studentId_courseId: { studentId, courseId: course.id } },
-      select: { expiresAt: true },
-    });
-    if (activeSubscription && (!activeSubscription.expiresAt || activeSubscription.expiresAt.getTime() > now.getTime())) {
+    const activeSubscription = await this.prisma.studentSubscription.findUnique(
+      {
+        where: { studentId_courseId: { studentId, courseId: course.id } },
+        select: { expiresAt: true },
+      },
+    );
+    if (
+      activeSubscription &&
+      (!activeSubscription.expiresAt ||
+        activeSubscription.expiresAt.getTime() > now.getTime())
+    ) {
       throw new ApiCodeException(
         HttpStatus.CONFLICT,
-        'ACTIVE_SUBSCRIPTION_EXISTS',
-        'أنت مشترك بهذا الكورس بالفعل',
+        "ACTIVE_SUBSCRIPTION_EXISTS",
+        "أنت مشترك بهذا الكورس بالفعل",
       );
     }
 
     const pendingRequest = await this.prisma.subscriptionRequest.findFirst({
-      where: { studentId, courseId: course.id, status: 'PENDING' },
+      where: { studentId, courseId: course.id, status: "PENDING" },
       select: { id: true },
     });
     if (pendingRequest) {
       throw new ApiCodeException(
         HttpStatus.CONFLICT,
-        'SUBSCRIPTION_REQUEST_ALREADY_PENDING',
-        'يوجد طلب اشتراك معلق لهذا الكورس',
+        "SUBSCRIPTION_REQUEST_ALREADY_PENDING",
+        "يوجد طلب اشتراك معلق لهذا الكورس",
       );
     }
 
@@ -351,7 +375,9 @@ export class FinancialsService {
   }
 
   private mapSubscribedCourseDetails(
-    subscription: Prisma.StudentSubscriptionGetPayload<{ include: { course: true } }>,
+    subscription: Prisma.StudentSubscriptionGetPayload<{
+      include: { course: true };
+    }>,
   ) {
     return {
       ...subscription.course,
@@ -369,24 +395,38 @@ export class FinancialsService {
     };
   }
 
-  private async resolveStudentContext(user?: { userId: string | number; type: string }) {
-    if (user?.type !== 'STUDENT') {
-      throw new ForbiddenException('يجب تسجيل الدخول بحساب طالب');
+  private async resolveStudentContext(user?: {
+    userId: string | number;
+    type: string;
+  }) {
+    if (user?.type !== "STUDENT") {
+      throw new ForbiddenException("يجب تسجيل الدخول بحساب طالب");
     }
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new NotFoundException('المستخدم غير موجود');
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+    });
+    if (!dbUser) throw new NotFoundException("المستخدم غير موجود");
 
-    const student = await this.prisma.student.findUnique({ where: { id: dbUser.userableId } });
-    if (!student) throw new NotFoundException('الطالب غير موجود');
+    const student = await this.prisma.student.findUnique({
+      where: { id: dbUser.userableId },
+    });
+    if (!student) throw new NotFoundException("الطالب غير موجود");
 
     return { studentId: student.id, student };
   }
 
-  private async getAdminIdFromUser(user?: { userId: string | number; type: string }) {
-    if (!user || user.type !== 'ADMIN') throw new ForbiddenException('صلاحية مدير مطلوبة');
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser || dbUser.userableType !== 'ADMIN') throw new BadRequestException('المدير غير موجود');
+  private async getAdminIdFromUser(user?: {
+    userId: string | number;
+    type: string;
+  }) {
+    if (!user || user.type !== "ADMIN")
+      throw new ForbiddenException("صلاحية مدير مطلوبة");
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+    });
+    if (!dbUser || dbUser.userableType !== "ADMIN")
+      throw new BadRequestException("المدير غير موجود");
     return dbUser.userableId;
   }
 
@@ -434,12 +474,12 @@ export class FinancialsService {
         },
         codes: {
           orderBy: {
-            createdAt: 'desc',
+            createdAt: "desc",
           },
         },
       },
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
     });
 
@@ -451,10 +491,12 @@ export class FinancialsService {
     this.ensureValidCodeExpiry(dto.validForDays, dto.validUntil);
 
     if (dto.batchName !== undefined) data.batchName = dto.batchName;
-    if (dto.discountPercentage !== undefined) data.discountPercentage = dto.discountPercentage as any;
+    if (dto.discountPercentage !== undefined)
+      data.discountPercentage = dto.discountPercentage as any;
     if (dto.isForPrinting !== undefined) data.isForPrinting = dto.isForPrinting;
     if (dto.isPrinted !== undefined) data.isPrinted = dto.isPrinted;
-    if (dto.prefix !== undefined) data.prefix = this.normalizePrefix(dto.prefix) || null;
+    if (dto.prefix !== undefined)
+      data.prefix = this.normalizePrefix(dto.prefix) || null;
     if (dto.usageLimit !== undefined) data.usageLimit = dto.usageLimit;
     if (dto.validForDays !== undefined) {
       data.validForDays = dto.validForDays;
@@ -475,12 +517,16 @@ export class FinancialsService {
         await tx.code.updateMany({
           where: {
             codeGroupId: id,
-            status: 'ACTIVE',
+            status: "ACTIVE",
             usageCount: 0,
           },
           data: {
-            validForDays: dto.validForDays !== undefined ? dto.validForDays : null,
-            validUntil: dto.validUntil !== undefined ? this.parseValidUntil(dto.validUntil) : null,
+            validForDays:
+              dto.validForDays !== undefined ? dto.validForDays : null,
+            validUntil:
+              dto.validUntil !== undefined
+                ? this.parseValidUntil(dto.validUntil)
+                : null,
           },
         });
       }
@@ -506,11 +552,21 @@ export class FinancialsService {
     const validUntilDate = this.parseValidUntil(validUntil);
     const normalizedCodeValue = codeValue?.trim();
 
-    if (normalizedCodeValue && normalizedCodeValue.length !== FinancialsService.FIXED_CODE_LENGTH) {
-      throw new BadRequestException(`الكود يجب أن يتكون من ${FinancialsService.FIXED_CODE_LENGTH} خانات`);
+    if (
+      normalizedCodeValue &&
+      normalizedCodeValue.length !== FinancialsService.FIXED_CODE_LENGTH
+    ) {
+      throw new BadRequestException(
+        `الكود يجب أن يتكون من ${FinancialsService.FIXED_CODE_LENGTH} خانات`,
+      );
     }
-    if (normalizedCodeValue && !FinancialsService.CODE_PATTERN.test(normalizedCodeValue)) {
-      throw new BadRequestException('الكود يجب أن يتكون من 8 خانات (أرقام + أحرف صغيرة فقط)');
+    if (
+      normalizedCodeValue &&
+      !FinancialsService.CODE_PATTERN.test(normalizedCodeValue)
+    ) {
+      throw new BadRequestException(
+        "الكود يجب أن يتكون من 8 خانات (أرقام + أحرف صغيرة فقط)",
+      );
     }
 
     const createWithValue = async (value: string) => {
@@ -539,7 +595,7 @@ export class FinancialsService {
         return await createWithValue(normalizedCodeValue);
       } catch (err) {
         if (this.isUniqueConstraintError(err)) {
-          throw new BadRequestException('الكود موجود مسبقا');
+          throw new BadRequestException("الكود موجود مسبقا");
         }
         throw err;
       }
@@ -568,8 +624,10 @@ export class FinancialsService {
     const prefix = this.normalizePrefix(dto.prefix);
     const randomLength = FinancialsService.FIXED_CODE_LENGTH - prefix.length;
 
-    const group = await this.prisma.codeGroup.findUnique({ where: { id: dto.codeGroupId } });
-    if (!group) throw new NotFoundException('مجموعة الأكواد غير موجودة');
+    const group = await this.prisma.codeGroup.findUnique({
+      where: { id: dto.codeGroupId },
+    });
+    if (!group) throw new NotFoundException("مجموعة الأكواد غير موجودة");
 
     let created = 0;
     let attempts = 0;
@@ -592,13 +650,18 @@ export class FinancialsService {
         validUntil: validUntilDate,
       }));
 
-      const result = await this.prisma.code.createMany({ data, skipDuplicates: true });
+      const result = await this.prisma.code.createMany({
+        data,
+        skipDuplicates: true,
+      });
       created += result.count;
       attempts += 1;
     }
 
     if (created < dto.count) {
-      throw new BadRequestException('تعذر إنشاء عدد كاف من الأكواد الفريدة يرجى المحاولة مجددا');
+      throw new BadRequestException(
+        "تعذر إنشاء عدد كاف من الأكواد الفريدة يرجى المحاولة مجددا",
+      );
     }
 
     await this.prisma.codeGroup.update({
@@ -619,8 +682,9 @@ export class FinancialsService {
     const validUntilDate = this.parseValidUntil(dto.validUntil);
 
     const status = dto.status as $Enums.CodeStatus | undefined;
-    const allowed: $Enums.CodeStatus[] = ['ACTIVE', 'USED', 'INACTIVE'];
-    if (status && !allowed.includes(status)) throw new BadRequestException('حالة غير صالحة');
+    const allowed: $Enums.CodeStatus[] = ["ACTIVE", "USED", "INACTIVE"];
+    if (status && !allowed.includes(status))
+      throw new BadRequestException("حالة غير صالحة");
     const code = await this.prisma.code.update({
       where: { id },
       data: {
@@ -644,29 +708,33 @@ export class FinancialsService {
   }
 
   activateCode(id: string) {
-    return this.updateCode(id, { status: 'ACTIVE' });
+    return this.updateCode(id, { status: "ACTIVE" });
   }
 
   deactivateCode(id: string) {
-    return this.updateCode(id, { status: 'INACTIVE' });
+    return this.updateCode(id, { status: "INACTIVE" });
   }
 
-  private mapCodeWithPrinting<T extends { codeGroup?: { isForPrinting?: boolean | null } | null }>(
-    code: T,
-  ) {
-    const { codeGroup, ...rest } = code as T & { codeGroup?: { isForPrinting?: boolean | null } | null };
+  private mapCodeWithPrinting<
+    T extends { codeGroup?: { isForPrinting?: boolean | null } | null },
+  >(code: T) {
+    const { codeGroup, ...rest } = code as T & {
+      codeGroup?: { isForPrinting?: boolean | null } | null;
+    };
     return {
       ...rest,
       isForPrinting: Boolean(codeGroup?.isForPrinting),
     };
   }
 
-  private mapCodeGroupForList(group: Prisma.CodeGroupGetPayload<{
-    include: {
-      course: { select: { name: true; teacher: { select: { name: true } } } };
-      codes: true;
-    };
-  }>) {
+  private mapCodeGroupForList(
+    group: Prisma.CodeGroupGetPayload<{
+      include: {
+        course: { select: { name: true; teacher: { select: { name: true } } } };
+        codes: true;
+      };
+    }>,
+  ) {
     return {
       id: group.id,
       courseId: group.courseId,
@@ -674,8 +742,8 @@ export class FinancialsService {
       discountPercentage: Number(group.discountPercentage),
       isForPrinting: group.isForPrinting,
       isPrinted: group.isPrinted,
-      courseName: group.course?.name ?? '',
-      teacherName: group.course?.teacher?.name ?? '',
+      courseName: group.course?.name ?? "",
+      teacherName: group.course?.teacher?.name ?? "",
       quantity: group.codes.length,
       validForDays: group.validForDays,
       validUntil: group.validUntil,
@@ -687,37 +755,47 @@ export class FinancialsService {
   }
 
   // Subscriptions with discount logic (code-based only)
-  async subscribeWithCodeValue(user: { userId: string | number; type: string } | undefined, codeValue: string) {
-    if (!codeValue) throw new BadRequestException('حقل codeValue مطلوب');
+  async subscribeWithCodeValue(
+    user: { userId: string | number; type: string } | undefined,
+    codeValue: string,
+  ) {
+    if (!codeValue) throw new BadRequestException("حقل codeValue مطلوب");
     const { studentId, student } = await this.resolveStudentContext(user);
     const now = new Date();
 
     const code = await this.prisma.code.findUnique({ where: { codeValue } });
-    if (!code) throw new BadRequestException('الكود غير صالح');
-    if (code.status !== 'ACTIVE') throw new BadRequestException('الكود غير فعال');
+    if (!code) throw new BadRequestException("الكود غير صالح");
+    if (code.status !== "ACTIVE")
+      throw new BadRequestException("الكود غير فعال");
 
-    const redemptionExpiry = this.getCodeRedemptionExpiry(code.createdAt, code.validUntil);
+    const redemptionExpiry = this.getCodeRedemptionExpiry(
+      code.createdAt,
+      code.validUntil,
+    );
     if (redemptionExpiry.getTime() <= now.getTime()) {
-      throw new BadRequestException('انتهت صلاحية الكود');
+      throw new BadRequestException("انتهت صلاحية الكود");
     }
 
     if (code.allowedUniversityNumber) {
-      const studentUniversityNumber = (
-        await this.prisma.studentEnrollment.findFirst({
-          where: { studentId, isActive: true },
-          select: { universityNumber: true },
-        })
-      )?.universityNumber ?? null;
+      const studentUniversityNumber =
+        (
+          await this.prisma.studentEnrollment.findFirst({
+            where: { studentId, isActive: true },
+            select: { universityNumber: true },
+          })
+        )?.universityNumber ?? null;
       if (!studentUniversityNumber) {
-        throw new BadRequestException('الرقم الجامعي للطالب غير محدد');
+        throw new BadRequestException("الرقم الجامعي للطالب غير محدد");
       }
       if (code.allowedUniversityNumber !== studentUniversityNumber) {
-        throw new BadRequestException('هذا الكود ليس مخصصا لك');
+        throw new BadRequestException("هذا الكود ليس مخصصا لك");
       }
     }
 
-    const group = await this.prisma.codeGroup.findUnique({ where: { id: code.codeGroupId } });
-    if (!group) throw new BadRequestException('مجموعة الأكواد غير موجودة');
+    const group = await this.prisma.codeGroup.findUnique({
+      where: { id: code.codeGroupId },
+    });
+    if (!group) throw new BadRequestException("مجموعة الأكواد غير موجودة");
 
     const courseId = group.courseId;
     const existing = await this.prisma.studentSubscription.findUnique({
@@ -734,27 +812,37 @@ export class FinancialsService {
         college: { select: { id: true, name: true } },
       },
     });
-    if (!course) throw new NotFoundException('الكورس غير موجود');
+    if (!course) throw new NotFoundException("الكورس غير موجود");
     if (!course.teacher.isVisibleToStudents) {
-      throw new NotFoundException('الكورس غير موجود');
+      throw new NotFoundException("الكورس غير موجود");
     }
-    if (course.status !== 'APPROVED') {
-      throw new BadRequestException('الكورس غير معتمد');
+    if (course.status !== "APPROVED") {
+      throw new BadRequestException("الكورس غير معتمد");
     }
     if (course.expiresAt && course.expiresAt.getTime() <= now.getTime()) {
-      throw new BadRequestException('انتهى الكورس ولا يمكن الاشتراك به');
+      throw new BadRequestException("انتهى الكورس ولا يمكن الاشتراك به");
     }
     // Calculate prices with sequential discounts
     const basePrice = Number(course.price);
     const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
-    const courseDiscountAmount = Number(((basePrice * courseDiscountPct) / 100).toFixed(2));
-    const priceAfterCourseDiscount = Number((basePrice - courseDiscountAmount).toFixed(2));
+    const courseDiscountAmount = Number(
+      ((basePrice * courseDiscountPct) / 100).toFixed(2),
+    );
+    const priceAfterCourseDiscount = Number(
+      (basePrice - courseDiscountAmount).toFixed(2),
+    );
 
     const codeDiscountPct = Number(group.discountPercentage);
-    const codeDiscountAmount = Number(((priceAfterCourseDiscount * codeDiscountPct) / 100).toFixed(2));
-    const finalPrice = Number((priceAfterCourseDiscount - codeDiscountAmount).toFixed(2));
+    const codeDiscountAmount = Number(
+      ((priceAfterCourseDiscount * codeDiscountPct) / 100).toFixed(2),
+    );
+    const finalPrice = Number(
+      (priceAfterCourseDiscount - codeDiscountAmount).toFixed(2),
+    );
     const teacherPercentage = Number(course.teacherPercentage ?? 0);
-    const teacherRevenue = Number(((finalPrice * teacherPercentage) / 100).toFixed(2));
+    const teacherRevenue = Number(
+      ((finalPrice * teacherPercentage) / 100).toFixed(2),
+    );
     const platformRevenue = Number((finalPrice - teacherRevenue).toFixed(2));
 
     const newSubscriptionExpiry = this.getSubscriptionExpiryFromCode(
@@ -780,7 +868,7 @@ export class FinancialsService {
     const subscription = await this.prisma.$transaction(async (tx) => {
       if (code.usageLimit !== null && code.usageLimit !== undefined) {
         if (code.usageCount >= code.usageLimit) {
-          throw new BadRequestException('تم الوصول لحد استخدام الكود');
+          throw new BadRequestException("تم الوصول لحد استخدام الكود");
         }
 
         const updated = await tx.code.updateMany({
@@ -794,13 +882,14 @@ export class FinancialsService {
           },
         });
 
-        if (updated.count === 0) throw new BadRequestException('تم الوصول لحد استخدام الكود');
+        if (updated.count === 0)
+          throw new BadRequestException("تم الوصول لحد استخدام الكود");
 
         const newUsageCount = code.usageCount + 1;
         if (newUsageCount >= code.usageLimit) {
           await tx.code.update({
             where: { id: code.id },
-            data: { status: 'USED' },
+            data: { status: "USED" },
           });
         }
       } else {
@@ -813,7 +902,11 @@ export class FinancialsService {
         });
       }
 
-      if (code.usageLimit === 1 || code.usageLimit === undefined || code.usageLimit === null) {
+      if (
+        code.usageLimit === 1 ||
+        code.usageLimit === undefined ||
+        code.usageLimit === null
+      ) {
         // For single-use codes, store the student who used it
         await tx.code.update({
           where: { id: code.id },
@@ -836,7 +929,7 @@ export class FinancialsService {
 
       await tx.revenueTransaction.create({
         data: {
-          type: existing ? 'RENEWAL' : 'INITIAL',
+          type: existing ? "RENEWAL" : "INITIAL",
           studentId,
           studentName: student.name,
           courseId,
@@ -850,7 +943,7 @@ export class FinancialsService {
           codeId: code.id,
           codeGroupId: group.id,
           purchasedAt: now,
-          currency: 'SYP',
+          currency: "SYP",
           coursePrice: basePrice as any,
           courseDiscountPercentage: courseDiscountPct as any,
           courseDiscountAmount: courseDiscountAmount as any,
@@ -886,7 +979,8 @@ export class FinancialsService {
     user: { userId: string | number; type: string } | undefined,
     dto: CreateSubscriptionRequestDto,
   ) {
-    const { studentId, course, paymentQrUrl } = await this.assertSubscribableCourse(user, dto.courseId);
+    const { studentId, course, paymentQrUrl } =
+      await this.assertSubscribableCourse(user, dto.courseId);
 
     // The receipt must come from the secure receipt-specific upload endpoint.
     this.assertReceiptUrlFromSecureUpload(dto.receiptUrl);
@@ -916,7 +1010,7 @@ export class FinancialsService {
 
         await tx.studentCourseInterest.upsert({
           where: { studentId_courseId: { studentId, courseId: course.id } },
-          create: { studentId, courseId: course.id, source: 'MANUAL' },
+          create: { studentId, courseId: course.id, source: "MANUAL" },
           update: {},
         });
 
@@ -926,11 +1020,14 @@ export class FinancialsService {
     } catch (err) {
       // P2002 on the partial unique index: a concurrent request already created
       // a PENDING request for the same student+course.
-      if (this.isUniqueConstraintError(err) && String(err.meta?.target ?? '').includes('pending')) {
+      if (
+        this.isUniqueConstraintError(err) &&
+        String(err.meta?.target ?? "").includes("pending")
+      ) {
         throw new ApiCodeException(
           HttpStatus.CONFLICT,
-          'SUBSCRIPTION_REQUEST_ALREADY_PENDING',
-          'يوجد طلب اشتراك معلق لهذا الكورس',
+          "SUBSCRIPTION_REQUEST_ALREADY_PENDING",
+          "يوجد طلب اشتراك معلق لهذا الكورس",
         );
       }
       throw err;
@@ -942,7 +1039,11 @@ export class FinancialsService {
     user: { userId: string | number; type: string } | undefined,
     dto: Pick<
       CreateSubscriptionRequestDto,
-      'receiptUrl' | 'receiptFileName' | 'receiptMimeType' | 'receiptSizeBytes' | 'note'
+      | "receiptUrl"
+      | "receiptFileName"
+      | "receiptMimeType"
+      | "receiptSizeBytes"
+      | "note"
     >,
   ) {
     const { studentId } = await this.resolveStudentContext(user);
@@ -962,54 +1063,63 @@ export class FinancialsService {
     });
 
     if (!request || request.studentId !== studentId) {
-      throw new NotFoundException('طلب الاشتراك غير موجود');
+      throw new NotFoundException("طلب الاشتراك غير موجود");
     }
-    if (request.status !== 'REJECTED') {
-      throw new BadRequestException('يمكن إعادة إرسال الطلبات المرفوضة فقط');
+    if (request.status !== "REJECTED") {
+      throw new BadRequestException("يمكن إعادة إرسال الطلبات المرفوضة فقط");
     }
     if (!request.course.teacher.isVisibleToStudents) {
-      throw new NotFoundException('الكورس غير موجود');
+      throw new NotFoundException("الكورس غير موجود");
     }
-    if (request.course.status !== 'APPROVED') {
-      throw new BadRequestException('الكورس غير معتمد');
+    if (request.course.status !== "APPROVED") {
+      throw new BadRequestException("الكورس غير معتمد");
     }
     if (request.course.isFree) {
       throw new ApiCodeException(
         HttpStatus.FORBIDDEN,
-        'COURSE_NOT_AVAILABLE_FOR_SUBSCRIPTION',
-        'الكورس غير متاح للاشتراك',
+        "COURSE_NOT_AVAILABLE_FOR_SUBSCRIPTION",
+        "الكورس غير متاح للاشتراك",
       );
     }
     const resubmitSnapshot = this.computePriceSnapshot(request.course);
-    if (!Number.isFinite(resubmitSnapshot.finalAmount) || resubmitSnapshot.finalAmount <= 0) {
+    if (
+      !Number.isFinite(resubmitSnapshot.finalAmount) ||
+      resubmitSnapshot.finalAmount <= 0
+    ) {
       throw new ApiCodeException(
         HttpStatus.FORBIDDEN,
-        'COURSE_NOT_AVAILABLE_FOR_SUBSCRIPTION',
-        'الكورس غير متاح للاشتراك',
+        "COURSE_NOT_AVAILABLE_FOR_SUBSCRIPTION",
+        "الكورس غير متاح للاشتراك",
       );
     }
     const paymentQrUrl = await this.assertSystemPaymentQrAvailable();
-    if (request.course.expiresAt && request.course.expiresAt.getTime() <= now.getTime()) {
-      throw new BadRequestException('انتهى الكورس ولا يمكن الاشتراك به');
+    if (
+      request.course.expiresAt &&
+      request.course.expiresAt.getTime() <= now.getTime()
+    ) {
+      throw new BadRequestException("انتهى الكورس ولا يمكن الاشتراك به");
     }
 
-    const activeSubscription = await this.prisma.studentSubscription.findUnique({
-      where: {
-        studentId_courseId: {
-          studentId,
-          courseId: request.courseId,
+    const activeSubscription = await this.prisma.studentSubscription.findUnique(
+      {
+        where: {
+          studentId_courseId: {
+            studentId,
+            courseId: request.courseId,
+          },
         },
+        select: { expiresAt: true },
       },
-      select: { expiresAt: true },
-    });
+    );
     if (
       activeSubscription &&
-      (!activeSubscription.expiresAt || activeSubscription.expiresAt.getTime() > now.getTime())
+      (!activeSubscription.expiresAt ||
+        activeSubscription.expiresAt.getTime() > now.getTime())
     ) {
       throw new ApiCodeException(
         HttpStatus.CONFLICT,
-        'ACTIVE_SUBSCRIPTION_EXISTS',
-        'أنت مشترك بهذا الكورس بالفعل',
+        "ACTIVE_SUBSCRIPTION_EXISTS",
+        "أنت مشترك بهذا الكورس بالفعل",
       );
     }
 
@@ -1017,7 +1127,7 @@ export class FinancialsService {
       where: {
         studentId,
         courseId: request.courseId,
-        status: 'PENDING',
+        status: "PENDING",
         id: { not: id },
       },
       select: { id: true },
@@ -1025,8 +1135,8 @@ export class FinancialsService {
     if (otherPending) {
       throw new ApiCodeException(
         HttpStatus.CONFLICT,
-        'SUBSCRIPTION_REQUEST_ALREADY_PENDING',
-        'يوجد طلب اشتراك معلق لهذا الكورس',
+        "SUBSCRIPTION_REQUEST_ALREADY_PENDING",
+        "يوجد طلب اشتراك معلق لهذا الكورس",
       );
     }
 
@@ -1037,10 +1147,10 @@ export class FinancialsService {
         where: {
           id,
           studentId,
-          status: 'REJECTED',
+          status: "REJECTED",
         },
         data: {
-          status: 'PENDING',
+          status: "PENDING",
           receiptUrl: dto.receiptUrl,
           receiptFileName: dto.receiptFileName ?? null,
           receiptMimeType: dto.receiptMimeType ?? null,
@@ -1053,12 +1163,16 @@ export class FinancialsService {
       });
 
       if (marked.count === 0) {
-        throw new BadRequestException('تعذر إعادة إرسال الطلب، حدّث الصفحة وحاول مرة أخرى');
+        throw new BadRequestException(
+          "تعذر إعادة إرسال الطلب، حدّث الصفحة وحاول مرة أخرى",
+        );
       }
 
       await this.prisma.studentCourseInterest.upsert({
-        where: { studentId_courseId: { studentId, courseId: request.courseId } },
-        create: { studentId, courseId: request.courseId, source: 'MANUAL' },
+        where: {
+          studentId_courseId: { studentId, courseId: request.courseId },
+        },
+        create: { studentId, courseId: request.courseId, source: "MANUAL" },
         update: {},
       });
 
@@ -1068,7 +1182,7 @@ export class FinancialsService {
       });
 
       if (!pendingRequest) {
-        throw new NotFoundException('طلب الاشتراك غير موجود');
+        throw new NotFoundException("طلب الاشتراك غير موجود");
       }
 
       // Keep the original price snapshot; resubmission only replaces the proof
@@ -1078,8 +1192,8 @@ export class FinancialsService {
       if (this.isUniqueConstraintError(err)) {
         throw new ApiCodeException(
           HttpStatus.CONFLICT,
-          'SUBSCRIPTION_REQUEST_ALREADY_PENDING',
-          'يوجد طلب اشتراك معلق لهذا الكورس',
+          "SUBSCRIPTION_REQUEST_ALREADY_PENDING",
+          "يوجد طلب اشتراك معلق لهذا الكورس",
         );
       }
       throw err;
@@ -1098,10 +1212,12 @@ export class FinancialsService {
         status,
       },
       include: this.subscriptionRequestInclude,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
     const paymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
-    return requests.map((request) => this.mapSubscriptionRequestStudent(request, paymentQrUrl));
+    return requests.map((request) =>
+      this.mapSubscriptionRequestStudent(request, paymentQrUrl),
+    );
   }
 
   async listSubscriptionRequests(query: ListSubscriptionRequestsQueryDto) {
@@ -1112,10 +1228,12 @@ export class FinancialsService {
         courseId: query.courseId,
       },
       include: this.subscriptionRequestInclude,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
     const paymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
-    return requests.map((request) => this.mapSubscriptionRequestStudent(request, paymentQrUrl));
+    return requests.map((request) =>
+      this.mapSubscriptionRequestStudent(request, paymentQrUrl),
+    );
   }
 
   /**
@@ -1126,7 +1244,7 @@ export class FinancialsService {
       where: { id },
       include: this.subscriptionRequestInclude,
     });
-    if (!request) throw new NotFoundException('طلب الاشتراك غير موجود');
+    if (!request) throw new NotFoundException("طلب الاشتراك غير موجود");
     const paymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
     return this.mapSubscriptionRequestStudent(request, paymentQrUrl);
   }
@@ -1146,7 +1264,7 @@ export class FinancialsService {
       include: this.subscriptionRequestInclude,
     });
     if (!request || request.studentId !== studentId) {
-      throw new NotFoundException('طلب الاشتراك غير موجود');
+      throw new NotFoundException("طلب الاشتراك غير موجود");
     }
     const paymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
     return this.mapSubscriptionRequestStudent(request, paymentQrUrl);
@@ -1176,12 +1294,18 @@ export class FinancialsService {
         },
       },
     });
-    if (!request) throw new NotFoundException('طلب الاشتراك غير موجود');
-    if (request.status !== 'PENDING') throw new BadRequestException('تمت مراجعة هذا الطلب مسبقا');
-    if (!request.course.teacher.isVisibleToStudents) throw new NotFoundException('الكورس غير موجود');
-    if (request.course.status !== 'APPROVED') throw new BadRequestException('الكورس غير معتمد');
-    if (request.course.expiresAt && request.course.expiresAt.getTime() <= now.getTime()) {
-      throw new BadRequestException('انتهى الكورس ولا يمكن الاشتراك به');
+    if (!request) throw new NotFoundException("طلب الاشتراك غير موجود");
+    if (request.status !== "PENDING")
+      throw new BadRequestException("تمت مراجعة هذا الطلب مسبقا");
+    if (!request.course.teacher.isVisibleToStudents)
+      throw new NotFoundException("الكورس غير موجود");
+    if (request.course.status !== "APPROVED")
+      throw new BadRequestException("الكورس غير معتمد");
+    if (
+      request.course.expiresAt &&
+      request.course.expiresAt.getTime() <= now.getTime()
+    ) {
+      throw new BadRequestException("انتهى الكورس ولا يمكن الاشتراك به");
     }
 
     const existing = await this.prisma.studentSubscription.findUnique({
@@ -1197,7 +1321,8 @@ export class FinancialsService {
     // current price (prices/discounts can change between request and review).
     // Legacy rows created before the snapshot columns existed default to 0;
     // fall back to the current course price only in that case.
-    const hasSnapshot = Number(request.finalAmount) > 0 || Number(request.basePrice) > 0;
+    const hasSnapshot =
+      Number(request.finalAmount) > 0 || Number(request.basePrice) > 0;
     const snapshot = hasSnapshot
       ? {
           basePrice: Number(request.basePrice),
@@ -1208,8 +1333,12 @@ export class FinancialsService {
       : this.computePriceSnapshot(request.course);
 
     const teacherPercentage = Number(request.course.teacherPercentage ?? 0);
-    const teacherRevenue = Number(((snapshot.finalAmount * teacherPercentage) / 100).toFixed(2));
-    const platformRevenue = Number((snapshot.finalAmount - teacherRevenue).toFixed(2));
+    const teacherRevenue = Number(
+      ((snapshot.finalAmount * teacherPercentage) / 100).toFixed(2),
+    );
+    const platformRevenue = Number(
+      (snapshot.finalAmount - teacherRevenue).toFixed(2),
+    );
 
     // Expiration snapshot: computed once at approval time from the course's
     // current end date, then persisted on the subscription. Later course edits
@@ -1222,15 +1351,16 @@ export class FinancialsService {
 
     const result = await this.prisma.$transaction(async (tx) => {
       const marked = await tx.subscriptionRequest.updateMany({
-        where: { id, status: 'PENDING' },
+        where: { id, status: "PENDING" },
         data: {
-          status: 'APPROVED',
+          status: "APPROVED",
           adminNote: dto.adminNote,
           reviewedById: adminId,
           reviewedAt: now,
         },
       });
-      if (marked.count === 0) throw new BadRequestException('تمت مراجعة هذا الطلب مسبقا');
+      if (marked.count === 0)
+        throw new BadRequestException("تمت مراجعة هذا الطلب مسبقا");
 
       const subscription = await tx.studentSubscription.upsert({
         where: {
@@ -1260,7 +1390,7 @@ export class FinancialsService {
 
       await tx.revenueTransaction.create({
         data: {
-          type: existing ? 'RENEWAL' : 'INITIAL',
+          type: existing ? "RENEWAL" : "INITIAL",
           studentId: request.studentId,
           studentName: request.student.name,
           courseId: request.courseId,
@@ -1274,7 +1404,7 @@ export class FinancialsService {
           codeId: null,
           codeGroupId: null,
           purchasedAt: now,
-          currency: 'SYP',
+          currency: "SYP",
           coursePrice: snapshot.basePrice as any,
           courseDiscountPercentage: snapshot.courseDiscountPct as any,
           courseDiscountAmount: snapshot.courseDiscountAmount as any,
@@ -1311,7 +1441,7 @@ export class FinancialsService {
       request.studentId,
       request.courseId,
       request.id,
-      'APPROVED',
+      "APPROVED",
       dto.adminNote ?? null,
     );
 
@@ -1329,26 +1459,29 @@ export class FinancialsService {
     // Mandatory non-empty reason (also enforced by the DTO, this protects
     // internal callers).
     const reason = dto.adminNote?.trim();
-    if (!reason) throw new BadRequestException('سبب الرفض مطلوب');
+    if (!reason) throw new BadRequestException("سبب الرفض مطلوب");
 
-    const request = await this.prisma.subscriptionRequest.findUnique({ where: { id } });
-    if (!request) throw new NotFoundException('طلب الاشتراك غير موجود');
-    if (request.status !== 'PENDING') throw new BadRequestException('تمت مراجعة هذا الطلب مسبقا');
+    const request = await this.prisma.subscriptionRequest.findUnique({
+      where: { id },
+    });
+    if (!request) throw new NotFoundException("طلب الاشتراك غير موجود");
+    if (request.status !== "PENDING")
+      throw new BadRequestException("تمت مراجعة هذا الطلب مسبقا");
 
     // Concurrency-safe atomic claim: only a request still PENDING transitions
     // to REJECTED. Two admins racing on the same request: exactly one wins.
     const rejectedRequest = await this.prisma.$transaction(async (tx) => {
       const marked = await tx.subscriptionRequest.updateMany({
-        where: { id, status: 'PENDING' },
+        where: { id, status: "PENDING" },
         data: {
-          status: 'REJECTED',
+          status: "REJECTED",
           adminNote: reason,
           reviewedById: adminId,
           reviewedAt: new Date(),
         },
       });
       if (marked.count === 0) {
-        throw new BadRequestException('تمت مراجعة هذا الطلب مسبقا');
+        throw new BadRequestException("تمت مراجعة هذا الطلب مسبقا");
       }
 
       await tx.studentCourseInterest.deleteMany({
@@ -1368,7 +1501,7 @@ export class FinancialsService {
       request.studentId,
       request.courseId,
       request.id,
-      'REJECTED',
+      "REJECTED",
       reason,
     );
 
@@ -1378,8 +1511,8 @@ export class FinancialsService {
   }
 
   private generateRandom(length: number) {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let out = '';
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    let out = "";
     for (let i = 0; i < length; i += 1) {
       out += chars[randomInt(chars.length)];
     }
@@ -1405,26 +1538,35 @@ export class FinancialsService {
       }
     }
 
-    throw new BadRequestException('تعذر توليد كود فريد');
+    throw new BadRequestException("تعذر توليد كود فريد");
   }
 
   private isUniqueConstraintError(err: unknown) {
-    return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+    return (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    );
   }
 
   private ensureValidCodeExpiry(validForDays?: number, validUntil?: string) {
     if (validForDays && validUntil) {
-      throw new BadRequestException('يجب توفير validForDays أو validUntil فقط وليس كلاهما');
+      throw new BadRequestException(
+        "يجب توفير validForDays أو validUntil فقط وليس كلاهما",
+      );
     }
   }
 
   private normalizePrefix(prefix?: string | null) {
-    const normalized = (prefix ?? '').trim();
+    const normalized = (prefix ?? "").trim();
     if (normalized && !/^[a-z0-9]+$/.test(normalized)) {
-      throw new BadRequestException('prefix يجب أن يحتوي على أرقام وأحرف صغيرة فقط');
+      throw new BadRequestException(
+        "prefix يجب أن يحتوي على أرقام وأحرف صغيرة فقط",
+      );
     }
     if (normalized.length >= FinancialsService.FIXED_CODE_LENGTH) {
-      throw new BadRequestException(`prefix يجب أن يكون أقل من ${FinancialsService.FIXED_CODE_LENGTH} خانات`);
+      throw new BadRequestException(
+        `prefix يجب أن يكون أقل من ${FinancialsService.FIXED_CODE_LENGTH} خانات`,
+      );
     }
     return normalized;
   }
@@ -1432,7 +1574,8 @@ export class FinancialsService {
   private parseValidUntil(validUntil?: string) {
     if (!validUntil) return undefined;
     const date = new Date(validUntil);
-    if (Number.isNaN(date.getTime())) throw new BadRequestException('تاريخ validUntil غير صالح');
+    if (Number.isNaN(date.getTime()))
+      throw new BadRequestException("تاريخ validUntil غير صالح");
     return date;
   }
 
@@ -1441,7 +1584,9 @@ export class FinancialsService {
    */
   private getCodeBaseExpiry(createdAt: Date) {
     const baseExpiry = new Date(createdAt);
-    baseExpiry.setMonth(baseExpiry.getMonth() + FinancialsService.CODE_MAX_LIFETIME_MONTHS);
+    baseExpiry.setMonth(
+      baseExpiry.getMonth() + FinancialsService.CODE_MAX_LIFETIME_MONTHS,
+    );
     return baseExpiry;
   }
 
@@ -1449,13 +1594,12 @@ export class FinancialsService {
    * آخر وقت مسموح فيه استخدام الكود لعمل اشتراك جديد.
    * = الحد الأساسي (6 أشهر) مع أخذ validUntil بالاعتبار إن وجد.
    */
-  private getCodeRedemptionExpiry(
-    createdAt: Date,
-    validUntil?: Date | null,
-  ) {
+  private getCodeRedemptionExpiry(createdAt: Date, validUntil?: Date | null) {
     const baseExpiry = this.getCodeBaseExpiry(createdAt);
     if (!validUntil) return baseExpiry;
-    return new Date(Math.min(baseExpiry.getTime(), new Date(validUntil).getTime()));
+    return new Date(
+      Math.min(baseExpiry.getTime(), new Date(validUntil).getTime()),
+    );
   }
 
   /**
@@ -1511,14 +1655,14 @@ export class FinancialsService {
     studentId: string,
     courseId: string,
     requestId: string,
-    status: 'APPROVED' | 'REJECTED',
+    status: "APPROVED" | "REJECTED",
     adminNote?: string | null,
   ) {
     if (!this.firebase) return;
 
     const user = await this.prisma.user.findFirst({
       where: {
-        userableType: 'STUDENT',
+        userableType: "STUDENT",
         userableId: studentId,
         fcmToken: { not: null },
       },
@@ -1526,22 +1670,27 @@ export class FinancialsService {
     });
     if (!user?.fcmToken) return;
 
-    const approved = status === 'APPROVED';
+    const approved = status === "APPROVED";
     await this.firebase.sendPush(
       user.fcmToken,
-      approved ? 'تم قبول طلب الاشتراك' : 'تم رفض طلب الاشتراك',
-      approved ? 'تم قبول الإيصال وتفعيل الاشتراك' : adminNote || 'تم رفض الإيصال',
+      approved ? "تم قبول طلب الاشتراك" : "تم رفض طلب الاشتراك",
+      approved
+        ? "تم قبول الإيصال وتفعيل الاشتراك"
+        : adminNote || "تم رفض الإيصال",
       {
-        type: 'SUBSCRIPTION_REQUEST_REVIEWED',
+        type: "SUBSCRIPTION_REQUEST_REVIEWED",
         courseId,
         requestId,
         status,
-        adminNote: adminNote ?? '',
+        adminNote: adminNote ?? "",
       },
     );
   }
 
-  async getActiveCoursesByUser(user?: { userId: string | number; type: string }) {
+  async getActiveCoursesByUser(user?: {
+    userId: string | number;
+    type: string;
+  }) {
     const { studentId, student } = await this.resolveStudentContext(user);
 
     const now = new Date();
@@ -1555,7 +1704,7 @@ export class FinancialsService {
         },
       },
       include: this.subscriptionCourseInclude,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     return {
@@ -1564,7 +1713,10 @@ export class FinancialsService {
     };
   }
 
-  async getInactiveCoursesByUser(user?: { userId: string | number; type: string }) {
+  async getInactiveCoursesByUser(user?: {
+    userId: string | number;
+    type: string;
+  }) {
     const { studentId, student } = await this.resolveStudentContext(user);
 
     const now = new Date();
@@ -1580,7 +1732,7 @@ export class FinancialsService {
         ],
       },
       include: this.subscriptionCourseInclude,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
     });
 
     return {
@@ -1589,4 +1741,3 @@ export class FinancialsService {
     };
   }
 }
-

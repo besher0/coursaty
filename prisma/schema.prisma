@@ -108,7 +108,6 @@ model Teacher {
   name                String
   description         String?
   image               String?
-  telegramUrl         String?
   instagramUrl        String?
   isVisibleToStudents Boolean  @default(false)
   likesCount          Int      @default(0)
@@ -380,6 +379,7 @@ model Course {
   expiresAt                DateTime?
   introVideoUrl            String?
   discussionGroupUrl       String?
+  telegramUrl              String?
   paymentQrUrl             String?
   status                   CourseStatus @default(PENDING)
   teacherPercentage        Decimal      @default(0.0)

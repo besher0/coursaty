@@ -1,18 +1,24 @@
-import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '@/prisma/prisma.service';
-import { Prisma } from '@prisma/client';
-import { CreateCourseDto } from '../dtos/create-course.dto';
-import { BunnyService } from '../../../shared/bunny/bunny.service';
-import { UpdateCourseDto } from '../dtos/update-course.dto';
-import { DomainException } from '@/common/errors/domain.exception';
-import { randomUUID } from 'crypto';
-import * as path from 'path';
-import { InitTusVideoUploadDto } from '../../lectures/dtos/init-tus-video-upload.dto';
-import { CompleteTusVideoUploadDto } from '../../lectures/dtos/complete-tus-video-upload.dto';
-import { RefreshTusVideoUploadDto } from '../../lectures/dtos/refresh-tus-video-upload.dto';
-import { RevenueService } from '@/modules/revenues/services/revenue.service';
-import { RevenuePeriodQueryDto } from '@/modules/revenues/dtos';
-import { SystemSettingsService } from '@/modules/system-settings/services/system-settings.service';
+import {
+  BadGatewayException,
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { PrismaService } from "@/prisma/prisma.service";
+import { Prisma } from "@prisma/client";
+import { CreateCourseDto } from "../dtos/create-course.dto";
+import { BunnyService } from "../../../shared/bunny/bunny.service";
+import { UpdateCourseDto } from "../dtos/update-course.dto";
+import { DomainException } from "@/common/errors/domain.exception";
+import { randomUUID } from "crypto";
+import * as path from "path";
+import { InitTusVideoUploadDto } from "../../lectures/dtos/init-tus-video-upload.dto";
+import { CompleteTusVideoUploadDto } from "../../lectures/dtos/complete-tus-video-upload.dto";
+import { RefreshTusVideoUploadDto } from "../../lectures/dtos/refresh-tus-video-upload.dto";
+import { RevenueService } from "@/modules/revenues/services/revenue.service";
+import { RevenuePeriodQueryDto } from "@/modules/revenues/dtos";
+import { SystemSettingsService } from "@/modules/system-settings/services/system-settings.service";
 
 @Injectable()
 export class CourseService {
@@ -27,13 +33,18 @@ export class CourseService {
     return Number(value.toFixed(2));
   }
 
-  private getCourseDiscountedPrice(basePrice: number, discountPercentage: number) {
-    return this.roundMoney(Math.max(0, basePrice - (basePrice * discountPercentage) / 100));
+  private getCourseDiscountedPrice(
+    basePrice: number,
+    discountPercentage: number,
+  ) {
+    return this.roundMoney(
+      Math.max(0, basePrice - (basePrice * discountPercentage) / 100),
+    );
   }
 
   async getCourseCategories() {
     const categories = await this.prisma.courseCategory.findMany({
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
 
     return {
@@ -47,7 +58,11 @@ export class CourseService {
     };
   }
 
-  async createCourseCategory(name: string, isProgram?: boolean, sortOrder?: number) {
+  async createCourseCategory(
+    name: string,
+    isProgram?: boolean,
+    sortOrder?: number,
+  ) {
     let resolvedSortOrder = sortOrder;
     if (resolvedSortOrder === undefined) {
       const maxSortOrderResult = await this.prisma.courseCategory.aggregate({
@@ -67,7 +82,12 @@ export class CourseService {
     });
   }
 
-  async updateCourseCategory(id: string, name?: string, isProgram?: boolean, sortOrder?: number) {
+  async updateCourseCategory(
+    id: string,
+    name?: string,
+    isProgram?: boolean,
+    sortOrder?: number,
+  ) {
     return this.prisma.courseCategory.update({
       where: { id },
       data: { name, isProgram, sortOrder },
@@ -80,36 +100,47 @@ export class CourseService {
     });
   }
 
-  async createCourse(dto: CreateCourseDto, user?: { userId: string | number; type: string }) {
+  async createCourse(
+    dto: CreateCourseDto,
+    user?: { userId: string | number; type: string },
+  ) {
     if (!dto.categoryId) {
-      throw new BadRequestException('حقل categoryId مطلوب');
+      throw new BadRequestException("حقل categoryId مطلوب");
     }
 
     if (dto.collegeYearId !== undefined || dto.seasonId !== undefined) {
       throw new DomainException();
     }
 
-    if (dto.subjectId && (dto.universityId !== undefined || dto.collegeId !== undefined || dto.departmentId !== undefined)) {
+    if (
+      dto.subjectId &&
+      (dto.universityId !== undefined ||
+        dto.collegeId !== undefined ||
+        dto.departmentId !== undefined)
+    ) {
       throw new DomainException();
     }
 
     let teacherId: string;
-    if (user?.type === 'TEACHER') {
-      const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-      if (!dbUser) throw new BadRequestException('المستخدم غير موجود');
+    if (user?.type === "TEACHER") {
+      const dbUser = await this.prisma.user.findUnique({
+        where: { id: String(user.userId) },
+      });
+      if (!dbUser) throw new BadRequestException("المستخدم غير موجود");
       teacherId = dbUser.userableId;
     } else {
-      if (!dto.teacherId) throw new BadRequestException('حقل teacherId مطلوب للمدير');
+      if (!dto.teacherId)
+        throw new BadRequestException("حقل teacherId مطلوب للمدير");
       teacherId = await this.resolveTeacherIdForAdmin(String(dto.teacherId));
     }
 
     const category = await this.prisma.courseCategory.findUnique({
       where: { id: String(dto.categoryId) },
     });
-    if (!category) throw new BadRequestException('فئة الكورس غير موجودة');
+    if (!category) throw new BadRequestException("فئة الكورس غير موجودة");
 
     if (category.requiresAcademicLinks && !dto.subjectId) {
-      throw new BadRequestException('حقل subjectId مطلوب لهذه الفئة');
+      throw new BadRequestException("حقل subjectId مطلوب لهذه الفئة");
     }
 
     let universityId: string | null = null;
@@ -124,9 +155,9 @@ export class CourseService {
         include: { college: true },
       });
 
-      if (!subject) throw new BadRequestException('المادة غير موجودة');
+      if (!subject) throw new BadRequestException("المادة غير موجودة");
       if (!subject.isProgram && (!subject.collegeYearId || !subject.seasonId)) {
-        throw new BadRequestException('الهوية الأكاديمية للمادة غير مكتملة');
+        throw new BadRequestException("الهوية الأكاديمية للمادة غير مكتملة");
       }
 
       const permission = await this.prisma.teacherSubjectPermission.findUnique({
@@ -139,20 +170,29 @@ export class CourseService {
       });
 
       if (!permission) {
-        throw new ForbiddenException('لا توجد صلاحية لهذا المدرس على المادة/البرنامج');
+        throw new ForbiddenException(
+          "لا توجد صلاحية لهذا المدرس على المادة/البرنامج",
+        );
       }
 
       collegeId = subject.collegeId;
       universityId = subject.college.universityId;
-      collegeYearId = subject.isProgram ? null : (subject.collegeYearId ?? null);
+      collegeYearId = subject.isProgram
+        ? null
+        : (subject.collegeYearId ?? null);
       seasonId = subject.isProgram ? null : (subject.seasonId ?? null);
       departmentId = subject.isProgram ? null : (subject.departmentId ?? null);
     } else {
       if (!dto.universityId || !dto.collegeId) {
-        throw new BadRequestException('حقلا universityId و collegeId مطلوبان');
+        throw new BadRequestException("حقلا universityId و collegeId مطلوبان");
       }
 
-      await this.ensureTeacherAffiliation(teacherId, dto.universityId, dto.collegeId, dto.departmentId);
+      await this.ensureTeacherAffiliation(
+        teacherId,
+        dto.universityId,
+        dto.collegeId,
+        dto.departmentId,
+      );
 
       universityId = String(dto.universityId);
       collegeId = String(dto.collegeId);
@@ -185,7 +225,8 @@ export class CourseService {
         categoryId: String(dto.categoryId),
         introVideoUrl: dto.introVideoUrl,
         discussionGroupUrl: dto.discussionGroupUrl,
-        status: 'PENDING',
+        telegramUrl: dto.telegramUrl ?? null,
+        status: "PENDING",
         teacherPercentage: 0,
       },
     });
@@ -203,7 +244,7 @@ export class CourseService {
       select: { userableId: true, userableType: true },
     });
 
-    if (user?.userableType === 'TEACHER') {
+    if (user?.userableType === "TEACHER") {
       const mappedTeacher = await this.prisma.teacher.findUnique({
         where: { id: user.userableId },
         select: { id: true },
@@ -211,27 +252,43 @@ export class CourseService {
       if (mappedTeacher) return mappedTeacher.id;
     }
 
-    throw new BadRequestException('teacherId غير صالح. استخدم Teacher.id أو User.id من نوع TEACHER');
+    throw new BadRequestException(
+      "teacherId غير صالح. استخدم Teacher.id أو User.id من نوع TEACHER",
+    );
   }
 
-  private async getAdminIdFromUser(user?: { userId: string | number; type: string }) {
-    if (!user || user.type !== 'ADMIN') throw new ForbiddenException('صلاحية مدير مطلوبة');
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new BadRequestException('المستخدم غير موجود');
+  private async getAdminIdFromUser(user?: {
+    userId: string | number;
+    type: string;
+  }) {
+    if (!user || user.type !== "ADMIN")
+      throw new ForbiddenException("صلاحية مدير مطلوبة");
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+    });
+    if (!dbUser) throw new BadRequestException("المستخدم غير موجود");
     return dbUser.userableId;
   }
 
-  async approveCourse(id: string, teacherPercentage: number, user?: { userId: string | number; type: string }) {
+  async approveCourse(
+    id: string,
+    teacherPercentage: number,
+    user?: { userId: string | number; type: string },
+  ) {
     const adminId = await this.getAdminIdFromUser(user);
 
-    if (Number.isNaN(teacherPercentage) || teacherPercentage < 0 || teacherPercentage > 100) {
-      throw new BadRequestException('نسبة المدرس يجب أن تكون بين 0 و 100');
+    if (
+      Number.isNaN(teacherPercentage) ||
+      teacherPercentage < 0 ||
+      teacherPercentage > 100
+    ) {
+      throw new BadRequestException("نسبة المدرس يجب أن تكون بين 0 و 100");
     }
 
     return this.prisma.course.update({
       where: { id: String(id) },
       data: {
-        status: 'APPROVED',
+        status: "APPROVED",
         teacherPercentage: teacherPercentage as any,
         approvedById: adminId,
         approvedAt: new Date(),
@@ -239,12 +296,15 @@ export class CourseService {
     });
   }
 
-  async rejectCourse(id: string, user?: { userId: string | number; type: string }) {
+  async rejectCourse(
+    id: string,
+    user?: { userId: string | number; type: string },
+  ) {
     const adminId = await this.getAdminIdFromUser(user);
     return this.prisma.course.update({
       where: { id: String(id) },
       data: {
-        status: 'REJECTED',
+        status: "REJECTED",
         teacherPercentage: 0,
         approvedById: adminId,
         approvedAt: new Date(),
@@ -252,7 +312,11 @@ export class CourseService {
     });
   }
 
-  async updateCourse(id: string, dto: UpdateCourseDto, user?: { userId: string | number; type: string }) {
+  async updateCourse(
+    id: string,
+    dto: UpdateCourseDto,
+    user?: { userId: string | number; type: string },
+  ) {
     const raw = dto as Record<string, unknown>;
     if (
       raw.subjectId !== undefined ||
@@ -264,7 +328,7 @@ export class CourseService {
       raw.teacherPercentage !== undefined ||
       raw.approvedById !== undefined ||
       raw.approvedAt !== undefined ||
-      raw.departmentId !== undefined 
+      raw.departmentId !== undefined
     ) {
       throw new DomainException();
     }
@@ -272,15 +336,18 @@ export class CourseService {
     await this.assertCourseOwnership(user, id);
     const data: any = {};
     const discountedPriceInput = this.getDiscountedPriceInput(dto);
-    const needsCurrentPrice = discountedPriceInput !== undefined && dto.price === undefined;
+    const needsCurrentPrice =
+      discountedPriceInput !== undefined && dto.price === undefined;
     const currentPricing = needsCurrentPrice
       ? await this.prisma.course.findUnique({
           where: { id: String(id) },
           select: { price: true },
         })
       : null;
-    if (needsCurrentPrice && !currentPricing) throw new NotFoundException('الكورس غير موجود');
-    const resolvedPrice = dto.price !== undefined ? dto.price : Number(currentPricing?.price ?? 0);
+    if (needsCurrentPrice && !currentPricing)
+      throw new NotFoundException("الكورس غير موجود");
+    const resolvedPrice =
+      dto.price !== undefined ? dto.price : Number(currentPricing?.price ?? 0);
 
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.description !== undefined) data.description = dto.description;
@@ -294,13 +361,19 @@ export class CourseService {
     }
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
     if (dto.isCompleted !== undefined) data.isCompleted = dto.isCompleted;
-    if (dto.expiresAt !== undefined) data.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
+    if (dto.expiresAt !== undefined)
+      data.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
     if (dto.introVideoUrl !== undefined) data.introVideoUrl = dto.introVideoUrl;
-    if (dto.discussionGroupUrl !== undefined) data.discussionGroupUrl = dto.discussionGroupUrl;
+    if (dto.discussionGroupUrl !== undefined)
+      data.discussionGroupUrl = dto.discussionGroupUrl;
+    if (dto.telegramUrl !== undefined) data.telegramUrl = dto.telegramUrl;
     if (dto.categoryId !== undefined) {
-      if (!dto.categoryId) throw new BadRequestException('لا يمكن أن يكون categoryId فارغا');
-      const category = await this.prisma.courseCategory.findUnique({ where: { id: String(dto.categoryId) } });
-      if (!category) throw new BadRequestException('فئة الكورس غير موجودة');
+      if (!dto.categoryId)
+        throw new BadRequestException("لا يمكن أن يكون categoryId فارغا");
+      const category = await this.prisma.courseCategory.findUnique({
+        where: { id: String(dto.categoryId) },
+      });
+      if (!category) throw new BadRequestException("فئة الكورس غير موجودة");
       data.categoryId = String(dto.categoryId);
     }
 
@@ -315,7 +388,8 @@ export class CourseService {
 
       const isCourseExpiryShortened =
         data.expiresAt &&
-        (!currentCourse?.expiresAt || data.expiresAt.getTime() < currentCourse.expiresAt.getTime());
+        (!currentCourse?.expiresAt ||
+          data.expiresAt.getTime() < currentCourse.expiresAt.getTime());
 
       if (isCourseExpiryShortened) {
         await tx.studentSubscription.updateMany({
@@ -330,7 +404,10 @@ export class CourseService {
     return this.getCourseDetails(String(id), user);
   }
 
-  async deleteCourse(id: string, user?: { userId: string | number; type: string }) {
+  async deleteCourse(
+    id: string,
+    user?: { userId: string | number; type: string },
+  ) {
     const courseId = String(id);
     await this.assertCourseOwnership(user, courseId);
 
@@ -338,7 +415,7 @@ export class CourseService {
       where: { id: courseId },
       select: { id: true },
     });
-    if (!course) throw new NotFoundException('الكورس غير موجود');
+    if (!course) throw new NotFoundException("الكورس غير موجود");
 
     return this.prisma.$transaction(async (tx) => {
       const lectures = await tx.lecture.findMany({
@@ -370,23 +447,33 @@ export class CourseService {
       const codeGroupIds = codeGroups.map((group) => group.id);
 
       if (videoIds.length) {
-        await tx.videoInteraction.deleteMany({ where: { videoId: { in: videoIds } } });
-        await tx.videoSegment.deleteMany({ where: { videoId: { in: videoIds } } });
+        await tx.videoInteraction.deleteMany({
+          where: { videoId: { in: videoIds } },
+        });
+        await tx.videoSegment.deleteMany({
+          where: { videoId: { in: videoIds } },
+        });
         await tx.video.deleteMany({ where: { id: { in: videoIds } } });
       }
 
       if (questionIds.length) {
-        await tx.questionOption.deleteMany({ where: { questionId: { in: questionIds } } });
+        await tx.questionOption.deleteMany({
+          where: { questionId: { in: questionIds } },
+        });
         await tx.question.deleteMany({ where: { id: { in: questionIds } } });
       }
 
       if (lectureIds.length) {
-        await tx.lectureFile.deleteMany({ where: { lectureId: { in: lectureIds } } });
+        await tx.lectureFile.deleteMany({
+          where: { lectureId: { in: lectureIds } },
+        });
         await tx.lecture.deleteMany({ where: { id: { in: lectureIds } } });
       }
 
       if (codeGroupIds.length) {
-        await tx.code.deleteMany({ where: { codeGroupId: { in: codeGroupIds } } });
+        await tx.code.deleteMany({
+          where: { codeGroupId: { in: codeGroupIds } },
+        });
         await tx.codeGroup.deleteMany({ where: { id: { in: codeGroupIds } } });
       }
 
@@ -398,7 +485,10 @@ export class CourseService {
     });
   }
 
-  async getCourseWithCounts(id: string, user?: { userId: string | number; type: string }) {
+  async getCourseWithCounts(
+    id: string,
+    user?: { userId: string | number; type: string },
+  ) {
     const course = await this.prisma.course.findUnique({
       where: { id: String(id) },
       include: {
@@ -418,10 +508,16 @@ export class CourseService {
       },
     });
 
-    if (!course) throw new NotFoundException('الكورس غير موجود');
+    if (!course) throw new NotFoundException("الكورس غير موجود");
     await this.assertCourseVisibleToRequester(course, user);
-    const totalVideos = course.lectures.reduce((acc, lec) => acc + (lec._count?.videos ?? 0), 0);
-    const totalFiles = course.lectures.reduce((acc, lec) => acc + (lec._count?.files ?? 0), 0);
+    const totalVideos = course.lectures.reduce(
+      (acc, lec) => acc + (lec._count?.videos ?? 0),
+      0,
+    );
+    const totalFiles = course.lectures.reduce(
+      (acc, lec) => acc + (lec._count?.files ?? 0),
+      0,
+    );
     const duration = await this.getCourseDurationFromVideos(course.id);
     const { teacher: _visibilityTeacher, ...courseData } = course;
 
@@ -450,13 +546,13 @@ export class CourseService {
           include: {
             _count: { select: { videos: true, files: true, questions: true } },
           },
-          orderBy: { sortOrder: 'asc' },
+          orderBy: { sortOrder: "asc" },
         },
         codeGroups: { select: { discountPercentage: true } },
       },
     });
 
-    if (!course) throw new NotFoundException('الكورس غير موجود');
+    if (!course) throw new NotFoundException("الكورس غير موجود");
     await this.assertCourseVisibleToRequester(course, user);
 
     const courseDuration = await this.getCourseDurationFromVideos(course.id);
@@ -464,22 +560,32 @@ export class CourseService {
     const isSubscribed = await this.hasStudentSubscription(user, course.id);
     const nowTs = Date.now();
     const isExpired = !!course.expiresAt && course.expiresAt.getTime() <= nowTs;
-    const hasAccess = course.isFree || isOwnerOrAdmin || (isSubscribed && !isExpired);
+    const hasAccess =
+      course.isFree || isOwnerOrAdmin || (isSubscribed && !isExpired);
     const expiresInSeconds = course.expiresAt
       ? Math.max(0, Math.floor((course.expiresAt.getTime() - nowTs) / 1000))
       : null;
     const expiresInDays =
-      expiresInSeconds === null ? null : Number((expiresInSeconds / 86400).toFixed(2));
+      expiresInSeconds === null
+        ? null
+        : Number((expiresInSeconds / 86400).toFixed(2));
 
     const basePrice = Number(course.price);
     const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
     const priceAfterCourseDiscount = Number.isNaN(basePrice)
       ? null
       : this.getCourseDiscountedPrice(basePrice, courseDiscountPct);
-    const systemPaymentQrUrl = await this.systemSettingsService.getPaymentQrUrl();
+    const systemPaymentQrUrl =
+      await this.systemSettingsService.getPaymentQrUrl();
 
-    const totalVideos = course.lectures.reduce((acc, lec) => acc + (lec._count?.videos ?? 0), 0);
-    const totalFiles = course.lectures.reduce((acc, lec) => acc + (lec._count?.files ?? 0), 0);
+    const totalVideos = course.lectures.reduce(
+      (acc, lec) => acc + (lec._count?.videos ?? 0),
+      0,
+    );
+    const totalFiles = course.lectures.reduce(
+      (acc, lec) => acc + (lec._count?.files ?? 0),
+      0,
+    );
     const totalQuestions = course.lectures.reduce(
       (acc, lec) => acc + (lec._count?.questions ?? 0),
       0,
@@ -510,7 +616,6 @@ export class CourseService {
           name: course.teacher.name,
           image: course.teacher.image,
           instagramUrl: course.teacher.instagramUrl ?? null,
-          telegramUrl: course.teacher.telegramUrl ?? null,
         },
         duration: courseDuration,
         isCompleted: course.isCompleted ?? false,
@@ -520,8 +625,8 @@ export class CourseService {
         isExpired,
         description: course.description,
         introVideoUrl: course.introVideoUrl,
-        discussionGroupUrl: course.teacher.telegramUrl ?? null,
-        telegramUrl: course.teacher.telegramUrl ?? null,
+        discussionGroupUrl: course.discussionGroupUrl ?? null,
+        telegramUrl: course.telegramUrl ?? null,
         instagramUrl: course.teacher.instagramUrl ?? null,
         studentsCount: course._count.subscriptions,
         year: course.collegeYear?.academicYear
@@ -532,7 +637,11 @@ export class CourseService {
             }
           : null,
         season: course.season
-          ? { id: course.season.id, name: course.season.seasonName, number: course.season.seasonNumber }
+          ? {
+              id: course.season.id,
+              name: course.season.seasonName,
+              number: course.season.seasonNumber,
+            }
           : null,
         lecturesCount: course._count.lectures,
         videosCount: totalVideos,
@@ -563,7 +672,6 @@ export class CourseService {
             name: true,
             image: true,
             instagramUrl: true,
-            telegramUrl: true,
           },
         },
         subject: {
@@ -595,20 +703,20 @@ export class CourseService {
           include: {
             _count: { select: { videos: true, files: true, questions: true } },
           },
-          orderBy: { sortOrder: 'asc' },
+          orderBy: { sortOrder: "asc" },
         },
         codeGroups: {
           include: {
             codes: {
-              orderBy: { createdAt: 'desc' },
+              orderBy: { createdAt: "desc" },
             },
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: "desc" },
         },
       },
     });
 
-    if (!course) throw new NotFoundException('الكورس غير موجود');
+    if (!course) throw new NotFoundException("الكورس غير موجود");
     const courseDuration = await this.getCourseDurationFromVideos(course.id);
 
     const basePrice = Number(course.price);
@@ -623,7 +731,9 @@ export class CourseService {
       _count: { _all: true },
     });
 
-    const averageRating = Number((Number(ratingsAgg._avg.rating ?? 0)).toFixed(2));
+    const averageRating = Number(
+      Number(ratingsAgg._avg.rating ?? 0).toFixed(2),
+    );
     const ratingsCount = ratingsAgg._count._all;
 
     return {
@@ -641,7 +751,6 @@ export class CourseService {
           name: course.teacher.name,
           image: course.teacher.image,
           instagramUrl: course.teacher.instagramUrl ?? null,
-          telegramUrl: course.teacher.telegramUrl ?? null,
         },
         studentsCount: course._count.subscriptions,
         year: course.collegeYear?.academicYear
@@ -672,8 +781,8 @@ export class CourseService {
           : null,
         description: course.description,
         introVideoUrl: course.introVideoUrl,
-        discussionGroupUrl: course.teacher.telegramUrl ?? null,
-        telegramUrl: course.teacher.telegramUrl ?? null,
+        discussionGroupUrl: course.discussionGroupUrl ?? null,
+        telegramUrl: course.telegramUrl ?? null,
         instagramUrl: course.teacher.instagramUrl ?? null,
         rating: {
           outOf: 5,
@@ -730,7 +839,10 @@ export class CourseService {
     return { course: payload.course, codes: payload.codes };
   }
 
-  async getAdminCourseRevenue(courseId: string, query: RevenuePeriodQueryDto = {}) {
+  async getAdminCourseRevenue(
+    courseId: string,
+    query: RevenuePeriodQueryDto = {},
+  ) {
     const course = await this.prisma.course.findUnique({
       where: { id: String(courseId) },
       select: {
@@ -742,13 +854,12 @@ export class CourseService {
         teacherPercentage: true,
       },
     });
-    if (!course) throw new NotFoundException('الكورس غير موجود');
+    if (!course) throw new NotFoundException("الكورس غير موجود");
 
     const [invoice, ratingsAgg] = await Promise.all([
-      this.revenueService.buildInvoice(
-        { courseId: course.id, ...query },
-        [{ id: course.id, name: course.name }],
-      ),
+      this.revenueService.buildInvoice({ courseId: course.id, ...query }, [
+        { id: course.id, name: course.name },
+      ]),
       this.prisma.courseRating.aggregate({
         where: { courseId: course.id },
         _avg: { rating: true },
@@ -773,7 +884,7 @@ export class CourseService {
       },
       subscribersCount: invoice.summary.totalSubscribers,
       rating: {
-        average: Number((Number(ratingsAgg._avg.rating ?? 0)).toFixed(2)),
+        average: Number(Number(ratingsAgg._avg.rating ?? 0).toFixed(2)),
         ratersCount: ratingsAgg._count._all,
       },
       revenue: {
@@ -810,13 +921,12 @@ export class CourseService {
       },
     });
 
-    if (!course) throw new NotFoundException('الكورس غير موجود');
+    if (!course) throw new NotFoundException("الكورس غير موجود");
 
     const [invoice, ratingsAgg] = await Promise.all([
-      this.revenueService.buildInvoice(
-        { courseId: course.id, ...query },
-        [{ id: course.id, name: course.name }],
-      ),
+      this.revenueService.buildInvoice({ courseId: course.id, ...query }, [
+        { id: course.id, name: course.name },
+      ]),
       this.prisma.courseRating.aggregate({
         where: {
           courseId: course.id,
@@ -828,17 +938,22 @@ export class CourseService {
 
     const basePrice = Number(course.price ?? 0);
     const discountPercentage = Number(course.courseDiscountPercentage ?? 0);
-    const discountedPrice = this.getCourseDiscountedPrice(basePrice, discountPercentage);
+    const discountedPrice = this.getCourseDiscountedPrice(
+      basePrice,
+      discountPercentage,
+    );
 
     const grossRevenue = invoice.summary.totalRevenues;
     const teacherPercentage = Number(course.teacherPercentage ?? 0);
     const platformPercentage = Math.max(0, 100 - teacherPercentage);
 
     const requesterType = user?.type;
-    const myPercentage = requesterType === 'TEACHER' ? teacherPercentage : platformPercentage;
-    const netRevenue = requesterType === 'TEACHER'
-      ? invoice.summary.teacherRevenue
-      : invoice.summary.platformRevenue;
+    const myPercentage =
+      requesterType === "TEACHER" ? teacherPercentage : platformPercentage;
+    const netRevenue =
+      requesterType === "TEACHER"
+        ? invoice.summary.teacherRevenue
+        : invoice.summary.platformRevenue;
 
     return {
       course: {
@@ -858,7 +973,7 @@ export class CourseService {
       },
       rating: {
         outOf: 5,
-        average: Number((Number(ratingsAgg._avg.rating ?? 0)).toFixed(2)),
+        average: Number(Number(ratingsAgg._avg.rating ?? 0).toFixed(2)),
         ratersCount: ratingsAgg._count._all,
       },
       revenue: {
@@ -892,12 +1007,14 @@ export class CourseService {
       offlineDownloadEnabled?: boolean;
     },
   ) {
-    const lecture = await this.prisma.lecture.findUnique({ where: { id: lectureId } });
-    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: lectureId },
+    });
+    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
 
-    const title = options?.videoName || file.originalname || 'video';
-    const ext = path.extname(file.originalname || '') || '.mp4';
+    const title = options?.videoName || file.originalname || "video";
+    const ext = path.extname(file.originalname || "") || ".mp4";
     const fileName = `${randomUUID()}${ext}`;
     const storagePath = `lectures/${lectureId}/videos/${fileName}`;
     let storageVideoUrl: string | null = null;
@@ -905,7 +1022,10 @@ export class CourseService {
     try {
       storageVideoUrl = await this.bunny.uploadImage(storagePath, file);
     } catch (error) {
-      storageUploadError = this.bunny.describeError(error, 'Bunny Storage upload');
+      storageUploadError = this.bunny.describeError(
+        error,
+        "Bunny Storage upload",
+      );
     }
 
     let streamPlayback = {
@@ -916,9 +1036,17 @@ export class CourseService {
       streamPlaylistUrl: null as string | null,
       streamFallbackUrl: null as string | null,
       availableResolutions: null as string[] | null,
-      playlistResolutions: null as Array<{ resolution: string; path: string }> | null,
-      mp4Resolutions: null as Array<{ resolution: string; path: string }> | null,
-      preferredResolution: (options?.preferredResolution ?? null) as string | null,
+      playlistResolutions: null as Array<{
+        resolution: string;
+        path: string;
+      }> | null,
+      mp4Resolutions: null as Array<{
+        resolution: string;
+        path: string;
+      }> | null,
+      preferredResolution: (options?.preferredResolution ?? null) as
+        | string
+        | null,
       preferredPlaylistResolutionUrl: null as string | null,
       preferredResolutionUrl: null as string | null,
       isPlayable: null as boolean | null,
@@ -930,9 +1058,15 @@ export class CourseService {
       const createdStream = await this.bunny.createStreamVideo(title);
       streamVideoId = createdStream.guid;
       await this.bunny.uploadStreamVideo(createdStream.guid, file);
-      streamPlayback = await this.bunny.getStreamPlaybackPayload(createdStream.guid, options?.preferredResolution);
+      streamPlayback = await this.bunny.getStreamPlaybackPayload(
+        createdStream.guid,
+        options?.preferredResolution,
+      );
     } catch (error) {
-      streamUploadError = this.bunny.describeError(error, 'Bunny Stream upload');
+      streamUploadError = this.bunny.describeError(
+        error,
+        "Bunny Stream upload",
+      );
       streamPlayback = {
         ...streamPlayback,
         streamVideoId,
@@ -942,10 +1076,13 @@ export class CourseService {
     const persistedVideoUrl = streamPlayback.streamPlayUrl ?? storageVideoUrl;
     if (!persistedVideoUrl) {
       throw new BadGatewayException(
-        [storageUploadError, streamUploadError].filter(Boolean).join(' | ') || 'Video upload failed',
+        [storageUploadError, streamUploadError].filter(Boolean).join(" | ") ||
+          "Video upload failed",
       );
     }
-    const sortOrder = options?.sortOrder ?? (await this.getNextLectureVideoSortOrder(lectureId));
+    const sortOrder =
+      options?.sortOrder ??
+      (await this.getNextLectureVideoSortOrder(lectureId));
     const size = this.resolveMediaSize(options?.size, file?.size);
     const duration = this.normalizeVideoDuration(options?.duration);
 
@@ -956,7 +1093,10 @@ export class CourseService {
           videoName: title,
           description: options?.description,
           videoUrl: persistedVideoUrl,
-          bunnyVideoId: streamPlayback.streamVideoId ?? streamVideoId ?? this.bunny.extractBunnyVideoId(persistedVideoUrl),
+          bunnyVideoId:
+            streamPlayback.streamVideoId ??
+            streamVideoId ??
+            this.bunny.extractBunnyVideoId(persistedVideoUrl),
           duration,
           isFree: options?.isFree ?? false,
           offlineDownloadEnabled: options?.offlineDownloadEnabled ?? true,
@@ -984,12 +1124,17 @@ export class CourseService {
     user?: { userId: string | number; type: string },
     dto?: InitTusVideoUploadDto,
   ) {
-    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
-    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: String(lectureId) },
+    });
+    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
 
     const title = dto?.videoName?.trim() || `lecture-${lectureId}-video`;
-    const uploadSession = await this.bunny.createTusUploadSession(title, dto?.expiresInSeconds ?? 3600);
+    const uploadSession = await this.bunny.createTusUploadSession(
+      title,
+      dto?.expiresInSeconds ?? 3600,
+    );
 
     return {
       lectureId: String(lectureId),
@@ -1009,10 +1154,12 @@ export class CourseService {
     user?: { userId: string | number; type: string },
     dto?: CompleteTusVideoUploadDto,
   ) {
-    if (!dto?.videoId) throw new BadRequestException('videoId مطلوب');
+    if (!dto?.videoId) throw new BadRequestException("videoId مطلوب");
 
-    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
-    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: String(lectureId) },
+    });
+    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
 
     const streamPlayUrl = this.bunny.getStreamPlayUrl(dto.videoId);
@@ -1023,14 +1170,24 @@ export class CourseService {
       },
     });
 
-    const streamPlayback = await this.bunny.getStreamPlaybackPayload(dto.videoId, dto.preferredResolution);
+    const streamPlayback = await this.bunny.getStreamPlaybackPayload(
+      dto.videoId,
+      dto.preferredResolution,
+    );
     if (existing) {
       const updateData: any = {};
-      if (dto.sortOrder !== undefined && existing.sortOrder !== dto.sortOrder) updateData.sortOrder = dto.sortOrder;
-      if (dto.offlineDownloadEnabled !== undefined && existing.offlineDownloadEnabled !== dto.offlineDownloadEnabled) {
+      if (dto.sortOrder !== undefined && existing.sortOrder !== dto.sortOrder)
+        updateData.sortOrder = dto.sortOrder;
+      if (
+        dto.offlineDownloadEnabled !== undefined &&
+        existing.offlineDownloadEnabled !== dto.offlineDownloadEnabled
+      ) {
         updateData.offlineDownloadEnabled = dto.offlineDownloadEnabled;
       }
-      if (dto.size !== undefined && existing.size !== this.resolveMediaSize(dto.size)) {
+      if (
+        dto.size !== undefined &&
+        existing.size !== this.resolveMediaSize(dto.size)
+      ) {
         updateData.size = this.resolveMediaSize(dto.size);
       }
       if (dto.duration !== undefined) {
@@ -1061,7 +1218,8 @@ export class CourseService {
     }
 
     const title = dto.videoName?.trim() || `video-${dto.videoId}`;
-    const sortOrder = dto.sortOrder ?? (await this.getNextLectureVideoSortOrder(lectureId));
+    const sortOrder =
+      dto.sortOrder ?? (await this.getNextLectureVideoSortOrder(lectureId));
     const duration = this.normalizeVideoDuration(dto.duration);
     const created = await this.prisma.$transaction(async (tx) => {
       const video = await tx.video.create({
@@ -1094,13 +1252,18 @@ export class CourseService {
     user?: { userId: string | number; type: string },
     dto?: RefreshTusVideoUploadDto,
   ) {
-    if (!dto?.videoId) throw new BadRequestException('videoId مطلوب');
+    if (!dto?.videoId) throw new BadRequestException("videoId مطلوب");
 
-    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
-    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: String(lectureId) },
+    });
+    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
 
-    const refreshed = this.bunny.signTusUpload(dto.videoId, dto.expiresInSeconds ?? 3600);
+    const refreshed = this.bunny.signTusUpload(
+      dto.videoId,
+      dto.expiresInSeconds ?? 3600,
+    );
     return {
       lectureId: String(lectureId),
       upload: {
@@ -1125,7 +1288,6 @@ export class CourseService {
             id: true,
             name: true,
             image: true,
-            telegramUrl: true,
             instagramUrl: true,
           },
         },
@@ -1133,7 +1295,9 @@ export class CourseService {
       },
     });
 
-    const durationMap = await this.getCourseDurationsMap(courses.map((course) => course.id));
+    const durationMap = await this.getCourseDurationsMap(
+      courses.map((course) => course.id),
+    );
     return courses.map((course) => ({
       ...course,
       duration: durationMap.get(course.id) ?? 0,
@@ -1149,76 +1313,117 @@ export class CourseService {
     return (maxSortOrderResult._max.sortOrder ?? 0) + 1;
   }
 
-  private async assertStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {
-    if (!user || user.type !== 'STUDENT') return;
+  private async assertStudentSubscription(
+    user: { userId: string | number; type: string } | undefined,
+    courseId: string,
+  ) {
+    if (!user || user.type !== "STUDENT") return;
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+    });
+    if (!dbUser) throw new ForbiddenException("المستخدم غير موجود");
 
     const subscription = await this.prisma.studentSubscription.findUnique({
       where: {
-        studentId_courseId: { studentId: dbUser.userableId, courseId: String(courseId) },
+        studentId_courseId: {
+          studentId: dbUser.userableId,
+          courseId: String(courseId),
+        },
       },
     });
 
-    if (!subscription) throw new ForbiddenException('يلزم اشتراك');
-    if (subscription.expiresAt && subscription.expiresAt.getTime() <= Date.now()) {
-      throw new ForbiddenException('انتهت صلاحية الاشتراك على هذا الكورس');
+    if (!subscription) throw new ForbiddenException("يلزم اشتراك");
+    if (
+      subscription.expiresAt &&
+      subscription.expiresAt.getTime() <= Date.now()
+    ) {
+      throw new ForbiddenException("انتهت صلاحية الاشتراك على هذا الكورس");
     }
   }
 
-  private async hasStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {
-    if (!user || user.type !== 'STUDENT') return false;
+  private async hasStudentSubscription(
+    user: { userId: string | number; type: string } | undefined,
+    courseId: string,
+  ) {
+    if (!user || user.type !== "STUDENT") return false;
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+    });
     if (!dbUser) return false;
 
     const subscription = await this.prisma.studentSubscription.findUnique({
       where: {
-        studentId_courseId: { studentId: dbUser.userableId, courseId: String(courseId) },
+        studentId_courseId: {
+          studentId: dbUser.userableId,
+          courseId: String(courseId),
+        },
       },
     });
 
     if (!subscription) return false;
-    if (subscription.expiresAt && subscription.expiresAt.getTime() <= Date.now()) return false;
+    if (
+      subscription.expiresAt &&
+      subscription.expiresAt.getTime() <= Date.now()
+    )
+      return false;
     return true;
   }
 
-  private async assertCourseOwnership(user: { userId: string | number; type: string } | undefined, courseId: string) {
-    if (!user || user.type === 'ADMIN') return;
-    if (user.type !== 'TEACHER') throw new ForbiddenException('صلاحية مدرس مطلوبة');
+  private async assertCourseOwnership(
+    user: { userId: string | number; type: string } | undefined,
+    courseId: string,
+  ) {
+    if (!user || user.type === "ADMIN") return;
+    if (user.type !== "TEACHER")
+      throw new ForbiddenException("صلاحية مدرس مطلوبة");
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+    });
+    if (!dbUser) throw new ForbiddenException("المستخدم غير موجود");
 
-    const course = await this.prisma.course.findUnique({ where: { id: String(courseId) } });
-    if (!course) throw new NotFoundException('الكورس غير موجود');
+    const course = await this.prisma.course.findUnique({
+      where: { id: String(courseId) },
+    });
+    if (!course) throw new NotFoundException("الكورس غير موجود");
     if (course.teacherId.toString() !== dbUser.userableId.toString()) {
-      throw new ForbiddenException('أنت لا تملك هذا الكورس');
+      throw new ForbiddenException("أنت لا تملك هذا الكورس");
     }
   }
 
-  private async isCourseOwnerOrAdmin(user: { userId: string | number; type: string } | undefined, courseId: string) {
+  private async isCourseOwnerOrAdmin(
+    user: { userId: string | number; type: string } | undefined,
+    courseId: string,
+  ) {
     if (!user) return false;
-    if (user.type === 'ADMIN') return true;
-    if (user.type !== 'TEACHER') return false;
+    if (user.type === "ADMIN") return true;
+    if (user.type !== "TEACHER") return false;
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+    });
     if (!dbUser) return false;
 
-    const course = await this.prisma.course.findUnique({ where: { id: String(courseId) } });
+    const course = await this.prisma.course.findUnique({
+      where: { id: String(courseId) },
+    });
     if (!course) return false;
     return course.teacherId.toString() === dbUser.userableId.toString();
   }
 
   private async assertCourseVisibleToRequester(
-    course: { teacherId: string; teacher?: { isVisibleToStudents?: boolean } | null },
+    course: {
+      teacherId: string;
+      teacher?: { isVisibleToStudents?: boolean } | null;
+    },
     user?: { userId: string | number; type: string },
   ) {
     if (course.teacher?.isVisibleToStudents === true) return;
-    if (user?.type === 'ADMIN') return;
+    if (user?.type === "ADMIN") return;
 
-    if (user?.type === 'TEACHER') {
+    if (user?.type === "TEACHER") {
       const dbUser = await this.prisma.user.findUnique({
         where: { id: String(user.userId) },
         select: { userableId: true },
@@ -1226,10 +1431,13 @@ export class CourseService {
       if (dbUser?.userableId === course.teacherId) return;
     }
 
-    throw new NotFoundException('الكورس غير موجود');
+    throw new NotFoundException("الكورس غير موجود");
   }
 
-  private async assertCourseOwnershipByCourseId(user: { userId: string | number; type: string } | undefined, courseId: string) {
+  private async assertCourseOwnershipByCourseId(
+    user: { userId: string | number; type: string } | undefined,
+    courseId: string,
+  ) {
     return this.assertCourseOwnership(user, courseId);
   }
 
@@ -1238,8 +1446,12 @@ export class CourseService {
     return durations.get(String(courseId)) ?? 0;
   }
 
-  private async getCourseDurationsMap(courseIds: string[]): Promise<Map<string, number>> {
-    const uniqueCourseIds = Array.from(new Set(courseIds.map((id) => String(id))));
+  private async getCourseDurationsMap(
+    courseIds: string[],
+  ): Promise<Map<string, number>> {
+    const uniqueCourseIds = Array.from(
+      new Set(courseIds.map((id) => String(id))),
+    );
     if (!uniqueCourseIds.length) return new Map();
 
     const lectures = await this.prisma.lecture.findMany({
@@ -1254,11 +1466,19 @@ export class CourseService {
       },
     });
 
-    const durationMap = new Map<string, number>(uniqueCourseIds.map((id) => [id, 0]));
+    const durationMap = new Map<string, number>(
+      uniqueCourseIds.map((id) => [id, 0]),
+    );
 
     for (const lecture of lectures) {
-      const lectureDuration = lecture.videos.reduce((sum, video) => sum + (video.duration ?? 0), 0);
-      durationMap.set(lecture.courseId, (durationMap.get(lecture.courseId) ?? 0) + lectureDuration);
+      const lectureDuration = lecture.videos.reduce(
+        (sum, video) => sum + (video.duration ?? 0),
+        0,
+      );
+      durationMap.set(
+        lecture.courseId,
+        (durationMap.get(lecture.courseId) ?? 0) + lectureDuration,
+      );
     }
 
     return durationMap;
@@ -1269,13 +1489,18 @@ export class CourseService {
 
     const parsed = Number(duration);
     if (!Number.isInteger(parsed) || parsed < 0) {
-      throw new BadRequestException('مدة الفيديو يجب أن تكون رقماً صحيحاً أكبر أو يساوي صفر');
+      throw new BadRequestException(
+        "مدة الفيديو يجب أن تكون رقماً صحيحاً أكبر أو يساوي صفر",
+      );
     }
 
     return parsed;
   }
 
-  private async recalculateCourseDuration(tx: Prisma.TransactionClient, courseId: string) {
+  private async recalculateCourseDuration(
+    tx: Prisma.TransactionClient,
+    courseId: string,
+  ) {
     const aggregate = await tx.video.aggregate({
       where: {
         lecture: {
@@ -1291,17 +1516,22 @@ export class CourseService {
     });
   }
 
-  private resolveMediaSize(providedSize?: string | number, uploadedSize?: number): string | null {
+  private resolveMediaSize(
+    providedSize?: string | number,
+    uploadedSize?: number,
+  ): string | null {
     if (providedSize === undefined || providedSize === null) {
       if (uploadedSize === undefined || uploadedSize === null) return null;
       return String(Math.round(Number(uploadedSize)));
     }
 
-    if (typeof providedSize === 'string') return providedSize;
+    if (typeof providedSize === "string") return providedSize;
 
     const sizeNum = Number(providedSize);
     if (!Number.isFinite(sizeNum) || sizeNum < 0) {
-      throw new BadRequestException('حجم الملف/الفيديو يجب أن يكون رقماً موجباً أو صفراً');
+      throw new BadRequestException(
+        "حجم الملف/الفيديو يجب أن يكون رقماً موجباً أو صفراً",
+      );
     }
 
     return String(Math.round(sizeNum));
@@ -1313,20 +1543,26 @@ export class CourseService {
     collegeId: string,
     departmentId?: string,
   ) {
-    const university = await this.prisma.university.findUnique({ where: { id: String(universityId) } });
-    if (!university) throw new BadRequestException('الجامعة غير موجودة');
+    const university = await this.prisma.university.findUnique({
+      where: { id: String(universityId) },
+    });
+    if (!university) throw new BadRequestException("الجامعة غير موجودة");
 
-    const college = await this.prisma.college.findUnique({ where: { id: String(collegeId) } });
-    if (!college) throw new BadRequestException('الكلية غير موجودة');
+    const college = await this.prisma.college.findUnique({
+      where: { id: String(collegeId) },
+    });
+    if (!college) throw new BadRequestException("الكلية غير موجودة");
     if (college.universityId.toString() !== universityId.toString()) {
-      throw new BadRequestException('الكلية لا تتبع للجامعة');
+      throw new BadRequestException("الكلية لا تتبع للجامعة");
     }
 
     if (departmentId !== undefined) {
-      const department = await this.prisma.department.findUnique({ where: { id: String(departmentId) } });
-      if (!department) throw new BadRequestException('القسم غير موجود');
+      const department = await this.prisma.department.findUnique({
+        where: { id: String(departmentId) },
+      });
+      if (!department) throw new BadRequestException("القسم غير موجود");
       if (department.collegeId.toString() !== collegeId.toString()) {
-        throw new BadRequestException('القسم لا يتبع للكلية');
+        throw new BadRequestException("القسم لا يتبع للكلية");
       }
     }
 
@@ -1339,7 +1575,8 @@ export class CourseService {
       },
     });
 
-    if (!affiliation) throw new BadRequestException('المدرس غير منتسب للنطاق المحدد');
+    if (!affiliation)
+      throw new BadRequestException("المدرس غير منتسب للنطاق المحدد");
   }
 
   private getDiscountedPriceInput(dto: {
@@ -1349,28 +1586,32 @@ export class CourseService {
     return dto.discountedPrice ?? dto.courseDiscountPercentage;
   }
 
-  private resolveCourseDiscountPercentage(price: number, discountedPrice?: number) {
+  private resolveCourseDiscountPercentage(
+    price: number,
+    discountedPrice?: number,
+  ) {
     const basePrice = Number(price);
     if (!Number.isFinite(basePrice) || basePrice < 0) {
-      throw new BadRequestException('سعر الكورس يجب أن يكون أكبر أو يساوي صفر');
+      throw new BadRequestException("سعر الكورس يجب أن يكون أكبر أو يساوي صفر");
     }
 
     if (discountedPrice === undefined || discountedPrice === null) return 0;
 
     const finalPrice = Number(discountedPrice);
     if (!Number.isFinite(finalPrice) || finalPrice < 0) {
-      throw new BadRequestException('سعر الكورس بعد الحسم يجب أن يكون أكبر أو يساوي صفر');
+      throw new BadRequestException(
+        "سعر الكورس بعد الحسم يجب أن يكون أكبر أو يساوي صفر",
+      );
     }
 
     if (finalPrice > basePrice) {
-      throw new BadRequestException('سعر الكورس بعد الحسم لا يمكن أن يكون أكبر من سعر الكورس');
+      throw new BadRequestException(
+        "سعر الكورس بعد الحسم لا يمكن أن يكون أكبر من سعر الكورس",
+      );
     }
 
     if (basePrice === 0) return 0;
 
     return Number((((basePrice - finalPrice) * 100) / basePrice).toFixed(6));
   }
-
-
 }
-

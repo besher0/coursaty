@@ -1,13 +1,19 @@
-﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { PrismaService } from '@/prisma/prisma.service';
-import { ConflictException } from '@nestjs/common';
-import { UpdateProfileDto } from '../dtos/update-profile.dto';
-import { UpdateUserProfileDto } from '../dtos/update-user-profile.dto';
-import { UpdateStudentProfileDto } from '../dtos/update-student-profile.dto';
-import { ChangePasswordDto } from '../dtos/change-password.dto';
-import { EnrollmentsService } from '@/modules/students/services/enrollments.service';
-import * as bcrypt from 'bcryptjs';
-import { Prisma } from '@prisma/client';
+﻿import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from "@nestjs/common";
+import { PrismaService } from "@/prisma/prisma.service";
+import { ConflictException } from "@nestjs/common";
+import { UpdateProfileDto } from "../dtos/update-profile.dto";
+import { UpdateUserProfileDto } from "../dtos/update-user-profile.dto";
+import { UpdateStudentProfileDto } from "../dtos/update-student-profile.dto";
+import { ChangePasswordDto } from "../dtos/change-password.dto";
+import { EnrollmentsService } from "@/modules/students/services/enrollments.service";
+import * as bcrypt from "bcryptjs";
+import { Prisma } from "@prisma/client";
 
 @Injectable()
 export class UsersService {
@@ -18,87 +24,92 @@ export class UsersService {
 
   async updateFcmToken(id: string, fcmToken: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    if (!user) throw new NotFoundException("المستخدم غير موجود");
     return this.prisma.user.update({ where: { id }, data: { fcmToken } });
   }
 
   async updateUserStatus(
     userId: string,
-    status: 'active' | 'pending' | 'inactive' | 'suspended' | 'deleted',
+    status: "active" | "pending" | "inactive" | "suspended" | "deleted",
   ) {
-    return this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.findUnique({ where: { id: userId } });
-      if (!user) throw new NotFoundException('المستخدم غير موجود');
+    return this.prisma.$transaction(
+      async (tx) => {
+        const user = await tx.user.findUnique({ where: { id: userId } });
+        if (!user) throw new NotFoundException("المستخدم غير موجود");
 
-      if (status === 'deleted') {
-        if (user.status === 'deleted') return this.mapStatusResponse(user);
+        if (status === "deleted") {
+          if (user.status === "deleted") return this.mapStatusResponse(user);
 
-        if (user.userableType === 'ADMIN' && user.status === 'active') {
-          const activeAdmins = await tx.user.count({
-            where: { userableType: 'ADMIN', status: 'active' },
-          });
-          if (activeAdmins <= 1) {
-            throw new BadRequestException('لا يمكن حذف آخر مدير فعال');
+          if (user.userableType === "ADMIN" && user.status === "active") {
+            const activeAdmins = await tx.user.count({
+              where: { userableType: "ADMIN", status: "active" },
+            });
+            if (activeAdmins <= 1) {
+              throw new BadRequestException("لا يمكن حذف آخر مدير فعال");
+            }
           }
+
+          if (user.userableType === "TEACHER") {
+            await tx.teacher.updateMany({
+              where: { id: user.userableId },
+              data: { isVisibleToStudents: false },
+            });
+          }
+
+          const deleted = await tx.user.update({
+            where: { id: user.id },
+            data: {
+              phone: this.buildDeletedPhone(user.id),
+              deletedPhone: user.phone,
+              deletedAt: new Date(),
+              status: "deleted",
+              fcmToken: null,
+            },
+          });
+          return this.mapStatusResponse(deleted);
         }
 
-        if (user.userableType === 'TEACHER') {
+        let phone = user.phone;
+        let deletedPhone = user.deletedPhone;
+        let deletedAt = user.deletedAt;
+
+        if (user.status === "deleted") {
+          if (!user.deletedPhone) {
+            throw new ConflictException(
+              "رقم الهاتف الأصلي للحساب المحذوف غير متوفر",
+            );
+          }
+
+          const phoneOwner = await tx.user.findUnique({
+            where: { phone: user.deletedPhone },
+            select: { id: true },
+          });
+          if (phoneOwner && phoneOwner.id !== user.id) {
+            throw new ConflictException("رقم الهاتف الأصلي مستخدم من حساب آخر");
+          }
+
+          phone = user.deletedPhone;
+          deletedPhone = null;
+          deletedAt = null;
+        }
+
+        if (user.userableType === "TEACHER") {
           await tx.teacher.updateMany({
             where: { id: user.userableId },
-            data: { isVisibleToStudents: false },
+            data: { isVisibleToStudents: status === "active" },
           });
         }
 
-        const deleted = await tx.user.update({
+        const updated = await tx.user.update({
           where: { id: user.id },
-          data: {
-            phone: this.buildDeletedPhone(user.id),
-            deletedPhone: user.phone,
-            deletedAt: new Date(),
-            status: 'deleted',
-            fcmToken: null,
-          },
+          data: { phone, deletedPhone, deletedAt, status },
         });
-        return this.mapStatusResponse(deleted);
-      }
-
-      let phone = user.phone;
-      let deletedPhone = user.deletedPhone;
-      let deletedAt = user.deletedAt;
-
-      if (user.status === 'deleted') {
-        if (!user.deletedPhone) {
-          throw new ConflictException('رقم الهاتف الأصلي للحساب المحذوف غير متوفر');
-        }
-
-        const phoneOwner = await tx.user.findUnique({
-          where: { phone: user.deletedPhone },
-          select: { id: true },
-        });
-        if (phoneOwner && phoneOwner.id !== user.id) {
-          throw new ConflictException('رقم الهاتف الأصلي مستخدم من حساب آخر');
-        }
-
-        phone = user.deletedPhone;
-        deletedPhone = null;
-        deletedAt = null;
-      }
-
-      if (user.userableType === 'TEACHER') {
-        await tx.teacher.updateMany({
-          where: { id: user.userableId },
-          data: { isVisibleToStudents: status === 'active' },
-        });
-      }
-
-      const updated = await tx.user.update({
-        where: { id: user.id },
-        data: { phone, deletedPhone, deletedAt, status },
-      });
-      return this.mapStatusResponse(updated);
-    }, {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-    });
+        return this.mapStatusResponse(updated);
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      },
+    );
   }
 
   private buildDeletedPhone(userId: string) {
@@ -128,12 +139,12 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({
       where: { id: String(userId) },
     });
-    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    if (!user) throw new NotFoundException("المستخدم غير موجود");
 
     let userableData = null;
 
     // Fetch the related Student or Teacher data based on userableType
-    if (user.userableType === 'STUDENT') {
+    if (user.userableType === "STUDENT") {
       const student = await this.prisma.student.findUnique({
         where: { id: user.userableId },
         include: {
@@ -162,14 +173,14 @@ export class UsersService {
       } else {
         userableData = null;
       }
-    } else if (user.userableType === 'TEACHER') {
+    } else if (user.userableType === "TEACHER") {
       userableData = await this.prisma.teacher.findUnique({
         where: { id: user.userableId },
         include: {
           _count: { select: { courses: true, teacherLikes: true } },
         },
       });
-    } else if (user.userableType === 'ADMIN') {
+    } else if (user.userableType === "ADMIN") {
       userableData = await this.prisma.admin.findUnique({
         where: { id: user.userableId },
       });
@@ -192,7 +203,7 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({
       where: { id: String(userId) },
     });
-    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    if (!user) throw new NotFoundException("المستخدم غير موجود");
 
     // Update User fields
     const userUpdateData: any = {};
@@ -208,7 +219,7 @@ export class UsersService {
     }
 
     // Update Student/Teacher fields if provided
-    if (user.userableType === 'STUDENT') {
+    if (user.userableType === "STUDENT") {
       const studentUpdateData: any = {};
       if (dto.name !== undefined) studentUpdateData.name = dto.name;
 
@@ -218,13 +229,14 @@ export class UsersService {
           data: studentUpdateData,
         });
       }
-    } else if (user.userableType === 'TEACHER') {
+    } else if (user.userableType === "TEACHER") {
       const teacherUpdateData: any = {};
       if (dto.name !== undefined) teacherUpdateData.name = dto.name;
-      if (dto.description !== undefined) teacherUpdateData.description = dto.description;
+      if (dto.description !== undefined)
+        teacherUpdateData.description = dto.description;
       if (dto.image !== undefined) teacherUpdateData.image = dto.image;
-      if (dto.telegramUrl !== undefined) teacherUpdateData.telegramUrl = dto.telegramUrl;
-      if (dto.instagramUrl !== undefined) teacherUpdateData.instagramUrl = dto.instagramUrl;
+      if (dto.instagramUrl !== undefined)
+        teacherUpdateData.instagramUrl = dto.instagramUrl;
 
       if (Object.keys(teacherUpdateData).length > 0) {
         await this.prisma.teacher.update({
@@ -242,7 +254,7 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({
       where: { id: String(userId) },
     });
-    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    if (!user) throw new NotFoundException("المستخدم غير موجود");
 
     const updateData: any = {};
     if (dto.phone !== undefined) updateData.phone = dto.phone;
@@ -256,14 +268,17 @@ export class UsersService {
     return this.getProfile(userId);
   }
 
-  async updateStudentProfile(userId: string | number, dto: UpdateStudentProfileDto) {
+  async updateStudentProfile(
+    userId: string | number,
+    dto: UpdateStudentProfileDto,
+  ) {
     const user = await this.prisma.user.findUnique({
       where: { id: String(userId) },
     });
-    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    if (!user) throw new NotFoundException("المستخدم غير موجود");
 
-    if (user.userableType !== 'STUDENT') {
-      throw new ForbiddenException('المستخدم ليس طالبا');
+    if (user.userableType !== "STUDENT") {
+      throw new ForbiddenException("المستخدم ليس طالبا");
     }
 
     if (dto.name !== undefined) {
@@ -285,15 +300,23 @@ export class UsersService {
       dto.universityNumber !== undefined;
 
     if (hasAcademicChange) {
-      const current = await this.enrollments.getActiveEnrollment(user.userableId);
+      const current = await this.enrollments.getActiveEnrollment(
+        user.userableId,
+      );
       if (!current) {
-        throw new NotFoundException('لا يوجد تسجيل أكاديمي فعال لهذا الطالب');
+        throw new NotFoundException("لا يوجد تسجيل أكاديمي فعال لهذا الطالب");
       }
 
       // Unprovided fields keep their current active-enrollment values.
       await this.enrollments.changeAcademicProfile(user.userableId, {
-        universityId: dto.universityId !== undefined ? String(dto.universityId) : current.universityId,
-        collegeId: dto.collegeId !== undefined ? String(dto.collegeId) : current.collegeId,
+        universityId:
+          dto.universityId !== undefined
+            ? String(dto.universityId)
+            : current.universityId,
+        collegeId:
+          dto.collegeId !== undefined
+            ? String(dto.collegeId)
+            : current.collegeId,
         departmentId:
           dto.departmentId !== undefined
             ? String(dto.departmentId)
@@ -320,20 +343,23 @@ export class UsersService {
         password: true,
       },
     });
-    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    if (!user) throw new NotFoundException("المستخدم غير موجود");
 
     if (dto.newPassword !== dto.confirmNewPassword) {
-      throw new BadRequestException('تأكيد كلمة المرور غير مطابق');
+      throw new BadRequestException("تأكيد كلمة المرور غير مطابق");
     }
 
-    const isCurrentPasswordValid = await bcrypt.compare(dto.currentPassword, user.password);
+    const isCurrentPasswordValid = await bcrypt.compare(
+      dto.currentPassword,
+      user.password,
+    );
     if (!isCurrentPasswordValid) {
-      throw new UnauthorizedException('كلمة المرور الحالية غير صحيحة');
+      throw new UnauthorizedException("كلمة المرور الحالية غير صحيحة");
     }
 
     const isSamePassword = await bcrypt.compare(dto.newPassword, user.password);
     if (isSamePassword) {
-      throw new BadRequestException('كلمة المرور الجديدة يجب أن تكون مختلفة');
+      throw new BadRequestException("كلمة المرور الجديدة يجب أن تكون مختلفة");
     }
 
     const hashedPassword = await bcrypt.hash(dto.newPassword, 10);
@@ -343,8 +369,6 @@ export class UsersService {
       data: { password: hashedPassword },
     });
 
-    return { message: 'تم تغيير كلمة المرور بنجاح' };
+    return { message: "تم تغيير كلمة المرور بنجاح" };
   }
 }
-
-

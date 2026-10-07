@@ -1,0 +1,3 @@
+ALTER TABLE "Teacher" DROP COLUMN IF EXISTS "telegramUrl";
+
+ALTER TABLE "Course" ADD COLUMN IF NOT EXISTS "telegramUrl" TEXT;

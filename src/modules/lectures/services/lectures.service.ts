@@ -1,31 +1,44 @@
-import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { PrismaService } from '@/prisma/prisma.service';
-import { BunnyService } from '@/shared/bunny/bunny.service';
-import { CreateLectureDto } from '../dtos/create-lecture.dto';
-import { CreateLectureFileDto } from '../dtos/create-lecture-file.dto';
-import { UpdateLectureFileDto } from '../dtos/update-lecture-file.dto';
-import { UpdateLectureDto } from '../dtos/update-lecture.dto';
-import { UpdateVideoDto } from '../dtos/update-video.dto';
-import { CreateQuestionDto } from '../dtos/create-question.dto';
-import { UpdateQuestionDto } from '../dtos/update-question.dto';
-import { UploadVideoDto } from '../dtos/upload-video.dto';
-import { CreateVideoSegmentDto } from '../dtos/create-video-segment.dto';
-import { UpdateVideoSegmentDto } from '../dtos/update-video-segment.dto';
-import { InitTusVideoUploadDto } from '../dtos/init-tus-video-upload.dto';
-import { CompleteTusVideoUploadDto } from '../dtos/complete-tus-video-upload.dto';
-import { RefreshTusVideoUploadDto } from '../dtos/refresh-tus-video-upload.dto';
-import { UploadLectureFileDto } from '../dtos/upload-lecture-file.dto';
-import { randomUUID } from 'crypto';
-import * as path from 'path';
+import {
+  BadGatewayException,
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { Prisma } from "@prisma/client";
+import { PrismaService } from "@/prisma/prisma.service";
+import { BunnyService } from "@/shared/bunny/bunny.service";
+import { CreateLectureDto } from "../dtos/create-lecture.dto";
+import { CreateLectureFileDto } from "../dtos/create-lecture-file.dto";
+import { UpdateLectureFileDto } from "../dtos/update-lecture-file.dto";
+import { UpdateLectureDto } from "../dtos/update-lecture.dto";
+import { UpdateVideoDto } from "../dtos/update-video.dto";
+import { CreateQuestionDto } from "../dtos/create-question.dto";
+import { UpdateQuestionDto } from "../dtos/update-question.dto";
+import { UploadVideoDto } from "../dtos/upload-video.dto";
+import { CreateVideoSegmentDto } from "../dtos/create-video-segment.dto";
+import { UpdateVideoSegmentDto } from "../dtos/update-video-segment.dto";
+import { InitTusVideoUploadDto } from "../dtos/init-tus-video-upload.dto";
+import { CompleteTusVideoUploadDto } from "../dtos/complete-tus-video-upload.dto";
+import { RefreshTusVideoUploadDto } from "../dtos/refresh-tus-video-upload.dto";
+import { UploadLectureFileDto } from "../dtos/upload-lecture-file.dto";
+import { randomUUID } from "crypto";
+import * as path from "path";
 
 @Injectable()
 export class LecturesService {
-  constructor(private readonly prisma: PrismaService, private readonly bunny: BunnyService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly bunny: BunnyService,
+  ) {}
 
-  async createLecture(dto: CreateLectureDto, user?: { userId: string | number; type: string }) {
+  async createLecture(
+    dto: CreateLectureDto,
+    user?: { userId: string | number; type: string },
+  ) {
     await this.assertCourseOwnership(user, dto.courseId);
-    const sortOrder = dto.sortOrder ?? (await this.getNextLectureSortOrder(dto.courseId));
+    const sortOrder =
+      dto.sortOrder ?? (await this.getNextLectureSortOrder(dto.courseId));
 
     try {
       return await this.prisma.lecture.create({
@@ -39,7 +52,8 @@ export class LecturesService {
         },
       });
     } catch (error) {
-      if (!this.isMissingSortOrderColumn(error, 'Lecture.sortOrder')) throw error;
+      if (!this.isMissingSortOrderColumn(error, "Lecture.sortOrder"))
+        throw error;
       return this.prisma.lecture.create({
         data: {
           courseId: String(dto.courseId),
@@ -52,45 +66,66 @@ export class LecturesService {
     }
   }
 
-  async listLectures(courseId: string, user?: { userId: string | number; type: string }) {
-    const { hasAccess, isOwnerOrAdmin, isStudent } = await this.getCourseAccess(user, courseId);
+  async listLectures(
+    courseId: string,
+    user?: { userId: string | number; type: string },
+  ) {
+    const { hasAccess, isOwnerOrAdmin, isStudent } = await this.getCourseAccess(
+      user,
+      courseId,
+    );
     let lectures: any[];
     try {
       lectures = await this.prisma.lecture.findMany({
         where: { courseId: String(courseId) },
         include: {
           videos: {
-            orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+            orderBy: [
+              { sortOrder: { sort: "asc", nulls: "last" } },
+              { id: "asc" },
+            ],
           },
           files: {
-            orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+            orderBy: [
+              { sortOrder: { sort: "asc", nulls: "last" } },
+              { id: "asc" },
+            ],
           },
         },
-        orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+        orderBy: [{ sortOrder: { sort: "asc", nulls: "last" } }, { id: "asc" }],
       });
     } catch (error) {
-      if (!this.isAnySortOrderColumnMissing(error) && !this.isAnyVideoDurationColumnMissing(error)) throw error;
+      if (
+        !this.isAnySortOrderColumnMissing(error) &&
+        !this.isAnyVideoDurationColumnMissing(error)
+      )
+        throw error;
 
       lectures = await this.prisma.lecture.findMany({
         where: { courseId: String(courseId) },
         include: {
           videos: {
             select: this.getVideoFallbackSelect(),
-            orderBy: [{ id: 'asc' }],
+            orderBy: [{ id: "asc" }],
           },
           files: {
             select: this.getLectureFileFallbackSelect(),
-            orderBy: [{ id: 'asc' }],
+            orderBy: [{ id: "asc" }],
           },
         },
-        orderBy: [{ id: 'asc' }],
+        orderBy: [{ id: "asc" }],
       });
     }
 
     const mapLecture = async (lecture: any, hideLockedMedia: boolean) => ({
       ...lecture,
-      hasVideosSortOrder: lecture.videos.some((video: any) => video.sortOrder !== null && video.sortOrder !== undefined),
-      hasFilesSortOrder: lecture.files.some((file: any) => file.sortOrder !== null && file.sortOrder !== undefined),
+      hasVideosSortOrder: lecture.videos.some(
+        (video: any) =>
+          video.sortOrder !== null && video.sortOrder !== undefined,
+      ),
+      hasFilesSortOrder: lecture.files.some(
+        (file: any) => file.sortOrder !== null && file.sortOrder !== undefined,
+      ),
       videos: await this.mapVideosForPlayback(lecture.videos, !hideLockedMedia),
       files: lecture.files.map((file: any) => ({
         ...file,
@@ -106,7 +141,11 @@ export class LecturesService {
     return Promise.all(lectures.map((lecture) => mapLecture(lecture, false)));
   }
 
-  async updateLecture(id: string, data: UpdateLectureDto, user?: { userId: string | number; type: string }) {
+  async updateLecture(
+    id: string,
+    data: UpdateLectureDto,
+    user?: { userId: string | number; type: string },
+  ) {
     await this.assertLectureOwnership(user, id);
     const update: any = {};
     if (data.title !== undefined) update.title = data.title;
@@ -121,7 +160,10 @@ export class LecturesService {
     });
   }
 
-  async deleteLecture(id: string, user?: { userId: string | number; type: string }) {
+  async deleteLecture(
+    id: string,
+    user?: { userId: string | number; type: string },
+  ) {
     const lectureId = String(id);
     await this.assertLectureOwnership(user, lectureId);
 
@@ -129,7 +171,8 @@ export class LecturesService {
       where: { id: lectureId },
       select: { id: true, courseId: true },
     });
-    if (!lecture) throw new NotFoundException('ط§ظ„ظ…ط­ط§ط¶ط±ط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط©');
+    if (!lecture)
+      throw new NotFoundException("ط§ظ„ظ…ط­ط§ط¶ط±ط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط©");
 
     return this.prisma.$transaction(async (tx) => {
       const videos = await tx.video.findMany({
@@ -139,8 +182,12 @@ export class LecturesService {
       const videoIds = videos.map((video) => video.id);
 
       if (videoIds.length) {
-        await tx.videoInteraction.deleteMany({ where: { videoId: { in: videoIds } } });
-        await tx.videoSegment.deleteMany({ where: { videoId: { in: videoIds } } });
+        await tx.videoInteraction.deleteMany({
+          where: { videoId: { in: videoIds } },
+        });
+        await tx.videoSegment.deleteMany({
+          where: { videoId: { in: videoIds } },
+        });
         await tx.video.deleteMany({ where: { id: { in: videoIds } } });
       }
 
@@ -151,12 +198,16 @@ export class LecturesService {
       const questionIds = questions.map((question) => question.id);
 
       if (questionIds.length) {
-        await tx.questionOption.deleteMany({ where: { questionId: { in: questionIds } } });
+        await tx.questionOption.deleteMany({
+          where: { questionId: { in: questionIds } },
+        });
         await tx.question.deleteMany({ where: { id: { in: questionIds } } });
       }
 
       await tx.lectureFile.deleteMany({ where: { lectureId } });
-      const deletedLecture = await tx.lecture.delete({ where: { id: lectureId } });
+      const deletedLecture = await tx.lecture.delete({
+        where: { id: lectureId },
+      });
       await this.recalculateCourseDuration(tx, lecture.courseId);
 
       return deletedLecture;
@@ -169,8 +220,10 @@ export class LecturesService {
     dto?: UploadLectureFileDto,
     user?: { userId: string | number; type: string },
   ) {
-    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
-    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: String(lectureId) },
+    });
+    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnership(user, lecture.courseId);
 
     const path = `lectures/${lectureId}/${file.originalname}`;
@@ -185,28 +238,33 @@ export class LecturesService {
           lectureId: String(lectureId),
           fileName: file.originalname,
           fileUrl: url,
-          fileType: file.mimetype || 'file',
+          fileType: file.mimetype || "file",
           size,
           sortOrder,
         },
       });
     } catch (error) {
-      if (!this.isMissingSortOrderColumn(error, 'LectureFile.sortOrder')) throw error;
+      if (!this.isMissingSortOrderColumn(error, "LectureFile.sortOrder"))
+        throw error;
       return this.prisma.lectureFile.create({
         data: {
           lectureId: String(lectureId),
           fileName: file.originalname,
           fileUrl: url,
-          fileType: file.mimetype || 'file',
+          fileType: file.mimetype || "file",
           size,
         },
       });
     }
   }
 
-  async createLectureFile(dto: CreateLectureFileDto, user?: { userId: string | number; type: string }) {
+  async createLectureFile(
+    dto: CreateLectureFileDto,
+    user?: { userId: string | number; type: string },
+  ) {
     await this.assertLectureOwnership(user, dto.lectureId);
-    const sortOrder = dto.sortOrder ?? (await this.getNextLectureFileSortOrder(dto.lectureId));
+    const sortOrder =
+      dto.sortOrder ?? (await this.getNextLectureFileSortOrder(dto.lectureId));
 
     try {
       return await this.prisma.lectureFile.create({
@@ -221,7 +279,8 @@ export class LecturesService {
         },
       });
     } catch (error) {
-      if (!this.isMissingSortOrderColumn(error, 'LectureFile.sortOrder')) throw error;
+      if (!this.isMissingSortOrderColumn(error, "LectureFile.sortOrder"))
+        throw error;
       return this.prisma.lectureFile.create({
         data: {
           lectureId: String(dto.lectureId),
@@ -235,9 +294,15 @@ export class LecturesService {
     }
   }
 
-  async updateLectureFile(id: string, dto: UpdateLectureFileDto, user?: { userId: string | number; type: string }) {
-    const file = await this.prisma.lectureFile.findUnique({ where: { id: String(id) } });
-    if (!file) throw new NotFoundException('ملف المحاضرة غير موجود');
+  async updateLectureFile(
+    id: string,
+    dto: UpdateLectureFileDto,
+    user?: { userId: string | number; type: string },
+  ) {
+    const file = await this.prisma.lectureFile.findUnique({
+      where: { id: String(id) },
+    });
+    if (!file) throw new NotFoundException("ملف المحاضرة غير موجود");
     await this.assertLectureOwnership(user, file.lectureId);
 
     const data: any = {};
@@ -250,27 +315,44 @@ export class LecturesService {
     if (!Object.keys(data).length) return file;
 
     try {
-      return await this.prisma.lectureFile.update({ where: { id: String(id) }, data });
+      return await this.prisma.lectureFile.update({
+        where: { id: String(id) },
+        data,
+      });
     } catch (error) {
-      if (!this.isMissingSortOrderColumn(error, 'LectureFile.sortOrder')) throw error;
+      if (!this.isMissingSortOrderColumn(error, "LectureFile.sortOrder"))
+        throw error;
       delete data.sortOrder;
       if (!Object.keys(data).length) return file;
-      return this.prisma.lectureFile.update({ where: { id: String(id) }, data });
+      return this.prisma.lectureFile.update({
+        where: { id: String(id) },
+        data,
+      });
     }
   }
 
-  async deleteLectureFile(id: string, user?: { userId: string | number; type: string }) {
-    const file = await this.prisma.lectureFile.findUnique({ where: { id: String(id) } });
-    if (!file) throw new NotFoundException('ملف المحاضرة غير موجود');
+  async deleteLectureFile(
+    id: string,
+    user?: { userId: string | number; type: string },
+  ) {
+    const file = await this.prisma.lectureFile.findUnique({
+      where: { id: String(id) },
+    });
+    if (!file) throw new NotFoundException("ملف المحاضرة غير موجود");
     await this.assertLectureOwnership(user, file.lectureId);
     return this.prisma.lectureFile.delete({ where: { id: String(id) } });
   }
 
-  private async assertStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {
-    if (!user || user.type !== 'STUDENT') return;
+  private async assertStudentSubscription(
+    user: { userId: string | number; type: string } | undefined,
+    courseId: string,
+  ) {
+    if (!user || user.type !== "STUDENT") return;
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+    });
+    if (!dbUser) throw new ForbiddenException("المستخدم غير موجود");
 
     const course = await this.prisma.course.findUnique({
       where: { id: String(courseId) },
@@ -282,39 +364,57 @@ export class LecturesService {
       },
     });
     if (course && !course.teacher.isVisibleToStudents) {
-      throw new NotFoundException('الكورس غير موجود');
+      throw new NotFoundException("الكورس غير موجود");
     }
-    if (!course) throw new NotFoundException('الكورس غير موجود');
+    if (!course) throw new NotFoundException("الكورس غير موجود");
     if (course.expiresAt && course.expiresAt.getTime() <= Date.now()) {
-      throw new ForbiddenException('انتهت صلاحية الوصول للكورس');
+      throw new ForbiddenException("انتهت صلاحية الوصول للكورس");
     }
 
     const subscription = await this.prisma.studentSubscription.findUnique({
       where: {
-        studentId_courseId: { studentId: dbUser.userableId, courseId: String(courseId) },
+        studentId_courseId: {
+          studentId: dbUser.userableId,
+          courseId: String(courseId),
+        },
       },
     });
 
-    if (!subscription) throw new ForbiddenException('يلزم اشتراك');
-    if (subscription.expiresAt && subscription.expiresAt.getTime() <= Date.now()) {
-      throw new ForbiddenException('انتهت صلاحية الاشتراك على هذا الكورس');
+    if (!subscription) throw new ForbiddenException("يلزم اشتراك");
+    if (
+      subscription.expiresAt &&
+      subscription.expiresAt.getTime() <= Date.now()
+    ) {
+      throw new ForbiddenException("انتهت صلاحية الاشتراك على هذا الكورس");
     }
   }
 
-  private async hasStudentSubscription(user: { userId: string | number; type: string } | undefined, courseId: string) {
-    if (!user || user.type !== 'STUDENT') return false;
+  private async hasStudentSubscription(
+    user: { userId: string | number; type: string } | undefined,
+    courseId: string,
+  ) {
+    if (!user || user.type !== "STUDENT") return false;
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+    });
     if (!dbUser) return false;
 
     const subscription = await this.prisma.studentSubscription.findUnique({
       where: {
-        studentId_courseId: { studentId: dbUser.userableId, courseId: String(courseId) },
+        studentId_courseId: {
+          studentId: dbUser.userableId,
+          courseId: String(courseId),
+        },
       },
     });
 
     if (!subscription) return false;
-    if (subscription.expiresAt && subscription.expiresAt.getTime() <= Date.now()) return false;
+    if (
+      subscription.expiresAt &&
+      subscription.expiresAt.getTime() <= Date.now()
+    )
+      return false;
     return true;
   }
 
@@ -335,50 +435,71 @@ export class LecturesService {
         },
       },
     });
-    if (!course) throw new NotFoundException('الكورس غير موجود');
+    if (!course) throw new NotFoundException("الكورس غير موجود");
 
-    const isExpired = !!course.expiresAt && course.expiresAt.getTime() <= Date.now();
+    const isExpired =
+      !!course.expiresAt && course.expiresAt.getTime() <= Date.now();
 
     if (!user) {
       if (!course.teacher.isVisibleToStudents) {
-        throw new NotFoundException('الكورس غير موجود');
+        throw new NotFoundException("الكورس غير موجود");
       }
-      return { hasAccess: course.isFree && !isExpired, isOwnerOrAdmin: false, isStudent: false };
+      return {
+        hasAccess: course.isFree && !isExpired,
+        isOwnerOrAdmin: false,
+        isStudent: false,
+      };
     }
 
-    if (user.type === 'ADMIN') {
+    if (user.type === "ADMIN") {
       return { hasAccess: true, isOwnerOrAdmin: true, isStudent: false };
     }
 
-    if (user.type === 'TEACHER') {
-      const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-      if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
-      const isOwner = course.teacherId.toString() === dbUser.userableId.toString();
-      return { hasAccess: isOwner || (course.isFree && !isExpired), isOwnerOrAdmin: isOwner, isStudent: false };
+    if (user.type === "TEACHER") {
+      const dbUser = await this.prisma.user.findUnique({
+        where: { id: String(user.userId) },
+      });
+      if (!dbUser) throw new ForbiddenException("المستخدم غير موجود");
+      const isOwner =
+        course.teacherId.toString() === dbUser.userableId.toString();
+      return {
+        hasAccess: isOwner || (course.isFree && !isExpired),
+        isOwnerOrAdmin: isOwner,
+        isStudent: false,
+      };
     }
 
     if (!course.teacher.isVisibleToStudents) {
-      throw new NotFoundException('الكورس غير موجود');
+      throw new NotFoundException("الكورس غير موجود");
     }
 
     const isSubscribed = await this.hasStudentSubscription(user, courseId);
-    return { hasAccess: (course.isFree || isSubscribed) && !isExpired, isOwnerOrAdmin: false, isStudent: true };
+    return {
+      hasAccess: (course.isFree || isSubscribed) && !isExpired,
+      isOwnerOrAdmin: false,
+      isStudent: true,
+    };
   }
 
   private async assertCourseOwnership(
     user: { userId: string | number; type: string } | undefined,
     courseId: string | number,
   ) {
-    if (!user || user.type === 'ADMIN') return;
-    if (user.type !== 'TEACHER') throw new ForbiddenException('صلاحية مدرس مطلوبة');
+    if (!user || user.type === "ADMIN") return;
+    if (user.type !== "TEACHER")
+      throw new ForbiddenException("صلاحية مدرس مطلوبة");
 
-    const dbUser = await this.prisma.user.findUnique({ where: { id: String(user.userId) } });
-    if (!dbUser) throw new ForbiddenException('المستخدم غير موجود');
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+    });
+    if (!dbUser) throw new ForbiddenException("المستخدم غير موجود");
 
-    const course = await this.prisma.course.findUnique({ where: { id: String(courseId) } });
-    if (!course) throw new NotFoundException('الكورس غير موجود');
+    const course = await this.prisma.course.findUnique({
+      where: { id: String(courseId) },
+    });
+    if (!course) throw new NotFoundException("الكورس غير موجود");
     if (course.teacherId.toString() !== dbUser.userableId.toString()) {
-      throw new ForbiddenException('أنت لا تملك هذا الكورس');
+      throw new ForbiddenException("أنت لا تملك هذا الكورس");
     }
   }
 
@@ -386,9 +507,11 @@ export class LecturesService {
     user: { userId: string | number; type: string } | undefined,
     lectureId: string | number,
   ) {
-    if (!user || user.type === 'ADMIN') return;
-    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
-    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    if (!user || user.type === "ADMIN") return;
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: String(lectureId) },
+    });
+    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     return this.assertCourseOwnership(user, lecture.courseId);
   }
 
@@ -405,14 +528,13 @@ export class LecturesService {
           course: {
             select: {
               id: true,
-              imageUrl:true,
+              imageUrl: true,
               teacher: {
                 select: {
                   id: true,
                   name: true,
                   description: true,
                   image: true,
-                  telegramUrl: true,
                   instagramUrl: true,
                   _count: {
                     select: {
@@ -424,28 +546,47 @@ export class LecturesService {
             },
           },
           files: {
-            orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+            orderBy: [
+              { sortOrder: { sort: "asc", nulls: "last" } },
+              { id: "asc" },
+            ],
           },
           videos: {
-            orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+            orderBy: [
+              { sortOrder: { sort: "asc", nulls: "last" } },
+              { id: "asc" },
+            ],
             include: {
               segments: {
-                orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { startSeconds: 'asc' }],
+                orderBy: [
+                  { sortOrder: { sort: "asc", nulls: "last" } },
+                  { startSeconds: "asc" },
+                ],
               },
             },
           },
           questions: {
-            orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+            orderBy: [
+              { sortOrder: { sort: "asc", nulls: "last" } },
+              { id: "asc" },
+            ],
             include: {
               options: {
-                orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+                orderBy: [
+                  { sortOrder: { sort: "asc", nulls: "last" } },
+                  { id: "asc" },
+                ],
               },
             },
           },
         },
       });
     } catch (error) {
-      if (!this.isAnySortOrderColumnMissing(error) && !this.isAnyVideoDurationColumnMissing(error)) throw error;
+      if (
+        !this.isAnySortOrderColumnMissing(error) &&
+        !this.isAnyVideoDurationColumnMissing(error)
+      )
+        throw error;
 
       lecture = await this.prisma.lecture.findUnique({
         where: { id: String(lectureId) },
@@ -453,14 +594,13 @@ export class LecturesService {
           course: {
             select: {
               id: true,
-              imageUrl:true,
+              imageUrl: true,
               teacher: {
                 select: {
                   id: true,
                   name: true,
                   description: true,
                   image: true,
-                  telegramUrl: true,
                   instagramUrl: true,
                   _count: {
                     select: {
@@ -473,17 +613,23 @@ export class LecturesService {
           },
           files: {
             select: this.getLectureFileFallbackSelect(),
-            orderBy: [{ id: 'asc' }],
+            orderBy: [{ id: "asc" }],
           },
           videos: {
             select: this.getVideoWithSegmentsFallbackSelect(),
-            orderBy: [{ id: 'asc' }],
+            orderBy: [{ id: "asc" }],
           },
           questions: {
-            orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+            orderBy: [
+              { sortOrder: { sort: "asc", nulls: "last" } },
+              { id: "asc" },
+            ],
             include: {
               options: {
-                orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+                orderBy: [
+                  { sortOrder: { sort: "asc", nulls: "last" } },
+                  { id: "asc" },
+                ],
               },
             },
           },
@@ -491,7 +637,7 @@ export class LecturesService {
       });
     }
 
-    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
 
     const teacher = lecture.course.teacher
       ? {
@@ -499,21 +645,28 @@ export class LecturesService {
           name: lecture.course.teacher.name,
           description: lecture.course.teacher.description,
           image: lecture.course.teacher.image,
-          telegramUrl: lecture.course.teacher.telegramUrl ?? null,
           instagramUrl: lecture.course.teacher.instagramUrl ?? null,
           likesCount: lecture.course.teacher._count.teacherLikes,
         }
       : null;
 
-    const { hasAccess, isOwnerOrAdmin } = await this.getCourseAccess(user, lecture.course.id, deviceId);
-    const hasVideosSortOrder = lecture.videos.some((video: any) => video.sortOrder !== null && video.sortOrder !== undefined);
-    const hasFilesSortOrder = lecture.files.some((file: any) => file.sortOrder !== null && file.sortOrder !== undefined);
+    const { hasAccess, isOwnerOrAdmin } = await this.getCourseAccess(
+      user,
+      lecture.course.id,
+      deviceId,
+    );
+    const hasVideosSortOrder = lecture.videos.some(
+      (video: any) => video.sortOrder !== null && video.sortOrder !== undefined,
+    );
+    const hasFilesSortOrder = lecture.files.some(
+      (file: any) => file.sortOrder !== null && file.sortOrder !== undefined,
+    );
 
     if (!isOwnerOrAdmin && !hasAccess) {
       return {
-              course:{
-        imageurl: lecture.course.imageUrl,
-      },
+        course: {
+          imageurl: lecture.course.imageUrl,
+        },
         lecture: {
           id: lecture.id,
           title: lecture.title,
@@ -535,7 +688,7 @@ export class LecturesService {
     }
 
     return {
-      course:{
+      course: {
         imageurl: lecture.course.imageUrl,
       },
       lecture: {
@@ -557,7 +710,10 @@ export class LecturesService {
     };
   }
 
-  private async mapVideosForPlayback(videos: any[], canAccessLockedVideos: boolean) {
+  private async mapVideosForPlayback(
+    videos: any[],
+    canAccessLockedVideos: boolean,
+  ) {
     return videos.map((video) => {
       const locked = canAccessLockedVideos ? false : !video.isFree;
       return this.mapVideoMetadata(video, locked);
@@ -568,7 +724,8 @@ export class LecturesService {
     const { videoUrl: _videoUrl, ...metadata } = video;
     return {
       ...metadata,
-      bunnyVideoId: video.bunnyVideoId ?? this.bunny.extractBunnyVideoId(video.videoUrl),
+      bunnyVideoId:
+        video.bunnyVideoId ?? this.bunny.extractBunnyVideoId(video.videoUrl),
       contentVersion: video.contentVersion ?? 1,
       offlineDownloadEnabled: video.offlineDownloadEnabled ?? true,
       locked,
@@ -585,7 +742,7 @@ export class LecturesService {
       isFree?: boolean;
       offlineDownloadEnabled?: boolean;
       sortOrder?: number;
-      size?: string ;
+      size?: string;
     },
     user?: { userId: string | number; type: string },
   ) {
@@ -593,9 +750,10 @@ export class LecturesService {
       where: { id: String(dto.lectureId) },
       select: { courseId: true },
     });
-    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnership(user, lecture.courseId);
-    const sortOrder = dto.sortOrder ?? (await this.getNextVideoSortOrder(dto.lectureId));
+    const sortOrder =
+      dto.sortOrder ?? (await this.getNextVideoSortOrder(dto.lectureId));
     const duration = this.normalizeVideoDuration(dto.duration);
 
     return this.prisma.$transaction(async (tx) => {
@@ -625,13 +783,15 @@ export class LecturesService {
     dto: UploadVideoDto,
     user?: { userId: string | number; type: string },
   ) {
-    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
-    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: String(lectureId) },
+    });
+    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnership(user, lecture.courseId);
 
-    const title = dto.videoName || file.originalname || 'video';
+    const title = dto.videoName || file.originalname || "video";
     const size = this.resolveMediaSize(dto.size, file?.size);
-    const ext = path.extname(file.originalname || '') || '.mp4';
+    const ext = path.extname(file.originalname || "") || ".mp4";
     const fileName = `${randomUUID()}${ext}`;
     const storagePath = `lectures/${lectureId}/videos/${fileName}`;
     let storageVideoUrl: string | null = null;
@@ -639,7 +799,10 @@ export class LecturesService {
     try {
       storageVideoUrl = await this.bunny.uploadImage(storagePath, file);
     } catch (error) {
-      storageUploadError = this.bunny.describeError(error, 'Bunny Storage upload');
+      storageUploadError = this.bunny.describeError(
+        error,
+        "Bunny Storage upload",
+      );
     }
 
     let streamPlayback = {
@@ -650,8 +813,14 @@ export class LecturesService {
       streamPlaylistUrl: null as string | null,
       streamFallbackUrl: null as string | null,
       availableResolutions: null as string[] | null,
-      playlistResolutions: null as Array<{ resolution: string; path: string }> | null,
-      mp4Resolutions: null as Array<{ resolution: string; path: string }> | null,
+      playlistResolutions: null as Array<{
+        resolution: string;
+        path: string;
+      }> | null,
+      mp4Resolutions: null as Array<{
+        resolution: string;
+        path: string;
+      }> | null,
       preferredResolution: (dto.preferredResolution ?? null) as string | null,
       preferredPlaylistResolutionUrl: null as string | null,
       preferredResolutionUrl: null as string | null,
@@ -664,9 +833,15 @@ export class LecturesService {
       const { guid } = await this.bunny.createStreamVideo(title);
       streamVideoId = guid;
       await this.bunny.uploadStreamVideo(guid, file);
-      streamPlayback = await this.bunny.getStreamPlaybackPayload(guid, dto.preferredResolution);
+      streamPlayback = await this.bunny.getStreamPlaybackPayload(
+        guid,
+        dto.preferredResolution,
+      );
     } catch (error) {
-      streamUploadError = this.bunny.describeError(error, 'Bunny Stream upload');
+      streamUploadError = this.bunny.describeError(
+        error,
+        "Bunny Stream upload",
+      );
       streamPlayback = {
         ...streamPlayback,
         streamVideoId,
@@ -676,10 +851,12 @@ export class LecturesService {
     const persistedVideoUrl = streamPlayback.streamPlayUrl ?? storageVideoUrl;
     if (!persistedVideoUrl) {
       throw new BadGatewayException(
-        [storageUploadError, streamUploadError].filter(Boolean).join(' | ') || 'Video upload failed',
+        [storageUploadError, streamUploadError].filter(Boolean).join(" | ") ||
+          "Video upload failed",
       );
     }
-    const sortOrder = dto.sortOrder ?? (await this.getNextVideoSortOrder(lectureId));
+    const sortOrder =
+      dto.sortOrder ?? (await this.getNextVideoSortOrder(lectureId));
     const duration = this.normalizeVideoDuration(dto.duration);
 
     const created = await this.prisma.$transaction(async (tx) => {
@@ -689,7 +866,10 @@ export class LecturesService {
           videoName: title,
           description: dto.description,
           videoUrl: persistedVideoUrl,
-          bunnyVideoId: streamPlayback.streamVideoId ?? streamVideoId ?? this.bunny.extractBunnyVideoId(persistedVideoUrl),
+          bunnyVideoId:
+            streamPlayback.streamVideoId ??
+            streamVideoId ??
+            this.bunny.extractBunnyVideoId(persistedVideoUrl),
           duration,
           isFree: dto.isFree ?? false,
           offlineDownloadEnabled: dto.offlineDownloadEnabled ?? true,
@@ -717,12 +897,17 @@ export class LecturesService {
     dto: InitTusVideoUploadDto,
     user?: { userId: string | number; type: string },
   ) {
-    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
-    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: String(lectureId) },
+    });
+    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnership(user, lecture.courseId);
 
     const title = dto.videoName?.trim() || `lecture-${lectureId}-video`;
-    const uploadSession = await this.bunny.createTusUploadSession(title, dto.expiresInSeconds ?? 3600);
+    const uploadSession = await this.bunny.createTusUploadSession(
+      title,
+      dto.expiresInSeconds ?? 3600,
+    );
 
     return {
       lectureId: String(lectureId),
@@ -742,8 +927,10 @@ export class LecturesService {
     dto: CompleteTusVideoUploadDto,
     user?: { userId: string | number; type: string },
   ) {
-    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
-    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: String(lectureId) },
+    });
+    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnership(user, lecture.courseId);
 
     const streamPlayUrl = this.bunny.getStreamPlayUrl(dto.videoId);
@@ -754,14 +941,24 @@ export class LecturesService {
       },
     });
 
-    const streamPlayback = await this.bunny.getStreamPlaybackPayload(dto.videoId, dto.preferredResolution);
+    const streamPlayback = await this.bunny.getStreamPlaybackPayload(
+      dto.videoId,
+      dto.preferredResolution,
+    );
     if (existing) {
       const updateData: any = {};
-      if (dto.sortOrder !== undefined && existing.sortOrder !== dto.sortOrder) updateData.sortOrder = dto.sortOrder;
-      if (dto.offlineDownloadEnabled !== undefined && existing.offlineDownloadEnabled !== dto.offlineDownloadEnabled) {
+      if (dto.sortOrder !== undefined && existing.sortOrder !== dto.sortOrder)
+        updateData.sortOrder = dto.sortOrder;
+      if (
+        dto.offlineDownloadEnabled !== undefined &&
+        existing.offlineDownloadEnabled !== dto.offlineDownloadEnabled
+      ) {
         updateData.offlineDownloadEnabled = dto.offlineDownloadEnabled;
       }
-      if (dto.size !== undefined && existing.size !== this.resolveMediaSize(dto.size)) {
+      if (
+        dto.size !== undefined &&
+        existing.size !== this.resolveMediaSize(dto.size)
+      ) {
         updateData.size = this.resolveMediaSize(dto.size);
       }
       if (dto.duration !== undefined) {
@@ -792,7 +989,8 @@ export class LecturesService {
     }
 
     const title = dto.videoName?.trim() || `video-${dto.videoId}`;
-    const sortOrder = dto.sortOrder ?? (await this.getNextVideoSortOrder(lectureId));
+    const sortOrder =
+      dto.sortOrder ?? (await this.getNextVideoSortOrder(lectureId));
     const duration = this.normalizeVideoDuration(dto.duration);
     const created = await this.prisma.$transaction(async (tx) => {
       const video = await tx.video.create({
@@ -825,11 +1023,16 @@ export class LecturesService {
     dto: RefreshTusVideoUploadDto,
     user?: { userId: string | number; type: string },
   ) {
-    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
-    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: String(lectureId) },
+    });
+    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnership(user, lecture.courseId);
 
-    const refreshed = this.bunny.signTusUpload(dto.videoId, dto.expiresInSeconds ?? 3600);
+    const refreshed = this.bunny.signTusUpload(
+      dto.videoId,
+      dto.expiresInSeconds ?? 3600,
+    );
     return {
       lectureId: String(lectureId),
       upload: {
@@ -843,12 +1046,16 @@ export class LecturesService {
     };
   }
 
-  async updateVideo(id: string, dto: UpdateVideoDto, user?: { userId: string | number; type: string }) {
+  async updateVideo(
+    id: string,
+    dto: UpdateVideoDto,
+    user?: { userId: string | number; type: string },
+  ) {
     const video = await this.prisma.video.findUnique({
       where: { id: String(id) },
       include: { lecture: { select: { courseId: true } } },
     });
-    if (!video) throw new NotFoundException('الفيديو غير موجود');
+    if (!video) throw new NotFoundException("الفيديو غير موجود");
     await this.assertCourseOwnership(user, video.lecture.courseId);
 
     const data: any = {};
@@ -860,7 +1067,8 @@ export class LecturesService {
     }
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
-    if (dto.offlineDownloadEnabled !== undefined) data.offlineDownloadEnabled = dto.offlineDownloadEnabled;
+    if (dto.offlineDownloadEnabled !== undefined)
+      data.offlineDownloadEnabled = dto.offlineDownloadEnabled;
     if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
     if (dto.size !== undefined) data.size = this.resolveMediaSize(dto.size);
     if (dto.duration !== undefined) {
@@ -872,7 +1080,10 @@ export class LecturesService {
 
     if (data.duration !== undefined) {
       return this.prisma.$transaction(async (tx) => {
-        const updated = await tx.video.update({ where: { id: String(id) }, data });
+        const updated = await tx.video.update({
+          where: { id: String(id) },
+          data,
+        });
         await this.recalculateCourseDuration(tx, video.lecture.courseId);
         return updated;
       });
@@ -893,9 +1104,12 @@ export class LecturesService {
         }),
       ]);
 
-      return this.getNextSortOrderValue(maxSortOrderResult._max.sortOrder, totalCount);
+      return this.getNextSortOrderValue(
+        maxSortOrderResult._max.sortOrder,
+        totalCount,
+      );
     } catch (error) {
-      if (!this.isMissingSortOrderColumn(error, 'Video.sortOrder')) throw error;
+      if (!this.isMissingSortOrderColumn(error, "Video.sortOrder")) throw error;
       return 1;
     }
   }
@@ -912,9 +1126,13 @@ export class LecturesService {
         }),
       ]);
 
-      return this.getNextSortOrderValue(maxSortOrderResult._max.sortOrder, totalCount);
+      return this.getNextSortOrderValue(
+        maxSortOrderResult._max.sortOrder,
+        totalCount,
+      );
     } catch (error) {
-      if (!this.isMissingSortOrderColumn(error, 'Lecture.sortOrder')) throw error;
+      if (!this.isMissingSortOrderColumn(error, "Lecture.sortOrder"))
+        throw error;
       return 1;
     }
   }
@@ -931,23 +1149,33 @@ export class LecturesService {
         }),
       ]);
 
-      return this.getNextSortOrderValue(maxSortOrderResult._max.sortOrder, totalCount);
+      return this.getNextSortOrderValue(
+        maxSortOrderResult._max.sortOrder,
+        totalCount,
+      );
     } catch (error) {
-      if (!this.isMissingSortOrderColumn(error, 'LectureFile.sortOrder')) throw error;
+      if (!this.isMissingSortOrderColumn(error, "LectureFile.sortOrder"))
+        throw error;
       return 1;
     }
   }
 
-  private getNextSortOrderValue(maxSortOrder: number | null | undefined, totalCount: number) {
+  private getNextSortOrderValue(
+    maxSortOrder: number | null | undefined,
+    totalCount: number,
+  ) {
     return Math.max(maxSortOrder ?? 0, totalCount) + 1;
   }
 
-  async deleteVideo(id: string, user?: { userId: string | number; type: string }) {
+  async deleteVideo(
+    id: string,
+    user?: { userId: string | number; type: string },
+  ) {
     const video = await this.prisma.video.findUnique({
       where: { id: String(id) },
       include: { lecture: { select: { courseId: true } } },
     });
-    if (!video) throw new NotFoundException('الفيديو غير موجود');
+    if (!video) throw new NotFoundException("الفيديو غير موجود");
     await this.assertCourseOwnership(user, video.lecture.courseId);
 
     // Clean up related records manually (e.g., interactions); extend here for other related models
@@ -964,15 +1192,21 @@ export class LecturesService {
     dto: CreateVideoSegmentDto,
     user?: { userId: string | number; type: string },
   ) {
-    if (dto.endSeconds !== undefined && dto.endSeconds !== null && dto.endSeconds <= dto.startSeconds) {
-      throw new BadRequestException('يجب أن تكون endSeconds أكبر من startSeconds');
+    if (
+      dto.endSeconds !== undefined &&
+      dto.endSeconds !== null &&
+      dto.endSeconds <= dto.startSeconds
+    ) {
+      throw new BadRequestException(
+        "يجب أن تكون endSeconds أكبر من startSeconds",
+      );
     }
 
     const video = await this.prisma.video.findUnique({
       where: { id: String(videoId) },
       include: { lecture: { select: { courseId: true } } },
     });
-    if (!video) throw new NotFoundException('الفيديو غير موجود');
+    if (!video) throw new NotFoundException("الفيديو غير موجود");
 
     await this.assertCourseOwnership(user, video.lecture.courseId);
 
@@ -987,18 +1221,24 @@ export class LecturesService {
     });
   }
 
-  async listVideoSegments(videoId: string, user?: { userId: string | number; type: string }) {
+  async listVideoSegments(
+    videoId: string,
+    user?: { userId: string | number; type: string },
+  ) {
     const video = await this.prisma.video.findUnique({
       where: { id: String(videoId) },
       include: { lecture: { select: { courseId: true } } },
     });
-    if (!video) throw new NotFoundException('الفيديو غير موجود');
+    if (!video) throw new NotFoundException("الفيديو غير موجود");
 
     await this.assertStudentSubscription(user, video.lecture.courseId);
 
     return this.prisma.videoSegment.findMany({
       where: { videoId: String(videoId) },
-      orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { startSeconds: 'asc' }],
+      orderBy: [
+        { sortOrder: { sort: "asc", nulls: "last" } },
+        { startSeconds: "asc" },
+      ],
     });
   }
 
@@ -1020,15 +1260,18 @@ export class LecturesService {
     });
 
     if (!segment || segment.videoId !== String(videoId)) {
-      throw new NotFoundException('مقطع الفيديو غير موجود');
+      throw new NotFoundException("مقطع الفيديو غير موجود");
     }
 
     await this.assertCourseOwnership(user, segment.video.lecture.courseId);
 
     const nextStart = dto.startSeconds ?? segment.startSeconds;
-    const nextEnd = dto.endSeconds === undefined ? segment.endSeconds : dto.endSeconds;
+    const nextEnd =
+      dto.endSeconds === undefined ? segment.endSeconds : dto.endSeconds;
     if (nextEnd !== null && nextEnd <= nextStart) {
-      throw new BadRequestException('يجب أن تكون endSeconds أكبر من startSeconds');
+      throw new BadRequestException(
+        "يجب أن تكون endSeconds أكبر من startSeconds",
+      );
     }
 
     const data: any = {};
@@ -1060,41 +1303,51 @@ export class LecturesService {
     });
 
     if (!segment || segment.videoId !== String(videoId)) {
-      throw new NotFoundException('مقطع الفيديو غير موجود');
+      throw new NotFoundException("مقطع الفيديو غير موجود");
     }
 
     await this.assertCourseOwnership(user, segment.video.lecture.courseId);
 
-    return this.prisma.videoSegment.delete({ where: { id: String(segmentId) } });
+    return this.prisma.videoSegment.delete({
+      where: { id: String(segmentId) },
+    });
   }
 
   // Questions
-  async createQuestion(dto: CreateQuestionDto, user?: { userId: string | number; type: string }) {
-    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(dto.lectureId) } });
-    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+  async createQuestion(
+    dto: CreateQuestionDto,
+    user?: { userId: string | number; type: string },
+  ) {
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: String(dto.lectureId) },
+    });
+    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertLectureOwnership(user, lecture.id);
 
     if (!dto.questionText && !dto.imageUrl) {
-      throw new BadRequestException('يجب توفير questionText أو imageUrl');
+      throw new BadRequestException("يجب توفير questionText أو imageUrl");
     }
 
-    if (dto.questionType === 'short_answer' && dto.options?.length) {
-      throw new BadRequestException('لا يسمح بخيارات مع short_answer');
+    if (dto.questionType === "short_answer" && dto.options?.length) {
+      throw new BadRequestException("لا يسمح بخيارات مع short_answer");
     }
 
-    if (dto.questionType === 'true_false') {
+    if (dto.questionType === "true_false") {
       if (!dto.options || dto.options.length !== 2) {
-        throw new BadRequestException('نوع true_false يتطلب خيارين بالضبط');
+        throw new BadRequestException("نوع true_false يتطلب خيارين بالضبط");
       }
     }
 
-    if (dto.questionType === 'multiple_choice') {
+    if (dto.questionType === "multiple_choice") {
       if (!dto.options || dto.options.length < 2 || dto.options.length > 6) {
-        throw new BadRequestException('نوع multiple_choice يتطلب من 2 إلى 6 خيارات');
+        throw new BadRequestException(
+          "نوع multiple_choice يتطلب من 2 إلى 6 خيارات",
+        );
       }
     }
 
-    const sortOrder = dto.sortOrder ??
+    const sortOrder =
+      dto.sortOrder ??
       (await this.prisma.question.count({
         where: { lectureId: String(dto.lectureId) },
       })) + 1;
@@ -1120,34 +1373,55 @@ export class LecturesService {
       },
       include: {
         options: {
-          orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+          orderBy: [
+            { sortOrder: { sort: "asc", nulls: "last" } },
+            { id: "asc" },
+          ],
         },
       },
     });
   }
 
-  async listQuestions(lectureId: string, user?: { userId: string | number; type: string }) {
-    const lecture = await this.prisma.lecture.findUnique({ where: { id: String(lectureId) } });
-    if (!lecture) throw new NotFoundException('المحاضرة غير موجودة');
+  async listQuestions(
+    lectureId: string,
+    user?: { userId: string | number; type: string },
+  ) {
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id: String(lectureId) },
+    });
+    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertStudentSubscription(user, lecture.courseId);
 
     return this.prisma.question.findMany({
       where: { lectureId: String(lectureId) },
       include: {
         options: {
-          orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+          orderBy: [
+            { sortOrder: { sort: "asc", nulls: "last" } },
+            { id: "asc" },
+          ],
         },
       },
-      orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+      orderBy: [{ sortOrder: { sort: "asc", nulls: "last" } }, { id: "asc" }],
     });
   }
 
-  async updateQuestion(id: string, dto: UpdateQuestionDto, user?: { userId: string | number; type: string }) {
+  async updateQuestion(
+    id: string,
+    dto: UpdateQuestionDto,
+    user?: { userId: string | number; type: string },
+  ) {
     const question = await this.prisma.question.findUnique({
       where: { id: String(id) },
-      select: { id: true, lectureId: true, questionText: true, imageUrl: true, questionType: true },
+      select: {
+        id: true,
+        lectureId: true,
+        questionText: true,
+        imageUrl: true,
+        questionType: true,
+      },
     });
-    if (!question) throw new NotFoundException('السؤال غير موجود');
+    if (!question) throw new NotFoundException("السؤال غير موجود");
     await this.assertLectureOwnership(user, question.lectureId);
 
     const data: any = {};
@@ -1156,25 +1430,31 @@ export class LecturesService {
     if (dto.explanation !== undefined) data.explanation = dto.explanation;
     if (dto.questionType !== undefined) data.questionType = dto.questionType;
     if (dto.points !== undefined) data.points = dto.points;
-    if (typeof dto.sortOrder === 'number' && Number.isFinite(dto.sortOrder)) data.sortOrder = dto.sortOrder;
+    if (typeof dto.sortOrder === "number" && Number.isFinite(dto.sortOrder))
+      data.sortOrder = dto.sortOrder;
 
     const nextType = dto.questionType ?? question.questionType;
     const nextText = dto.questionText ?? question.questionText;
     const nextImage = dto.imageUrl ?? question.imageUrl;
 
     if (!nextText && !nextImage) {
-      throw new BadRequestException('يجب توفير questionText أو imageUrl');
+      throw new BadRequestException("يجب توفير questionText أو imageUrl");
     }
 
     if (dto.options) {
-      if (nextType === 'short_answer') {
-        throw new BadRequestException('لا يسمح بخيارات مع short_answer');
+      if (nextType === "short_answer") {
+        throw new BadRequestException("لا يسمح بخيارات مع short_answer");
       }
-      if (nextType === 'true_false' && dto.options.length !== 2) {
-        throw new BadRequestException('نوع true_false يتطلب خيارين بالضبط');
+      if (nextType === "true_false" && dto.options.length !== 2) {
+        throw new BadRequestException("نوع true_false يتطلب خيارين بالضبط");
       }
-      if (nextType === 'multiple_choice' && (dto.options.length < 2 || dto.options.length > 6)) {
-        throw new BadRequestException('نوع multiple_choice يتطلب من 2 إلى 6 خيارات');
+      if (
+        nextType === "multiple_choice" &&
+        (dto.options.length < 2 || dto.options.length > 6)
+      ) {
+        throw new BadRequestException(
+          "نوع multiple_choice يتطلب من 2 إلى 6 خيارات",
+        );
       }
     }
 
@@ -1183,21 +1463,29 @@ export class LecturesService {
         where: { id: String(id) },
         include: {
           options: {
-            orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+            orderBy: [
+              { sortOrder: { sort: "asc", nulls: "last" } },
+              { id: "asc" },
+            ],
           },
         },
       });
     }
 
-    const updated = await this.prisma.question.update({ where: { id: String(id) }, data });
+    const updated = await this.prisma.question.update({
+      where: { id: String(id) },
+      data,
+    });
 
     if (dto.options) {
       await this.prisma.$transaction([
-        this.prisma.questionOption.deleteMany({ where: { questionId: String(id) } }),
+        this.prisma.questionOption.deleteMany({
+          where: { questionId: String(id) },
+        }),
         this.prisma.questionOption.createMany({
           data: dto.options.map((opt) => ({
             questionId: String(id),
-            optionText: opt.optionText ?? '',
+            optionText: opt.optionText ?? "",
             isCorrect: !!opt.isCorrect,
             sortOrder: opt.sortOrder ?? null,
           })),
@@ -1205,20 +1493,27 @@ export class LecturesService {
       ]);
     }
 
-    return this.prisma.question.findUnique({ where: { id: String(updated.id) }, include: { options: {
-      orderBy: {
-        sortOrder: 'asc', // أو يمكنك استخدام id: 'asc' إذا لم يكن لديك sortOrder للخيارات
+    return this.prisma.question.findUnique({
+      where: { id: String(updated.id) },
+      include: {
+        options: {
+          orderBy: {
+            sortOrder: "asc", // أو يمكنك استخدام id: 'asc' إذا لم يكن لديك sortOrder للخيارات
+          },
+        },
       },
-    }
-    }, });
+    });
   }
 
-  async deleteQuestion(id: string, user?: { userId: string | number; type: string }) {
+  async deleteQuestion(
+    id: string,
+    user?: { userId: string | number; type: string },
+  ) {
     const question = await this.prisma.question.findUnique({
       where: { id: String(id) },
       select: { id: true, lectureId: true },
     });
-    if (!question) throw new NotFoundException('السؤال غير موجود');
+    if (!question) throw new NotFoundException("السؤال غير موجود");
     await this.assertLectureOwnership(user, question.lectureId);
 
     return this.prisma.question.delete({ where: { id: String(id) } });
@@ -1264,40 +1559,44 @@ export class LecturesService {
           endSeconds: true,
           createdAt: true,
         },
-        orderBy: [{ startSeconds: 'asc' }, { id: 'asc' }],
+        orderBy: [{ startSeconds: "asc" }, { id: "asc" }],
       },
     };
   }
 
   private isAnySortOrderColumnMissing(error: unknown): boolean {
     return (
-      this.isMissingSortOrderColumn(error, 'Lecture.sortOrder') ||
-      this.isMissingSortOrderColumn(error, 'LectureFile.sortOrder') ||
-      this.isMissingSortOrderColumn(error, 'Video.sortOrder') ||
-      this.isMissingSortOrderColumn(error, 'VideoSegment.sortOrder')
+      this.isMissingSortOrderColumn(error, "Lecture.sortOrder") ||
+      this.isMissingSortOrderColumn(error, "LectureFile.sortOrder") ||
+      this.isMissingSortOrderColumn(error, "Video.sortOrder") ||
+      this.isMissingSortOrderColumn(error, "VideoSegment.sortOrder")
     );
   }
 
   private isMissingSortOrderColumn(error: unknown, column: string): boolean {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
-    if (error.code !== 'P2022') return false;
+    if (error.code !== "P2022") return false;
 
-    const metaColumn = String((error.meta as Record<string, unknown> | undefined)?.column ?? '');
+    const metaColumn = String(
+      (error.meta as Record<string, unknown> | undefined)?.column ?? "",
+    );
     return metaColumn.toLowerCase().endsWith(column.toLowerCase());
   }
 
   private isAnyVideoDurationColumnMissing(error: unknown): boolean {
     return (
-      this.isMissingColumn(error, 'Video.duration') ||
-      this.isMissingColumn(error, 'Video.durationSeconds')
+      this.isMissingColumn(error, "Video.duration") ||
+      this.isMissingColumn(error, "Video.durationSeconds")
     );
   }
 
   private isMissingColumn(error: unknown, column: string): boolean {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
-    if (error.code !== 'P2022') return false;
+    if (error.code !== "P2022") return false;
 
-    const metaColumn = String((error.meta as Record<string, unknown> | undefined)?.column ?? '');
+    const metaColumn = String(
+      (error.meta as Record<string, unknown> | undefined)?.column ?? "",
+    );
     return metaColumn.toLowerCase().endsWith(column.toLowerCase());
   }
 
@@ -1306,13 +1605,18 @@ export class LecturesService {
 
     const parsed = Number(duration);
     if (!Number.isInteger(parsed) || parsed < 0) {
-      throw new BadRequestException('مدة الفيديو يجب أن تكون رقماً صحيحاً أكبر أو يساوي صفر');
+      throw new BadRequestException(
+        "مدة الفيديو يجب أن تكون رقماً صحيحاً أكبر أو يساوي صفر",
+      );
     }
 
     return parsed;
   }
 
-  private async recalculateCourseDuration(tx: Prisma.TransactionClient, courseId: string) {
+  private async recalculateCourseDuration(
+    tx: Prisma.TransactionClient,
+    courseId: string,
+  ) {
     const aggregate = await tx.video.aggregate({
       where: {
         lecture: {
@@ -1328,17 +1632,22 @@ export class LecturesService {
     });
   }
 
-  private resolveMediaSize(providedSize?: string | number, uploadedSize?: number): string | null {
+  private resolveMediaSize(
+    providedSize?: string | number,
+    uploadedSize?: number,
+  ): string | null {
     if (providedSize === undefined || providedSize === null) {
       if (uploadedSize === undefined || uploadedSize === null) return null;
       return String(Math.round(Number(uploadedSize)));
     }
 
-    if (typeof providedSize === 'string') return providedSize;
+    if (typeof providedSize === "string") return providedSize;
 
     const sizeNum = Number(providedSize);
     if (!Number.isFinite(sizeNum) || sizeNum < 0) {
-      throw new BadRequestException('حجم الملف/الفيديو يجب أن يكون رقماً موجباً أو صفراً');
+      throw new BadRequestException(
+        "حجم الملف/الفيديو يجب أن يكون رقماً موجباً أو صفراً",
+      );
     }
 
     return String(Math.round(sizeNum));
