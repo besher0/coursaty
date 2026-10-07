@@ -62,7 +62,9 @@ describe('BunnyService CDN token authentication', () => {
     expect(signed).toContain('&expires=1700003600');
     expect(signed).toContain(`token_path=%2F${videoId}%2F`);
     expect(new URL(signed).pathname).toMatch(
-      new RegExp(`^/bcdn_token=HS256-[^/]+/${videoId}/playlist\\.m3u8$`),
+      new RegExp(
+        `^/bcdn_token=HS256-[^/]+&expires=\\d+&token_path=%2F${videoId}%2F/${videoId}/playlist\\.m3u8$`,
+      ),
     );
   });
 
@@ -87,6 +89,12 @@ describe('BunnyService CDN token authentication', () => {
 
     expect(result.url).toContain('/bcdn_token=HS256-');
     expect(result.url).toContain('&expires=1700003600');
+    expect(result.url).toContain(`token_path=%2F${videoId}%2F`);
+    expect(new URL(result.url).pathname).toMatch(
+      new RegExp(
+        `^/bcdn_token=HS256-[^/]+&expires=\\d+&token_path=%2F${videoId}%2F/${videoId}/playlist\\.m3u8$`,
+      ),
+    );
     expect(result.expiresAt.toISOString()).toBe('2023-11-14T23:13:20.000Z');
     expect(result.url).not.toContain(tokenKey);
   });

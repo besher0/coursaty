@@ -272,6 +272,9 @@ export class BunnyService {
     if (!playData.playlistUrl) {
       throw new BadGatewayException('Bunny Stream playlist URL is not available');
     }
+    if (!this.isBunnyStreamMediaUrl(playData.playlistUrl, videoId)) {
+      throw new BadGatewayException('Bunny Stream returned an invalid playlist URL');
+    }
 
     const expires = this.getPlaybackExpiration(expiresInSeconds);
     return {
@@ -589,10 +592,10 @@ export class BunnyService {
       .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
       .join('&');
 
-    const hmac = createHmac('sha256', this.cdnTokenKey);
-    hmac.update(pathAllowed);
-    hmac.update(String(expires));
-    hmac.update(signingData);
+    const signaturePath = pathAllowed;
+    const userIp = '';
+    const signatureInput = `${signaturePath}${expires}${userIp}${signingData}`;
+    const hmac = createHmac('sha256', this.cdnTokenKey).update(signatureInput);
 
     const token = `HS256-${hmac
       .digest('base64')
@@ -602,7 +605,7 @@ export class BunnyService {
 
     const base = `${parsed.protocol}//${parsed.host}`;
     const tail = urlData ? `&${urlData}` : '';
-    return `${base}/bcdn_token=${token}${tail}&expires=${expires}${parsed.pathname}`;
+    return `${base}/bcdn_token=${token}&expires=${expires}${tail}${parsed.pathname}`;
   }
 
   private removeExistingCdnToken(parsed: URL): URL {

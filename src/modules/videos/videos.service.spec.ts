@@ -86,7 +86,7 @@ describe('VideosService protected sessions', () => {
     const bunny = {
       extractBunnyVideoId: jest.fn().mockReturnValue('11111111-1111-4111-8111-111111111111'),
       createSignedHlsPlaybackUrl: jest.fn().mockResolvedValue({
-        url: 'https://vz-test.b-cdn.net/bcdn_token=signed/playlist.m3u8',
+        url: 'https://vz-test.b-cdn.net/bcdn_token=HS256-test&expires=1700003600&token_path=%2F11111111-1111-4111-8111-111111111111%2F/11111111-1111-4111-8111-111111111111/playlist.m3u8',
         expiresAt: new Date('2026-10-06T18:05:00.000Z'),
       }),
     };
@@ -175,7 +175,9 @@ describe('VideosService protected sessions', () => {
     );
 
     expect(result).toMatchObject({
-      playbackUrl: 'https://vz-test.b-cdn.net/bcdn_token=signed/playlist.m3u8',
+      playbackUrl: expect.stringMatching(
+        /^https:\/\/vz-test\.b-cdn\.net\/bcdn_token=HS256-[^/]+&expires=\d+&token_path=%2F11111111-1111-4111-8111-111111111111%2F\/11111111-1111-4111-8111-111111111111\/playlist\.m3u8$/,
+      ),
       expiresAt: '2026-10-06T18:05:00.000Z',
       videoId: 'video-1',
       bunnyVideoId: '11111111-1111-4111-8111-111111111111',
@@ -226,7 +228,9 @@ describe('VideosService protected sessions', () => {
       { userId: 'user-1', type: 'STUDENT' },
     );
 
-    expect(result.downloadUrl).toContain('bcdn_token=signed');
+    expect(result.downloadUrl).toMatch(
+      /^https:\/\/vz-test\.b-cdn\.net\/bcdn_token=HS256-[^/]+&expires=\d+&token_path=%2F11111111-1111-4111-8111-111111111111%2F\/11111111-1111-4111-8111-111111111111\/playlist\.m3u8$/,
+    );
     expect(result.downloadSessionId).toEqual(expect.any(String));
     expect(result.offlineLicense.payload).toMatchObject({
       licenseId: 'license-1',
