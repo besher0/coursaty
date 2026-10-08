@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { LecturesService } from './lectures.service';
 
 describe('LecturesService media links and question ordering', () => {
@@ -503,5 +504,217 @@ describe('LecturesService media links and question ordering', () => {
         },
       },
     });
+  });
+});
+
+describe('LecturesService TUS video completion safeguards', () => {
+  const bunnyVideoId = '11111111-1111-4111-8111-111111111111';
+  const streamPlayUrl = `https://video.bunnycdn.com/play/123/${bunnyVideoId}`;
+
+  function createTusService(existingVideo: any = null) {
+    const tx = {
+      video: {
+        create: jest.fn((args: any) => Promise.resolve({ id: 'created-video', ...args.data })),
+        update: jest.fn((args: any) => Promise.resolve({ id: args.where.id, ...args.data })),
+        aggregate: jest.fn().mockResolvedValue({ _sum: { duration: 12 } }),
+      },
+      course: {
+        update: jest.fn().mockResolvedValue({ id: 'course-1', duration: 12 }),
+      },
+    };
+    const prisma = {
+      lecture: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'lecture-1', courseId: 'course-1' }),
+      },
+      video: {
+        findFirst: jest.fn().mockResolvedValue(existingVideo),
+      },
+      $transaction: jest.fn((callback: any) => callback(tx)),
+    } as any;
+    const bunny = {
+      getStreamPlayUrl: jest.fn().mockReturnValue(streamPlayUrl),
+      getStreamPlaybackPayload: jest.fn().mockResolvedValue({
+        streamVideoId: bunnyVideoId,
+        streamPlayUrl,
+        streamEmbedUrl: `https://player.mediadelivery.net/embed/123/${bunnyVideoId}`,
+        streamFallbackUrl: null,
+      }),
+    };
+    const service = new LecturesService(prisma, bunny as any);
+    jest.spyOn(service as any, 'assertCourseOwnership').mockResolvedValue(undefined);
+
+    return { service, prisma, bunny, tx };
+  }
+
+  it('saves the Bunny Stream GUID and stable play URL when completing a TUS upload', async () => {
+    const { service, tx } = createTusService();
+
+    await service.completeTusVideoUpload('lecture-1', {
+      videoId: bunnyVideoId,
+      videoName: 'New video',
+      duration: 12,
+      size: '3456',
+      offlineDownloadEnabled: false,
+      isFree: true,
+      sortOrder: 3,
+    });
+
+    expect(tx.video.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        videoName: 'New video',
+        videoUrl: streamPlayUrl,
+        bunnyVideoId,
+        duration: 12,
+        size: '3456',
+        offlineDownloadEnabled: false,
+        isFree: true,
+        sortOrder: 3,
+      }),
+    });
+  });
+
+  it('does not create a null-derived placeholder when Bunny fallback URL is null', async () => {
+    const { service, tx } = createTusService();
+
+    await service.completeTusVideoUpload('lecture-1', {
+      videoId: bunnyVideoId,
+      sortOrder: 1,
+    });
+
+    const data = tx.video.create.mock.calls[0][0].data;
+    expect(data.videoUrl).toBe(streamPlayUrl);
+    expect(data.videoUrl).not.toContain('null');
+    expect(data.videoUrl).not.toContain('undefined');
+    expect(data.videoUrl).not.toBe('nullplay_');
+  });
+
+  it('does not clear an existing Bunny GUID or replace a valid URL when completion finds the video', async () => {
+    const existing = {
+      id: 'video-1',
+      bunnyVideoId,
+      videoUrl: streamPlayUrl,
+      sortOrder: 4,
+      offlineDownloadEnabled: true,
+      size: '1000',
+      duration: 20,
+    };
+    const { service, tx } = createTusService(existing);
+
+    const result = await service.completeTusVideoUpload('lecture-1', {
+      videoId: bunnyVideoId,
+    });
+
+    expect(tx.video.update).not.toHaveBeenCalled();
+    expect(tx.video.create).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      id: 'video-1',
+      bunnyVideoId,
+      videoUrl: streamPlayUrl,
+    });
+  });
+
+  it('backfills bunnyVideoId on an existing legacy record without touching its videoUrl when no new URL is needed', async () => {
+    const existing = {
+      id: 'video-1',
+      bunnyVideoId: null,
+      videoUrl: streamPlayUrl,
+      sortOrder: 4,
+      offlineDownloadEnabled: true,
+      size: '1000',
+      duration: 20,
+    };
+    const { service, tx } = createTusService(existing);
+
+    await service.completeTusVideoUpload('lecture-1', {
+      videoId: bunnyVideoId,
+    });
+
+    expect(tx.video.update).toHaveBeenCalledWith({
+      where: { id: 'video-1' },
+      data: { bunnyVideoId },
+    });
+    expect(tx.video.create).not.toHaveBeenCalled();
+  });
+
+  it('fails clearly for an invalid or missing Bunny GUID before saving anything', async () => {
+    const { service, tx, prisma, bunny } = createTusService();
+
+    await expect(
+      service.completeTusVideoUpload('lecture-1', { videoId: 'not-a-guid' } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.lecture.findUnique).not.toHaveBeenCalled();
+    expect(bunny.getStreamPlayUrl).not.toHaveBeenCalled();
+    expect(tx.video.create).not.toHaveBeenCalled();
+    expect(tx.video.update).not.toHaveBeenCalled();
+  });
+
+  it('preserves an existing Bunny GUID when a manual URL update has no new Bunny ID', async () => {
+    const prisma = {
+      video: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'video-1',
+          videoUrl: streamPlayUrl,
+          bunnyVideoId,
+          duration: 60,
+          lecture: { courseId: 'course-1' },
+        }),
+        update: jest.fn().mockResolvedValue({ id: 'video-1' }),
+      },
+    } as any;
+    const bunny = { extractBunnyVideoId: jest.fn().mockReturnValue(null) };
+    const service = new LecturesService(prisma, bunny as any);
+
+    await service.updateVideo('video-1', { videoUrl: 'https://cdn.example.com/manual.mp4' });
+
+    expect(prisma.video.update).toHaveBeenCalledWith({
+      where: { id: 'video-1' },
+      data: {
+        videoUrl: 'https://cdn.example.com/manual.mp4',
+        contentVersion: { increment: 1 },
+      },
+    });
+  });
+
+  it('rejects manual video creation with a null-derived placeholder URL', async () => {
+    const prisma = {
+      lecture: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'lecture-1', courseId: 'course-1' }),
+      },
+      $transaction: jest.fn(),
+    } as any;
+    const service = new LecturesService(prisma, {} as any);
+    jest.spyOn(service as any, 'assertCourseOwnership').mockResolvedValue(undefined);
+
+    await expect(
+      service.createVideo({
+        lectureId: 'lecture-1',
+        videoName: 'Bad video',
+        videoUrl: 'nullplay_',
+        sortOrder: 1,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects manual video URL updates with undefined-derived placeholder URLs', async () => {
+    const prisma = {
+      video: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'video-1',
+          videoUrl: streamPlayUrl,
+          bunnyVideoId,
+          duration: 60,
+          lecture: { courseId: 'course-1' },
+        }),
+        update: jest.fn(),
+      },
+    } as any;
+    const service = new LecturesService(prisma, {} as any);
+
+    await expect(
+      service.updateVideo('video-1', { videoUrl: 'undefinedplay_' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.video.update).not.toHaveBeenCalled();
   });
 });

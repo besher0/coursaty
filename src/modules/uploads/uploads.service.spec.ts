@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { ApiCodeException } from '@/common/errors/api-code.exception';
 import { UploadsService } from './uploads.service';
 
@@ -118,5 +119,142 @@ describe('UploadsService payment receipt validation', () => {
 
     expect(bunny.deleteStorageFile).toHaveBeenCalledTimes(1);
     expect(bunny.deleteStorageFile).toHaveBeenCalledWith('uploads/payment-qr/system.webp');
+  });
+});
+
+describe('UploadsService Bunny Stream video resolution lookup', () => {
+  const dbVideoId = '9cda5c22-1368-48a1-a0b6-a8496270b04a';
+  const bunnyVideoId = '11111111-1111-4111-8111-111111111111';
+
+  function createResolutionService(dbVideo: any, extractedVideoId: string | null = bunnyVideoId) {
+    const bunny = {
+      extractBunnyVideoId: jest.fn().mockReturnValue(extractedVideoId),
+      getVideoPlayData: jest.fn().mockResolvedValue({
+        videoId: bunnyVideoId,
+        availableResolutions: ['720p'],
+        isPlayable: true,
+        isPlaylistPlayable: true,
+      }),
+      getVideoResolutions: jest.fn().mockResolvedValue({
+        videoId: bunnyVideoId,
+        availableResolutions: ['720p'],
+        playlistResolutions: [{ resolution: '720p', path: 'playlist.m3u8', sizeBytes: 123 }],
+        mp4Resolutions: [{ resolution: '720p', path: 'video.mp4', sizeBytes: 456 }],
+      }),
+      getStreamPlayUrl: jest.fn((id: string) => `https://video.bunnycdn.com/play/123/${id}`),
+      getStreamEmbedUrl: jest.fn((id: string) => `https://player.mediadelivery.net/embed/123/${id}`),
+    };
+    const prisma = {
+      video: {
+        findUnique: jest.fn().mockResolvedValue(dbVideo),
+      },
+    };
+
+    return {
+      service: new UploadsService(bunny as any, prisma as any),
+      bunny,
+      prisma,
+    };
+  }
+
+  it('uses Video.bunnyVideoId even when videoUrl is legacy or not extractable', async () => {
+    const { service, bunny, prisma } = createResolutionService(
+      {
+        bunnyVideoId,
+        videoUrl: 'https://storage.example.com/legacy-file.mp4',
+      },
+      null,
+    );
+
+    await expect(
+      service.getBunnyVideoResolutions(dbVideoId, undefined, 'guest-device'),
+    ).resolves.toMatchObject({
+      requestedVideoId: dbVideoId,
+      resolvedVideoId: bunnyVideoId,
+      resolvedFrom: 'db_video_id',
+      availableResolutions: ['720p'],
+    });
+
+    expect(prisma.video.findUnique).toHaveBeenCalledWith({
+      where: { id: dbVideoId },
+      select: { bunnyVideoId: true, videoUrl: true },
+    });
+    expect(bunny.extractBunnyVideoId).not.toHaveBeenCalled();
+    expect(bunny.getVideoPlayData).toHaveBeenCalledWith(bunnyVideoId);
+    expect(bunny.getVideoResolutions).toHaveBeenCalledWith(bunnyVideoId);
+  });
+
+  it('falls back to extracting the Bunny video id from videoUrl', async () => {
+    const { service, bunny } = createResolutionService({
+      bunnyVideoId: null,
+      videoUrl: `https://video.bunnycdn.com/play/123/${bunnyVideoId}`,
+    });
+
+    await expect(
+      service.getBunnyVideoResolutions(dbVideoId, undefined, 'guest-device'),
+    ).resolves.toMatchObject({
+      resolvedVideoId: bunnyVideoId,
+      availableResolutions: ['720p'],
+    });
+
+    expect(bunny.extractBunnyVideoId).toHaveBeenCalledWith(
+      `https://video.bunnycdn.com/play/123/${bunnyVideoId}`,
+    );
+  });
+
+  it('keeps returning the current 400 when neither bunnyVideoId nor videoUrl is usable', async () => {
+    const { service, bunny } = createResolutionService(
+      {
+        bunnyVideoId: null,
+        videoUrl: 'https://storage.example.com/legacy-file.mp4',
+      },
+      null,
+    );
+
+    await expect(
+      service.getBunnyVideoResolutions(dbVideoId, undefined, 'guest-device'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.getBunnyVideoResolutions(dbVideoId, undefined, 'guest-device'),
+    ).rejects.toThrow('معرف Bunny Stream صالح');
+
+    expect(bunny.getVideoPlayData).not.toHaveBeenCalled();
+    expect(bunny.getVideoResolutions).not.toHaveBeenCalled();
+  });
+});
+
+describe('UploadsService TUS completion safeguards', () => {
+  const bunnyVideoId = '11111111-1111-4111-8111-111111111111';
+
+  it('completes a generic TUS upload using the real Bunny GUID and returned play URL', async () => {
+    const bunny = {
+      getStreamPlaybackPayload: jest.fn().mockResolvedValue({
+        streamVideoId: bunnyVideoId,
+        streamPlayUrl: `https://video.bunnycdn.com/play/123/${bunnyVideoId}`,
+        streamEmbedUrl: `https://player.mediadelivery.net/embed/123/${bunnyVideoId}`,
+        streamFallbackUrl: null,
+      }),
+    };
+    const service = new UploadsService(bunny as any, {} as any);
+
+    await expect(
+      service.completeTusVideoUpload({ videoId: bunnyVideoId }),
+    ).resolves.toMatchObject({
+      guid: bunnyVideoId,
+      videoUrl: `https://video.bunnycdn.com/play/123/${bunnyVideoId}`,
+    });
+    expect(bunny.getStreamPlaybackPayload).toHaveBeenCalledWith(bunnyVideoId, undefined);
+  });
+
+  it('fails generic TUS completion for an invalid Bunny GUID before building URLs', async () => {
+    const bunny = {
+      getStreamPlaybackPayload: jest.fn(),
+    };
+    const service = new UploadsService(bunny as any, {} as any);
+
+    await expect(
+      service.completeTusVideoUpload({ videoId: 'not-a-guid' } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(bunny.getStreamPlaybackPayload).not.toHaveBeenCalled();
   });
 });

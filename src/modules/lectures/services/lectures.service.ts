@@ -27,6 +27,9 @@ import * as path from "path";
 
 @Injectable()
 export class LecturesService {
+  private static readonly BUNNY_VIDEO_GUID_PATTERN =
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly bunny: BunnyService,
@@ -755,6 +758,7 @@ export class LecturesService {
     const sortOrder =
       dto.sortOrder ?? (await this.getNextVideoSortOrder(dto.lectureId));
     const duration = this.normalizeVideoDuration(dto.duration);
+    const videoUrl = this.requireSafeVideoUrl(dto.videoUrl);
 
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.video.create({
@@ -762,8 +766,8 @@ export class LecturesService {
           lectureId: String(dto.lectureId),
           videoName: dto.videoName,
           description: dto.description,
-          videoUrl: dto.videoUrl,
-          bunnyVideoId: this.bunny.extractBunnyVideoId(dto.videoUrl),
+          videoUrl,
+          bunnyVideoId: this.bunny.extractBunnyVideoId(videoUrl),
           duration,
           isFree: dto.isFree ?? false,
           offlineDownloadEnabled: dto.offlineDownloadEnabled ?? true,
@@ -927,26 +931,28 @@ export class LecturesService {
     dto: CompleteTusVideoUploadDto,
     user?: { userId: string | number; type: string },
   ) {
+    const bunnyVideoId = this.requireBunnyVideoGuid(dto.videoId);
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: String(lectureId) },
     });
     if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnership(user, lecture.courseId);
 
-    const streamPlayUrl = this.bunny.getStreamPlayUrl(dto.videoId);
+    const streamPlayUrl = this.bunny.getStreamPlayUrl(bunnyVideoId);
     const existing = await this.prisma.video.findFirst({
       where: {
         lectureId: String(lectureId),
-        videoUrl: streamPlayUrl,
+        OR: [{ bunnyVideoId }, { videoUrl: streamPlayUrl }],
       },
     });
 
     const streamPlayback = await this.bunny.getStreamPlaybackPayload(
-      dto.videoId,
+      bunnyVideoId,
       dto.preferredResolution,
     );
     if (existing) {
       const updateData: any = {};
+      if (!existing.bunnyVideoId) updateData.bunnyVideoId = bunnyVideoId;
       if (dto.sortOrder !== undefined && existing.sortOrder !== dto.sortOrder)
         updateData.sortOrder = dto.sortOrder;
       if (
@@ -988,7 +994,7 @@ export class LecturesService {
       };
     }
 
-    const title = dto.videoName?.trim() || `video-${dto.videoId}`;
+    const title = dto.videoName?.trim() || `video-${bunnyVideoId}`;
     const sortOrder =
       dto.sortOrder ?? (await this.getNextVideoSortOrder(lectureId));
     const duration = this.normalizeVideoDuration(dto.duration);
@@ -999,7 +1005,7 @@ export class LecturesService {
           videoName: title,
           description: dto.description,
           videoUrl: streamPlayUrl,
-          bunnyVideoId: dto.videoId,
+          bunnyVideoId,
           duration,
           isFree: dto.isFree ?? false,
           offlineDownloadEnabled: dto.offlineDownloadEnabled ?? true,
@@ -1061,8 +1067,10 @@ export class LecturesService {
     const data: any = {};
     if (dto.videoName !== undefined) data.videoName = dto.videoName;
     if (dto.videoUrl !== undefined) {
-      data.videoUrl = dto.videoUrl;
-      data.bunnyVideoId = this.bunny.extractBunnyVideoId(dto.videoUrl);
+      const videoUrl = this.requireSafeVideoUrl(dto.videoUrl);
+      data.videoUrl = videoUrl;
+      const bunnyVideoId = this.bunny.extractBunnyVideoId(videoUrl);
+      if (bunnyVideoId || !video.bunnyVideoId) data.bunnyVideoId = bunnyVideoId;
       data.contentVersion = { increment: 1 };
     }
     if (dto.description !== undefined) data.description = dto.description;
@@ -1651,5 +1659,28 @@ export class LecturesService {
     }
 
     return String(Math.round(sizeNum));
+  }
+
+  private requireBunnyVideoGuid(value?: string | null): string {
+    const guid = String(value ?? "").trim();
+    if (!LecturesService.BUNNY_VIDEO_GUID_PATTERN.test(guid)) {
+      throw new BadRequestException("videoId يجب أن يكون Bunny Stream GUID صالح");
+    }
+    return guid;
+  }
+
+  private requireSafeVideoUrl(value?: string | null): string {
+    const videoUrl = String(value ?? "").trim();
+    const lower = videoUrl.toLowerCase();
+    if (
+      !videoUrl ||
+      lower.includes("nullplay_") ||
+      lower.includes("undefinedplay_") ||
+      lower.includes("null") ||
+      lower.includes("undefined")
+    ) {
+      throw new BadRequestException("videoUrl غير صالح");
+    }
+    return videoUrl;
   }
 }

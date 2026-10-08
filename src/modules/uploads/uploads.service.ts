@@ -11,6 +11,9 @@ import { RefreshUploadVideoTusDto } from './dtos/refresh-upload-video-tus.dto';
 
 @Injectable()
 export class UploadsService {
+  private static readonly BUNNY_VIDEO_GUID_PATTERN =
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+
   /** Allowed QR/receipt image formats with their magic byte signatures. */
   private static readonly PAYMENT_IMAGE_ALLOWED_TYPES = [
     { mime: 'image/jpeg', extension: '.jpg', signature: [0xff, 0xd8, 0xff] },
@@ -230,11 +233,12 @@ export class UploadsService {
   }
 
   async completeTusVideoUpload(dto: CompleteUploadVideoTusDto) {
-    const videoTitle = dto.title?.trim() || `video-${dto.videoId}`;
-    const streamPlayback = await this.bunny.getStreamPlaybackPayload(dto.videoId, dto.preferredResolution);
+    const bunnyVideoId = this.requireBunnyVideoGuid(dto.videoId);
+    const videoTitle = dto.title?.trim() || `video-${bunnyVideoId}`;
+    const streamPlayback = await this.bunny.getStreamPlaybackPayload(bunnyVideoId, dto.preferredResolution);
 
     return {
-      guid: dto.videoId,
+      guid: bunnyVideoId,
       title: videoTitle,
       videoUrl: streamPlayback.streamPlayUrl,
       embedUrl: streamPlayback.streamEmbedUrl,
@@ -363,12 +367,13 @@ export class UploadsService {
 
     const dbVideo = await this.prisma.video.findUnique({
       where: { id: input },
-      select: { videoUrl: true },
+      select: { bunnyVideoId: true, videoUrl: true },
     });
 
     if (!dbVideo) throw new NotFoundException('الفيديو غير موجود');
 
-    const streamVideoId = this.bunny.extractBunnyVideoId(dbVideo.videoUrl);
+    const streamVideoId =
+      dbVideo.bunnyVideoId || this.bunny.extractBunnyVideoId(dbVideo.videoUrl);
     if (!streamVideoId) {
       throw new BadRequestException('هذا الفيديو لا يحتوي على معرف Bunny Stream صالح');
     }
@@ -400,5 +405,13 @@ export class UploadsService {
 
     const message = (error as any)?.message;
     return typeof message === 'string' ? message : 'Unknown error';
+  }
+
+  private requireBunnyVideoGuid(value?: string | null): string {
+    const guid = String(value ?? '').trim();
+    if (!UploadsService.BUNNY_VIDEO_GUID_PATTERN.test(guid)) {
+      throw new BadRequestException('videoId يجب أن يكون Bunny Stream GUID صالح');
+    }
+    return guid;
   }
 }

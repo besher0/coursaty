@@ -22,6 +22,9 @@ import { SystemSettingsService } from "@/modules/system-settings/services/system
 
 @Injectable()
 export class CourseService {
+  private static readonly BUNNY_VIDEO_GUID_PATTERN =
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly bunny: BunnyService,
@@ -1154,6 +1157,7 @@ export class CourseService {
     user?: { userId: string | number; type: string },
     dto?: CompleteTusVideoUploadDto,
   ) {
+    const bunnyVideoId = this.requireBunnyVideoGuid(dto?.videoId);
     if (!dto?.videoId) throw new BadRequestException("videoId مطلوب");
 
     const lecture = await this.prisma.lecture.findUnique({
@@ -1162,20 +1166,21 @@ export class CourseService {
     if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
 
-    const streamPlayUrl = this.bunny.getStreamPlayUrl(dto.videoId);
+    const streamPlayUrl = this.bunny.getStreamPlayUrl(bunnyVideoId);
     const existing = await this.prisma.video.findFirst({
       where: {
         lectureId: String(lectureId),
-        videoUrl: streamPlayUrl,
+        OR: [{ bunnyVideoId }, { videoUrl: streamPlayUrl }],
       },
     });
 
     const streamPlayback = await this.bunny.getStreamPlaybackPayload(
-      dto.videoId,
+      bunnyVideoId,
       dto.preferredResolution,
     );
     if (existing) {
       const updateData: any = {};
+      if (!existing.bunnyVideoId) updateData.bunnyVideoId = bunnyVideoId;
       if (dto.sortOrder !== undefined && existing.sortOrder !== dto.sortOrder)
         updateData.sortOrder = dto.sortOrder;
       if (
@@ -1217,7 +1222,7 @@ export class CourseService {
       };
     }
 
-    const title = dto.videoName?.trim() || `video-${dto.videoId}`;
+    const title = dto.videoName?.trim() || `video-${bunnyVideoId}`;
     const sortOrder =
       dto.sortOrder ?? (await this.getNextLectureVideoSortOrder(lectureId));
     const duration = this.normalizeVideoDuration(dto.duration);
@@ -1228,7 +1233,7 @@ export class CourseService {
           videoName: title,
           description: dto.description,
           videoUrl: streamPlayUrl,
-          bunnyVideoId: dto.videoId,
+          bunnyVideoId,
           duration,
           isFree: dto.isFree ?? false,
           offlineDownloadEnabled: dto.offlineDownloadEnabled ?? true,
@@ -1613,5 +1618,13 @@ export class CourseService {
     if (basePrice === 0) return 0;
 
     return Number((((basePrice - finalPrice) * 100) / basePrice).toFixed(6));
+  }
+
+  private requireBunnyVideoGuid(value?: string | null): string {
+    const guid = String(value ?? "").trim();
+    if (!CourseService.BUNNY_VIDEO_GUID_PATTERN.test(guid)) {
+      throw new BadRequestException("videoId يجب أن يكون Bunny Stream GUID صالح");
+    }
+    return guid;
   }
 }
