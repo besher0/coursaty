@@ -1,0 +1,7 @@
+CREATE TYPE "VideoPlaybackSessionType" AS ENUM ('AUTHENTICATED', 'GUEST');
+
+ALTER TABLE "VideoPlaybackSession"
+ADD COLUMN "sessionType" "VideoPlaybackSessionType" NOT NULL DEFAULT 'AUTHENTICATED',
+ALTER COLUMN "userId" DROP NOT NULL,
+ALTER COLUMN "studentId" DROP NOT NULL,
+ALTER COLUMN "deviceId" DROP NOT NULL;

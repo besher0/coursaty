@@ -59,6 +59,11 @@ enum RevenueTransactionType {
   BACKFILL
 }
 
+enum VideoPlaybackSessionType {
+  AUTHENTICATED
+  GUEST
+}
+
 model User {
   id           String    @id @default(uuid())
   phone        String    @unique
@@ -540,9 +545,10 @@ model VideoPlaybackChallenge {
 model VideoPlaybackSession {
   id              String    @id @default(uuid())
   accessTokenHash String    @unique
-  userId          String
-  studentId       String
-  deviceId        String
+  sessionType     VideoPlaybackSessionType @default(AUTHENTICATED)
+  userId          String?
+  studentId       String?
+  deviceId        String?
   videoId         String
   bunnyVideoId    String
   expiresAt       DateTime
@@ -550,8 +556,8 @@ model VideoPlaybackSession {
   createdAt       DateTime  @default(now())
   refreshedAt     DateTime?
 
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  student Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
   video   Video   @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
   @@index([userId, deviceId])

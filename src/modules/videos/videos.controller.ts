@@ -55,6 +55,15 @@ export class VideosController {
     return this.videos.createPlaybackSession(videoId, dto, req.user);
   }
 
+  @Post(":videoId/guest-playback-session")
+  @ApiOperation({ summary: "Create a short-lived public Bunny HLS playback session for free videos" })
+  @ApiOkResponse({ description: "Signed guest playback session created" })
+  createGuestPlaybackSession(
+    @Param("videoId", new ParseUUIDPipe({ version: "4" })) videoId: string,
+  ) {
+    return this.videos.createGuestPlaybackSession(videoId);
+  }
+
   @Post(":videoId/playback-session/:sessionId/refresh")
   @ApiOperation({ summary: "Refresh a gateway playback session" })
   @ApiOkResponse({ description: "Playback session refreshed" })

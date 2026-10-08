@@ -106,15 +106,27 @@ describe("VideosService protected sessions", () => {
       offlineVideoLicense: {
         create: jest.fn().mockResolvedValue({ id: "license-1" }),
       },
+      videoPlaybackSession: {
+        create: jest.fn().mockResolvedValue({ id: "playback-session-1" }),
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
     } as any;
     const bunny = {
       extractBunnyVideoId: jest
         .fn()
-        .mockReturnValue("11111111-1111-4111-8111-111111111111"),
+        .mockReturnValue(
+          Object.prototype.hasOwnProperty.call(overrides, "extractedBunnyVideoId")
+            ? overrides.extractedBunnyVideoId
+            : "11111111-1111-4111-8111-111111111111",
+        ),
       createSignedHlsPlaybackUrl: jest.fn().mockResolvedValue({
         url: "https://vz-test.b-cdn.net/bcdn_token=HS256-test&expires=1700003600&token_path=%2F11111111-1111-4111-8111-111111111111%2F/11111111-1111-4111-8111-111111111111/playlist.m3u8",
         expiresAt: new Date("2026-10-06T18:05:00.000Z"),
       }),
+      signBunnyStreamMediaUrlForPath: jest.fn().mockReturnValue(
+        "https://video.bunnycdn.com/signed",
+      ),
     };
     const config = {
       get: jest.fn(
@@ -126,6 +138,8 @@ describe("VideosService protected sessions", () => {
             VIDEO_PLAYBACK_TTL_SECONDS: "300",
             VIDEO_DOWNLOAD_TTL_SECONDS: "600",
             VIDEO_DEVICE_LIMIT: "1",
+            VIDEO_GATEWAY_BASE_URL: "https://gateway.example",
+            VIDEO_EDGE_SHARED_SECRET: "edge-secret",
           })[key],
       ),
     };
@@ -193,6 +207,102 @@ describe("VideosService protected sessions", () => {
         { deviceId: "device-1" },
         { userId: "user-1", type: "STUDENT" },
       ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("creates a scoped guest playback session for a free video", async () => {
+    const { service, prisma, bunny } = createService({
+      video: {
+        id: "video-1",
+        videoUrl:
+          "https://video.bunnycdn.com/play/123/11111111-1111-4111-8111-111111111111",
+        bunnyVideoId: "11111111-1111-4111-8111-111111111111",
+        isFree: true,
+        lecture: {
+          course: {
+            status: "APPROVED",
+            expiresAt: new Date(Date.now() + 86400000),
+            teacher: { isVisibleToStudents: true },
+          },
+        },
+      },
+    });
+
+    const result = await service.createGuestPlaybackSession("video-1");
+
+    expect(result).toMatchObject({
+      playbackUrl:
+        "https://gateway.example/11111111-1111-4111-8111-111111111111/playlist.m3u8",
+      videoId: "video-1",
+      bunnyVideoId: "11111111-1111-4111-8111-111111111111",
+      accessHeader: "X-Coursaty-Playback-Session",
+    });
+    expect(prisma.videoPlaybackSession.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sessionType: "GUEST",
+        videoId: "video-1",
+        bunnyVideoId: "11111111-1111-4111-8111-111111111111",
+      }),
+    });
+    expect(bunny.createSignedHlsPlaybackUrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects guest playback for paid videos without using client input", async () => {
+    const { service } = createService();
+
+    await expect(
+      service.createGuestPlaybackSession("video-1"),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("rejects guest playback when the video does not exist", async () => {
+    const { service } = createService({ video: null });
+
+    await expect(
+      service.createGuestPlaybackSession("video-1"),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("rejects an invalid Bunny id for guest playback", async () => {
+    const { service } = createService({
+      extractedBunnyVideoId: null,
+      video: {
+        id: "video-1",
+        videoUrl: "https://example.com/not-a-bunny-video",
+        bunnyVideoId: null,
+        isFree: true,
+        lecture: {
+          course: {
+            status: "APPROVED",
+            expiresAt: new Date(Date.now() + 86400000),
+            teacher: { isVisibleToStudents: true },
+          },
+        },
+      },
+    });
+
+    await expect(
+      service.createGuestPlaybackSession("video-1"),
+    ).rejects.toThrow("معرف Bunny Stream صالح");
+  });
+
+  it("does not authorize a guest session for a direct download path", async () => {
+    const { service, prisma } = createService();
+    prisma.videoPlaybackSession.findUnique.mockResolvedValue({
+      sessionType: "GUEST",
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 600000),
+      bunnyVideoId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    await expect(
+      service.authorizeEdgeRequest({
+        edgeSecret: "edge-secret",
+        sessionToken: "guest-token",
+        method: "GET",
+        bunnyVideoId: "11111111-1111-4111-8111-111111111111",
+        path: "/11111111-1111-4111-8111-111111111111/video.mp4",
+      }),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 

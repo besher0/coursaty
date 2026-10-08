@@ -32,7 +32,6 @@ import { PlayIntegrityService } from "./play-integrity.service";
 
 type TokenUser = { userId: string | number; type: string } | undefined;
 type SessionAction = "playback" | "download" | "renew";
-
 type AccessContext = {
   userId: string;
   studentId: string;
@@ -189,6 +188,7 @@ export class VideosService {
       const accessToken = randomBytes(32).toString("base64url");
       const session = await this.prisma.videoPlaybackSession.create({
         data: {
+          sessionType: "AUTHENTICATED",
           accessTokenHash: this.sha256(accessToken),
           userId: context.userId,
           studentId: context.studentId,
@@ -226,6 +226,81 @@ export class VideosService {
       videoId: context.video.id,
       bunnyVideoId: context.bunnyVideoId,
       playbackSessionId: randomUUID(),
+    };
+  }
+
+  async createGuestPlaybackSession(videoId: string) {
+    const video = await this.prisma.video.findUnique({
+      where: { id: videoId },
+      select: {
+        id: true,
+        videoUrl: true,
+        bunnyVideoId: true,
+        isFree: true,
+        lecture: {
+          select: {
+            course: {
+              select: {
+                status: true,
+                expiresAt: true,
+                teacher: { select: { isVisibleToStudents: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!video) throw new NotFoundException("الفيديو غير موجود");
+    if (!video.isFree) {
+      throw new ForbiddenException(
+        "التشغيل للزوار متاح للفيديوهات المجانية فقط",
+      );
+    }
+    if (
+      video.lecture.course.status !== "APPROVED" ||
+      !video.lecture.course.teacher.isVisibleToStudents
+    ) {
+      throw new NotFoundException("الفيديو غير موجود");
+    }
+    if (
+      video.lecture.course.expiresAt &&
+      video.lecture.course.expiresAt.getTime() <= Date.now()
+    ) {
+      throw new ForbiddenException("انتهت صلاحية الوصول للكورس");
+    }
+
+    const bunnyVideoId =
+      video.bunnyVideoId || this.bunny.extractBunnyVideoId(video.videoUrl);
+    if (!bunnyVideoId) {
+      throw new BadRequestException(
+        "هذا الفيديو لا يحتوي على معرف Bunny Stream صالح",
+      );
+    }
+
+    const ttlSeconds = this.readPositiveIntegerEnv(
+      "VIDEO_PLAYBACK_SESSION_TTL_SECONDS",
+      600,
+    );
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+    const accessToken = randomBytes(32).toString("base64url");
+    const session = await this.prisma.videoPlaybackSession.create({
+      data: {
+        sessionType: "GUEST",
+        accessTokenHash: this.sha256(accessToken),
+        videoId: video.id,
+        bunnyVideoId,
+        expiresAt,
+      },
+    });
+
+    return {
+      playbackSessionId: session.id,
+      playbackUrl: this.buildGatewayPlaybackUrl(bunnyVideoId),
+      accessToken,
+      accessHeader: "X-Coursaty-Playback-Session",
+      expiresAt: expiresAt.toISOString(),
+      videoId: video.id,
+      bunnyVideoId,
     };
   }
 
@@ -335,7 +410,7 @@ export class VideosService {
     ) {
       throw new UnauthorizedException("invalid edge secret");
     }
-    if ((input.method ?? "GET").toUpperCase() !== "GET")
+    if (!["GET", "HEAD"].includes((input.method ?? "GET").toUpperCase()))
       throw new ForbiddenException("method denied");
     const sessionToken = String(input.sessionToken ?? "").trim();
     const bunnyVideoId = String(input.bunnyVideoId ?? "").trim();
@@ -353,6 +428,9 @@ export class VideosService {
       session.bunnyVideoId !== bunnyVideoId
     ) {
       throw new ForbiddenException("playback session denied");
+    }
+    if (session.sessionType === "GUEST" && !this.isGuestHlsPath(path)) {
+      throw new ForbiddenException("guest download denied");
     }
 
     const sourceUrl = this.bunny.signBunnyStreamMediaUrlForPath(
@@ -732,6 +810,11 @@ export class VideosService {
     if (!normalized.startsWith(prefix))
       throw new ForbiddenException("media path denied");
     return normalized.slice(1);
+  }
+
+  private isGuestHlsPath(path: string) {
+    const extension = path.split("/").pop()?.split(".").pop()?.toLowerCase();
+    return ["m3u8", "ts", "m4s", "aac", "key", "vtt"].includes(extension ?? "");
   }
 
   private async createOfflineLicense(

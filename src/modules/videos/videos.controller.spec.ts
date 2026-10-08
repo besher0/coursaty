@@ -10,6 +10,7 @@ describe('VideosController trusted server time headers', () => {
 
   const videosService = {
     createPlaybackSession: jest.fn().mockResolvedValue({ playbackSessionId: 'session-1' }),
+    createGuestPlaybackSession: jest.fn().mockResolvedValue({ playbackSessionId: 'guest-session-1' }),
     createDownloadSession: jest.fn().mockResolvedValue({ downloadSessionId: 'download-1' }),
     renewOfflineLicense: jest.fn().mockResolvedValue({ downloadSessionId: 'renew-1' }),
     getOfflineLicensePublicKey: jest.fn().mockReturnValue({
@@ -67,5 +68,16 @@ describe('VideosController trusted server time headers', () => {
 
     expect(response.headers.date).toEqual(expect.any(String));
     expect(Number.isNaN(Date.parse(response.headers.date))).toBe(false);
+  });
+
+  it('exposes guest playback without invoking JWT authentication', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/videos/11111111-1111-4111-8111-111111111111/guest-playback-session')
+      .expect(201);
+
+    expect(response.body).toEqual({ playbackSessionId: 'guest-session-1' });
+    expect(videosService.createGuestPlaybackSession).toHaveBeenCalledWith(
+      '11111111-1111-4111-8111-111111111111',
+    );
   });
 });
