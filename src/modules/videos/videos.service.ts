@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadGatewayException,
   BadRequestException,
   ForbiddenException,
@@ -25,6 +25,7 @@ import { PrismaService } from "@/prisma/prisma.service";
 import { BunnyService } from "@/shared/bunny/bunny.service";
 import {
   PlaybackChallengeDto,
+  ReplaceVideoDeviceKeyDto,
   VideoDeviceKeyDto,
   VideoSessionDto,
 } from "./dtos/video-session.dto";
@@ -99,12 +100,15 @@ export class VideosService {
     user: TokenUser,
   ) {
     const deviceId = this.normalizeDeviceId(dto.deviceId);
-    const { userId } = await this.resolveStudentUser(user);
+    const { userId } =
+      user?.type === "TEACHER"
+        ? await this.resolveTeacherOwnerAccess(videoId, user)
+        : await this.resolveStudentUser(user);
     const video = await this.prisma.video.findUnique({
       where: { id: videoId },
       select: { id: true },
     });
-    if (!video) throw new NotFoundException("الفيديو غير موجود");
+    if (!video) throw new NotFoundException("ط§ظ„ظپظٹط¯ظٹظˆ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
 
     const challenge = randomBytes(32).toString("base64url");
     const ttlSeconds = this.readPositiveIntegerEnv(
@@ -156,11 +160,97 @@ export class VideosService {
     };
   }
 
+  async replaceVideoDeviceKey(dto: ReplaceVideoDeviceKeyDto, user: TokenUser) {
+    const deviceId = this.normalizeDeviceId(dto.deviceId);
+    const { userId, studentId } = await this.resolveStudentUser(user);
+    const now = new Date();
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const existingSameDevice = await tx.studentDevice.findUnique({
+        where: { userId_deviceId: { userId, deviceId } },
+      });
+
+      if (existingSameDevice && !existingSameDevice.revokedAt) {
+        return tx.studentDevice.update({
+          where: { id: existingSameDevice.id },
+          data: {
+            lastSeenAt: now,
+            videoPublicKey: dto.publicKey,
+            videoKeyAlgorithm: dto.algorithm,
+            videoKeyCreatedAt: now,
+            videoKeyVersion: { increment: 1 },
+          },
+          select: { videoKeyVersion: true },
+        });
+      }
+
+      const activeDevices = await tx.studentDevice.findMany({
+        where: { userId, revokedAt: null },
+        orderBy: { firstSeenAt: "asc" },
+      });
+      const previousDeviceId = activeDevices[0]?.deviceId ?? null;
+
+      for (const active of activeDevices) {
+        await tx.studentDevice.update({
+          where: { id: active.id },
+          data: {
+            revokedAt: now,
+            replacedAt: active.replacedAt ?? now,
+          },
+        });
+      }
+
+      if (existingSameDevice) {
+        return tx.studentDevice.update({
+          where: { id: existingSameDevice.id },
+          data: {
+            studentId,
+            previousDeviceId,
+            replacedAt: null,
+            revokedAt: null,
+            lastSeenAt: now,
+            videoPublicKey: dto.publicKey,
+            videoKeyAlgorithm: dto.algorithm,
+            videoKeyCreatedAt: now,
+            videoKeyVersion: { increment: 1 },
+          },
+          select: { videoKeyVersion: true },
+        });
+      }
+
+      return tx.studentDevice.create({
+        data: {
+          userId,
+          studentId,
+          deviceId,
+          previousDeviceId,
+          lastSeenAt: now,
+          videoPublicKey: dto.publicKey,
+          videoKeyAlgorithm: dto.algorithm,
+          videoKeyCreatedAt: now,
+        },
+        select: { videoKeyVersion: true },
+      });
+    });
+
+    return {
+      deviceId,
+      algorithm: dto.algorithm,
+      keyVersion: updated.videoKeyVersion,
+      registered: true,
+      replaced: true,
+    };
+  }
+
   async createPlaybackSession(
     videoId: string,
     dto: VideoSessionDto,
     user: TokenUser,
   ) {
+    if (user?.type === "TEACHER") {
+      return this.createTeacherPlaybackSession(videoId, dto, user);
+    }
+
     const context = await this.resolveVideoAccess(videoId, dto, user, {
       requireDownload: false,
     });
@@ -250,30 +340,30 @@ export class VideosService {
         },
       },
     });
-    if (!video) throw new NotFoundException("الفيديو غير موجود");
+    if (!video) throw new NotFoundException("ط§ظ„ظپظٹط¯ظٹظˆ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
     if (!video.isFree) {
       throw new ForbiddenException(
-        "التشغيل للزوار متاح للفيديوهات المجانية فقط",
+        "ط§ظ„طھط´ط؛ظٹظ„ ظ„ظ„ط²ظˆط§ط± ظ…طھط§ط­ ظ„ظ„ظپظٹط¯ظٹظˆظ‡ط§طھ ط§ظ„ظ…ط¬ط§ظ†ظٹط© ظپظ‚ط·",
       );
     }
     if (
       video.lecture.course.status !== "APPROVED" ||
       !video.lecture.course.teacher.isVisibleToStudents
     ) {
-      throw new NotFoundException("الفيديو غير موجود");
+      throw new NotFoundException("ط§ظ„ظپظٹط¯ظٹظˆ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
     }
     if (
       video.lecture.course.expiresAt &&
       video.lecture.course.expiresAt.getTime() <= Date.now()
     ) {
-      throw new ForbiddenException("انتهت صلاحية الوصول للكورس");
+      throw new ForbiddenException("ط§ظ†طھظ‡طھ طµظ„ط§ط­ظٹط© ط§ظ„ظˆطµظˆظ„ ظ„ظ„ظƒظˆط±ط³");
     }
 
     const bunnyVideoId =
       video.bunnyVideoId || this.bunny.extractBunnyVideoId(video.videoUrl);
     if (!bunnyVideoId) {
       throw new BadRequestException(
-        "هذا الفيديو لا يحتوي على معرف Bunny Stream صالح",
+        "ظ‡ط°ط§ ط§ظ„ظپظٹط¯ظٹظˆ ظ„ط§ ظٹط­طھظˆظٹ ط¹ظ„ظ‰ ظ…ط¹ط±ظپ Bunny Stream طµط§ظ„ط­",
       );
     }
 
@@ -352,6 +442,49 @@ export class VideosService {
     dto: VideoSessionDto,
     user: TokenUser,
   ) {
+    if (user?.type === "TEACHER") {
+      const deviceId = this.normalizeDeviceId(dto.deviceId);
+      const context = await this.resolveTeacherOwnerAccess(videoId, user);
+      const current = await this.prisma.videoPlaybackSession.findUnique({
+        where: { id: sessionId },
+      });
+      if (
+        !current ||
+        current.userId !== context.userId ||
+        current.deviceId !== deviceId ||
+        current.videoId !== context.video.id ||
+        current.revokedAt ||
+        current.expiresAt.getTime() <= Date.now()
+      ) {
+        throw new ForbiddenException("ط·آ¬ط¸â€‍ط·آ³ط·آ© ط·آ§ط¸â€‍ط·ع¾ط·آ´ط·ط›ط¸ظ¹ط¸â€‍ ط·ط›ط¸ظ¹ط·آ± ط·آµط·آ§ط¸â€‍ط·آ­ط·آ©");
+      }
+
+      const ttlSeconds = this.readPositiveIntegerEnv(
+        "VIDEO_PLAYBACK_SESSION_TTL_SECONDS",
+        600,
+      );
+      const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+      const accessToken = randomBytes(32).toString("base64url");
+      await this.prisma.videoPlaybackSession.update({
+        where: { id: sessionId },
+        data: {
+          accessTokenHash: this.sha256(accessToken),
+          expiresAt,
+          refreshedAt: new Date(),
+        },
+      });
+
+      return {
+        playbackSessionId: sessionId,
+        playbackUrl: this.buildGatewayPlaybackUrl(context.bunnyVideoId),
+        accessToken,
+        accessHeader: "X-Coursaty-Playback-Session",
+        expiresAt: expiresAt.toISOString(),
+        videoId: context.video.id,
+        bunnyVideoId: context.bunnyVideoId,
+      };
+    }
+
     const context = await this.resolveVideoAccess(videoId, dto, user, {
       requireDownload: false,
     });
@@ -366,7 +499,7 @@ export class VideosService {
       current.revokedAt ||
       current.expiresAt.getTime() <= Date.now()
     ) {
-      throw new ForbiddenException("جلسة التشغيل غير صالحة");
+      throw new ForbiddenException("ط¬ظ„ط³ط© ط§ظ„طھط´ط؛ظٹظ„ ط؛ظٹط± طµط§ظ„ط­ط©");
     }
 
     const ttlSeconds = this.readPositiveIntegerEnv(
@@ -480,6 +613,49 @@ export class VideosService {
     };
   }
 
+  private async createTeacherPlaybackSession(
+    videoId: string,
+    dto: VideoSessionDto,
+    user: TokenUser,
+  ) {
+    const deviceId = this.normalizeDeviceId(dto.deviceId);
+    const context = await this.resolveTeacherOwnerAccess(videoId, user);
+    await this.enforceRateLimit(
+      "playback",
+      context.userId,
+      deviceId,
+      context.video.id,
+    );
+
+    const ttlSeconds = this.readPositiveIntegerEnv(
+      "VIDEO_PLAYBACK_SESSION_TTL_SECONDS",
+      600,
+    );
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+    const accessToken = randomBytes(32).toString("base64url");
+    const session = await this.prisma.videoPlaybackSession.create({
+      data: {
+        sessionType: "AUTHENTICATED",
+        accessTokenHash: this.sha256(accessToken),
+        userId: context.userId,
+        deviceId,
+        videoId: context.video.id,
+        bunnyVideoId: context.bunnyVideoId,
+        expiresAt,
+      },
+    });
+
+    return {
+      playbackSessionId: session.id,
+      playbackUrl: this.buildGatewayPlaybackUrl(context.bunnyVideoId),
+      accessToken,
+      accessHeader: "X-Coursaty-Playback-Session",
+      expiresAt: expiresAt.toISOString(),
+      videoId: context.video.id,
+      bunnyVideoId: context.bunnyVideoId,
+    };
+  }
+
   private async resolveVideoAccess(
     videoId: string,
     dto: VideoSessionDto,
@@ -517,19 +693,19 @@ export class VideosService {
       },
     });
 
-    if (!video) throw new NotFoundException("الفيديو غير موجود");
+    if (!video) throw new NotFoundException("ط§ظ„ظپظٹط¯ظٹظˆ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
     if (options.requireDownload && !video.offlineDownloadEnabled) {
-      throw new ForbiddenException("التحميل غير متاح لهذا الفيديو");
+      throw new ForbiddenException("ط§ظ„طھط­ظ…ظٹظ„ ط؛ظٹط± ظ…طھط§ط­ ظ„ظ‡ط°ط§ ط§ظ„ظپظٹط¯ظٹظˆ");
     }
 
     const course = video.lecture.course;
     if (!course.teacher.isVisibleToStudents || course.status !== "APPROVED") {
-      throw new NotFoundException("الفيديو غير موجود");
+      throw new NotFoundException("ط§ظ„ظپظٹط¯ظٹظˆ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
     }
 
     const now = Date.now();
     if (course.expiresAt && course.expiresAt.getTime() <= now) {
-      throw new ForbiddenException("انتهت صلاحية الوصول للكورس");
+      throw new ForbiddenException("ط§ظ†طھظ‡طھ طµظ„ط§ط­ظٹط© ط§ظ„ظˆطµظˆظ„ ظ„ظ„ظƒظˆط±ط³");
     }
 
     const subscription = await this.prisma.studentSubscription.findUnique({
@@ -539,9 +715,9 @@ export class VideosService {
 
     const contentIsFree = course.isFree || video.isFree;
     if (!contentIsFree) {
-      if (!subscription) throw new ForbiddenException("يلزم اشتراك");
+      if (!subscription) throw new ForbiddenException("ظٹظ„ط²ظ… ط§ط´طھط±ط§ظƒ");
       if (subscription.expiresAt && subscription.expiresAt.getTime() <= now) {
-        throw new ForbiddenException("انتهت صلاحية الاشتراك على هذا الكورس");
+        throw new ForbiddenException("ط§ظ†طھظ‡طھ طµظ„ط§ط­ظٹط© ط§ظ„ط§ط´طھط±ط§ظƒ ط¹ظ„ظ‰ ظ‡ط°ط§ ط§ظ„ظƒظˆط±ط³");
       }
     }
 
@@ -556,7 +732,7 @@ export class VideosService {
       video.bunnyVideoId || this.bunny.extractBunnyVideoId(video.videoUrl);
     if (!bunnyVideoId) {
       throw new BadRequestException(
-        "هذا الفيديو لا يحتوي على معرف Bunny Stream صالح",
+        "ظ‡ط°ط§ ط§ظ„ظپظٹط¯ظٹظˆ ظ„ط§ ظٹط­طھظˆظٹ ط¹ظ„ظ‰ ظ…ط¹ط±ظپ Bunny Stream طµط§ظ„ط­",
       );
     }
 
@@ -594,7 +770,7 @@ export class VideosService {
 
   private async resolveStudentUser(user: TokenUser) {
     if (user?.type !== "STUDENT") {
-      throw new ForbiddenException("يجب تسجيل الدخول بحساب طالب");
+      throw new ForbiddenException("ظٹط¬ط¨ طھط³ط¬ظٹظ„ ط§ظ„ط¯ط®ظˆظ„ ط¨ط­ط³ط§ط¨ ط·ط§ظ„ط¨");
     }
 
     const dbUser = await this.prisma.user.findUnique({
@@ -602,34 +778,95 @@ export class VideosService {
       select: { id: true, userableId: true, userableType: true, status: true },
     });
     if (!dbUser || dbUser.userableType !== "STUDENT") {
-      throw new ForbiddenException("يجب تسجيل الدخول بحساب طالب");
+      throw new ForbiddenException("ظٹط¬ط¨ طھط³ط¬ظٹظ„ ط§ظ„ط¯ط®ظˆظ„ ط¨ط­ط³ط§ط¨ ط·ط§ظ„ط¨");
     }
     if (dbUser.status !== "active") {
-      throw new ForbiddenException("الحساب غير فعال");
+      throw new ForbiddenException("ط§ظ„ط­ط³ط§ط¨ ط؛ظٹط± ظپط¹ط§ظ„");
     }
 
     const student = await this.prisma.student.findUnique({
       where: { id: dbUser.userableId },
       select: { id: true },
     });
-    if (!student) throw new NotFoundException("الطالب غير موجود");
+    if (!student) throw new NotFoundException("ط§ظ„ط·ط§ظ„ط¨ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
 
     return { userId: dbUser.id, studentId: student.id };
+  }
+
+  private async resolveTeacherOwnerAccess(videoId: string, user: TokenUser) {
+    if (user?.type !== "TEACHER") {
+      throw new ForbiddenException("ط¸ظ¹ط·آ¬ط·آ¨ ط·ع¾ط·آ³ط·آ¬ط¸ظ¹ط¸â€‍ ط·آ§ط¸â€‍ط·آ¯ط·آ®ط¸ث†ط¸â€‍ ط·آ¨ط·آ­ط·آ³ط·آ§ط·آ¨ ط·آ£ط·آ³ط·ع¾ط·آ§ط·آ°");
+    }
+
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+      select: { id: true, userableId: true, userableType: true, status: true },
+    });
+    if (!dbUser || dbUser.userableType !== "TEACHER") {
+      throw new ForbiddenException("ط¸ظ¹ط·آ¬ط·آ¨ ط·ع¾ط·آ³ط·آ¬ط¸ظ¹ط¸â€‍ ط·آ§ط¸â€‍ط·آ¯ط·آ®ط¸ث†ط¸â€‍ ط·آ¨ط·آ­ط·آ³ط·آ§ط·آ¨ ط·آ£ط·آ³ط·ع¾ط·آ§ط·آ°");
+    }
+    if (dbUser.status !== "active") {
+      throw new ForbiddenException("ط·آ§ط¸â€‍ط·آ­ط·آ³ط·آ§ط·آ¨ ط·ط›ط¸ظ¹ط·آ± ط¸ظ¾ط·آ¹ط·آ§ط¸â€‍");
+    }
+
+    const video = await this.prisma.video.findUnique({
+      where: { id: String(videoId) },
+      select: {
+        id: true,
+        videoUrl: true,
+        bunnyVideoId: true,
+        lecture: {
+          select: {
+            course: {
+              select: {
+                teacherId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!video) throw new NotFoundException("ط·آ§ط¸â€‍ط¸ظ¾ط¸ظ¹ط·آ¯ط¸ظ¹ط¸ث† ط·ط›ط¸ظ¹ط·آ± ط¸â€¦ط¸ث†ط·آ¬ط¸ث†ط·آ¯");
+    if (video.lecture.course.teacherId !== dbUser.userableId) {
+      throw new ForbiddenException("ط¸â€‍ط·آ§ ط·ع¾ط¸â€¦ط¸â€‍ط¸ئ’ ط·آµط¸â€‍ط·آ§ط·آ­ط¸ظ¹ط·آ© ط·ع¾ط·آ´ط·ط›ط¸ظ¹ط¸â€‍ ط¸â€،ط·آ°ط·آ§ ط·آ§ط¸â€‍ط¸ظ¾ط¸ظ¹ط·آ¯ط¸ظ¹ط¸ث†");
+    }
+
+    const bunnyVideoId =
+      video.bunnyVideoId || this.bunny.extractBunnyVideoId(video.videoUrl);
+    if (!bunnyVideoId) {
+      throw new BadRequestException(
+        "ط¸â€،ط·آ°ط·آ§ ط·آ§ط¸â€‍ط¸ظ¾ط¸ظ¹ط·آ¯ط¸ظ¹ط¸ث† ط¸â€‍ط·آ§ ط¸ظ¹ط·آ­ط·ع¾ط¸ث†ط¸ظ¹ ط·آ¹ط¸â€‍ط¸â€° ط¸â€¦ط·آ¹ط·آ±ط¸ظ¾ Bunny Stream ط·آµط·آ§ط¸â€‍ط·آ­",
+      );
+    }
+
+    if (!video.bunnyVideoId) {
+      await this.prisma.video
+        .update({
+          where: { id: video.id },
+          data: { bunnyVideoId },
+        })
+        .catch(() => undefined);
+    }
+
+    return {
+      userId: dbUser.id,
+      teacherId: dbUser.userableId,
+      video: { id: video.id },
+      bunnyVideoId,
+    };
   }
 
   private async assertDeviceAllowed(
     userId: string,
     studentId: string,
     deviceId: string,
-    legacyDeviceId?: string | null,
+    _legacyDeviceId?: string | null,
   ) {
     const existing = await this.prisma.studentDevice.findUnique({
       where: { userId_deviceId: { userId, deviceId } },
     });
 
-    if (existing) {
-      if (existing.revokedAt)
-        throw new ForbiddenException("هذا الجهاز غير مسموح");
+    if (existing && !existing.revokedAt) {
       await this.prisma.studentDevice.update({
         where: { id: existing.id },
         data: { lastSeenAt: new Date() },
@@ -644,76 +881,29 @@ export class VideosService {
     });
 
     if (activeDevices.length < limit) {
-      await this.prisma.studentDevice
-        .create({
-          data: { userId, studentId, deviceId },
-        })
-        .catch(async () => {
-          const raced = await this.prisma.studentDevice.findUnique({
-            where: { userId_deviceId: { userId, deviceId } },
-          });
-          if (!raced || raced.revokedAt)
-            throw new ForbiddenException("هذا الجهاز غير مسموح");
+      if (existing) {
+        await this.prisma.studentDevice.update({
+          where: { id: existing.id },
+          data: {
+            studentId,
+            revokedAt: null,
+            replacedAt: null,
+            lastSeenAt: new Date(),
+          },
         });
-      return;
-    }
+        return;
+      }
 
-    if (
-      await this.tryMigrateLegacyDevice(
-        userId,
-        deviceId,
-        legacyDeviceId,
-        activeDevices,
-      )
-    ) {
-      return;
-    }
-
-    throw new ForbiddenException("تم تجاوز عدد الأجهزة المسموح");
-  }
-
-  private async tryMigrateLegacyDevice(
-    userId: string,
-    deviceId: string,
-    legacyDeviceId: string | null | undefined,
-    activeDevices: Array<{
-      id: string;
-      deviceId: string;
-      previousDeviceId?: string | null;
-      replacedAt?: Date | null;
-    }>,
-  ) {
-    if (activeDevices.length !== 1) return false;
-
-    const current = activeDevices[0];
-    if (current.previousDeviceId || current.replacedAt) return false;
-
-    const normalizedLegacyDeviceId = String(legacyDeviceId ?? "").trim();
-    if (
-      normalizedLegacyDeviceId &&
-      normalizedLegacyDeviceId !== current.deviceId
-    )
-      return false;
-    if (current.deviceId === deviceId) return true;
-
-    const now = new Date();
-    await this.prisma.studentDevice
-      .update({
-        where: { id: current.id },
-        data: {
-          deviceId,
-          previousDeviceId: current.deviceId,
-          replacedAt: now,
-          lastSeenAt: now,
-        },
-      })
-      .catch(() => {
-        throw new ForbiddenException("تعذر ترحيل الجهاز الحالي");
+      await this.prisma.studentDevice.create({
+        data: { userId, studentId, deviceId },
       });
+      return;
+    }
 
-    return true;
+    throw new ForbiddenException(
+      "VIDEO_DEVICE_LIMIT_EXCEEDED_REPLACEMENT_REQUIRED",
+    );
   }
-
   private async verifyAppOnlyPlayback(
     context: AccessContext,
     dto: VideoSessionDto,
@@ -728,13 +918,13 @@ export class VideosService {
       this.readBooleanEnv("VIDEO_DEVICE_KEY_REQUIRED", false) &&
       !device?.videoPublicKey
     ) {
-      throw new ForbiddenException("مفتاح الجهاز غير مسجل");
+      throw new ForbiddenException("ظ…ظپطھط§ط­ ط§ظ„ط¬ظ‡ط§ط² ط؛ظٹط± ظ…ط³ط¬ظ„");
     }
 
     const challenge = await this.consumeChallenge(context, dto);
     if (!challenge) {
       if (this.readBooleanEnv("VIDEO_PLAY_INTEGRITY_ENFORCE", false)) {
-        throw new ForbiddenException("تحدي التشغيل مطلوب");
+        throw new ForbiddenException("طھط­ط¯ظٹ ط§ظ„طھط´ط؛ظٹظ„ ظ…ط·ظ„ظˆط¨");
       }
       return;
     }
@@ -754,7 +944,7 @@ export class VideosService {
         "com.YamanKartal.coursaty_app",
     });
     if (!verdict.ok)
-      throw new ForbiddenException("فشل التحقق من Play Integrity");
+      throw new ForbiddenException("ظپط´ظ„ ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† Play Integrity");
   }
 
   private async consumeChallenge(context: AccessContext, dto: VideoSessionDto) {
@@ -770,7 +960,7 @@ export class VideosService {
       row.videoId !== context.video.id ||
       row.deviceId !== context.deviceId
     ) {
-      throw new ForbiddenException("تحدي التشغيل غير صالح");
+      throw new ForbiddenException("طھط­ط¯ظٹ ط§ظ„طھط´ط؛ظٹظ„ ط؛ظٹط± طµط§ظ„ط­");
     }
     await this.prisma.videoPlaybackChallenge.update({
       where: { id: row.id },
@@ -872,7 +1062,7 @@ export class VideosService {
 
     const expiresAt = new Date(Math.min(...candidates));
     if (expiresAt.getTime() <= issuedAt.getTime()) {
-      throw new ForbiddenException("لا يمكن إصدار رخصة Offline منتهية");
+      throw new ForbiddenException("ظ„ط§ ظٹظ…ظƒظ† ط¥طµط¯ط§ط± ط±ط®طµط© Offline ظ…ظ†طھظ‡ظٹط©");
     }
     return expiresAt;
   }
@@ -942,7 +1132,7 @@ export class VideosService {
 
     if (current >= limit) {
       throw new HttpException(
-        "تم تجاوز عدد المحاولات المسموح",
+        "طھظ… طھط¬ط§ظˆط² ط¹ط¯ط¯ ط§ظ„ظ…ط­ط§ظˆظ„ط§طھ ط§ظ„ظ…ط³ظ…ظˆط­",
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
@@ -952,9 +1142,9 @@ export class VideosService {
 
   private normalizeDeviceId(deviceId?: string | null) {
     const normalized = String(deviceId ?? "").trim();
-    if (!normalized) throw new BadRequestException("deviceId مطلوب");
+    if (!normalized) throw new BadRequestException("deviceId ظ…ط·ظ„ظˆط¨");
     if (normalized.length > 255)
-      throw new BadRequestException("deviceId طويل جدًا");
+      throw new BadRequestException("deviceId ط·ظˆظٹظ„ ط¬ط¯ظ‹ط§");
     return normalized;
   }
 

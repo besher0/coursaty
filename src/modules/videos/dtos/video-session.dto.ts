@@ -79,3 +79,5 @@ export class VideoDeviceKeyDto {
   @IsIn(["ECDSA_P256_SHA256"])
   algorithm: "ECDSA_P256_SHA256";
 }
+
+export class ReplaceVideoDeviceKeyDto extends VideoDeviceKeyDto {}

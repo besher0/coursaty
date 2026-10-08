@@ -99,9 +99,13 @@ describe("VideosService protected sessions", () => {
               ? overrides.device
               : defaultDevice,
           ),
-        update: jest.fn().mockResolvedValue({ id: "device-row-1" }),
+        update: jest
+          .fn()
+          .mockResolvedValue({ id: "device-row-1", videoKeyVersion: 2 }),
         findMany: jest.fn().mockResolvedValue(activeDevices),
-        create: jest.fn().mockResolvedValue({ id: "device-row-1" }),
+        create: jest
+          .fn()
+          .mockResolvedValue({ id: "device-row-1", videoKeyVersion: 1 }),
       },
       offlineVideoLicense: {
         create: jest.fn().mockResolvedValue({ id: "license-1" }),
@@ -111,7 +115,13 @@ describe("VideosService protected sessions", () => {
         findUnique: jest.fn(),
         update: jest.fn(),
       },
+      videoPlaybackChallenge: {
+        create: jest.fn().mockResolvedValue({ id: "challenge-1" }),
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
     } as any;
+    prisma.$transaction = jest.fn((callback: any) => callback(prisma));
     const bunny = {
       extractBunnyVideoId: jest
         .fn()
@@ -283,7 +293,7 @@ describe("VideosService protected sessions", () => {
 
     await expect(
       service.createGuestPlaybackSession("video-1"),
-    ).rejects.toThrow("معرف Bunny Stream صالح");
+    ).rejects.toThrow("Bunny Stream");
   });
 
   it("does not authorize a guest session for a direct download path", async () => {
@@ -569,7 +579,7 @@ describe("VideosService protected sessions", () => {
     });
   });
 
-  it("migrates exactly one legacy device to the new installation id", async () => {
+  it("rejects a different device without an explicit replacement request", async () => {
     const legacyDevice = {
       id: "device-row-1",
       deviceId: "legacy-device",
@@ -582,20 +592,62 @@ describe("VideosService protected sessions", () => {
       activeDevices: [legacyDevice],
     });
 
-    await service.createPlaybackSession(
-      "video-1",
-      { deviceId: "new-installation-id", legacyDeviceId: "legacy-device" },
+    await expect(
+      service.createPlaybackSession(
+        "video-1",
+        { deviceId: "new-installation-id", legacyDeviceId: "legacy-device" },
+        { userId: "user-1", type: "STUDENT" },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.studentDevice.update).not.toHaveBeenCalledWith({
+      where: { id: "device-row-1" },
+      data: expect.objectContaining({ deviceId: "new-installation-id" }),
+    });
+  });
+
+  it("replaces a student device only through the explicit replacement endpoint", async () => {
+    const legacyDevice = {
+      id: "device-row-1",
+      deviceId: "legacy-device",
+      revokedAt: null,
+      previousDeviceId: null,
+      replacedAt: null,
+    };
+    const { service, prisma } = createService({
+      device: null,
+      activeDevices: [legacyDevice],
+    });
+
+    const result = await service.replaceVideoDeviceKey(
+      {
+        deviceId: "new-installation-id",
+        publicKey: "public-key",
+        algorithm: "ECDSA_P256_SHA256",
+      },
       { userId: "user-1", type: "STUDENT" },
     );
 
+    expect(result).toMatchObject({
+      deviceId: "new-installation-id",
+      registered: true,
+      replaced: true,
+    });
     expect(prisma.studentDevice.update).toHaveBeenCalledWith({
       where: { id: "device-row-1" },
       data: {
+        replacedAt: expect.any(Date),
+        revokedAt: expect.any(Date),
+      },
+    });
+    expect(prisma.studentDevice.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: "user-1",
+        studentId: "student-1",
         deviceId: "new-installation-id",
         previousDeviceId: "legacy-device",
-        replacedAt: expect.any(Date),
-        lastSeenAt: expect.any(Date),
-      },
+        videoPublicKey: "public-key",
+      }),
+      select: { videoKeyVersion: true },
     });
   });
 
@@ -618,6 +670,120 @@ describe("VideosService protected sessions", () => {
         "video-1",
         { deviceId: "second-installation-id" },
         { userId: "user-1", type: "STUDENT" },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("allows two students to use the same physical installation device id", async () => {
+    const first = createService({ device: null, activeDevices: [] });
+    const second = createService({
+      user: {
+        id: "user-2",
+        userableId: "student-2",
+        userableType: "STUDENT",
+        status: "active",
+      },
+      student: { id: "student-2" },
+      device: null,
+      activeDevices: [],
+    });
+
+    await first.service.registerVideoDeviceKey(
+      {
+        deviceId: "install-ABC",
+        publicKey: "public-key-a",
+        algorithm: "ECDSA_P256_SHA256",
+      },
+      { userId: "user-1", type: "STUDENT" },
+    );
+    await second.service.registerVideoDeviceKey(
+      {
+        deviceId: "install-ABC",
+        publicKey: "public-key-b",
+        algorithm: "ECDSA_P256_SHA256",
+      },
+      { userId: "user-2", type: "STUDENT" },
+    );
+
+    expect(first.prisma.studentDevice.create).toHaveBeenCalledWith({
+      data: { userId: "user-1", studentId: "student-1", deviceId: "install-ABC" },
+    });
+    expect(second.prisma.studentDevice.create).toHaveBeenCalledWith({
+      data: { userId: "user-2", studentId: "student-2", deviceId: "install-ABC" },
+    });
+  });
+
+  it("allows a teacher to create a gateway playback session for an owned video", async () => {
+    const { service, prisma } = createService({
+      user: {
+        id: "teacher-user-1",
+        userableId: "teacher-1",
+        userableType: "TEACHER",
+        status: "active",
+      },
+      video: {
+        id: "video-1",
+        videoUrl:
+          "https://video.bunnycdn.com/play/123/11111111-1111-4111-8111-111111111111",
+        bunnyVideoId: "11111111-1111-4111-8111-111111111111",
+        lecture: {
+          course: {
+            teacherId: "teacher-1",
+          },
+        },
+      },
+    });
+
+    const result = await service.createPlaybackSession(
+      "video-1",
+      { deviceId: "teacher-device" },
+      { userId: "teacher-user-1", type: "TEACHER" },
+    );
+
+    expect(result).toMatchObject({
+      playbackUrl:
+        "https://gateway.example/11111111-1111-4111-8111-111111111111/playlist.m3u8",
+      accessHeader: "X-Coursaty-Playback-Session",
+      videoId: "video-1",
+    });
+    expect(prisma.studentDevice.findUnique).not.toHaveBeenCalled();
+    expect(prisma.studentDevice.findMany).not.toHaveBeenCalled();
+    expect(prisma.studentSubscription.findUnique).not.toHaveBeenCalled();
+    expect(prisma.videoPlaybackSession.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sessionType: "AUTHENTICATED",
+        userId: "teacher-user-1",
+        deviceId: "teacher-device",
+      }),
+    });
+  });
+
+  it("rejects teacher playback for another teacher's video", async () => {
+    const { service } = createService({
+      user: {
+        id: "teacher-user-1",
+        userableId: "teacher-1",
+        userableType: "TEACHER",
+        status: "active",
+      },
+      video: {
+        id: "video-1",
+        videoUrl:
+          "https://video.bunnycdn.com/play/123/11111111-1111-4111-8111-111111111111",
+        bunnyVideoId: "11111111-1111-4111-8111-111111111111",
+        lecture: {
+          course: {
+            teacherId: "teacher-2",
+          },
+        },
+      },
+    });
+
+    await expect(
+      service.createPlaybackSession(
+        "video-1",
+        { deviceId: "teacher-device" },
+        { userId: "teacher-user-1", type: "TEACHER" },
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });

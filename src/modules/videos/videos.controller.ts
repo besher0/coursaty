@@ -18,6 +18,7 @@ import {
 import { JwtAuthGuard } from "@/modules/auth/guards/jwt-auth.guard";
 import {
   PlaybackChallengeDto,
+  ReplaceVideoDeviceKeyDto,
   VideoDeviceKeyDto,
   VideoSessionDto,
 } from "./dtos/video-session.dto";
@@ -134,6 +135,16 @@ export class VideoDevicesController {
   @UseGuards(JwtAuthGuard)
   registerVideoDeviceKey(@Body() dto: VideoDeviceKeyDto, @Req() req: any) {
     return this.videos.registerVideoDeviceKey(dto, req.user);
+  }
+
+  @Post("video-key/replace")
+  @ApiOperation({
+    summary:
+      "Replace the current trusted student video device and register its public key",
+  })
+  @UseGuards(JwtAuthGuard)
+  replaceVideoDeviceKey(@Body() dto: ReplaceVideoDeviceKeyDto, @Req() req: any) {
+    return this.videos.replaceVideoDeviceKey(dto, req.user);
   }
 }
 
