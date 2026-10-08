@@ -361,18 +361,30 @@ export class AuthService {
     // universityNumber and collegeYear are preserved from the active
     // enrollment — Student has no academic columns anymore.
     const activeEnrollment = await this.enrollments.getActiveEnrollment(studentId);
+    const finalCollegeYearId =
+      collegeYearId ?? activeEnrollment?.collegeYearId ?? null;
+    const finalUniversityNumber = activeEnrollment?.universityNumber ?? null;
+    const sameAsActive =
+      activeEnrollment &&
+      String(activeEnrollment.universityId) === String(university.id) &&
+      String(activeEnrollment.collegeId) === String(college.id) &&
+      (activeEnrollment.departmentId ?? null) === departmentId &&
+      (activeEnrollment.collegeYearId ?? null) === finalCollegeYearId &&
+      (activeEnrollment.universityNumber ?? null) === finalUniversityNumber;
+
+    if (sameAsActive) {
+      await guestPreferenceRepo.delete({ where: { deviceId } });
+      return;
+    }
 
     await this.enrollments.changeAcademicProfile(studentId, {
       universityId: university.id,
       collegeId: college.id,
       departmentId,
-      collegeYearId: collegeYearId
-        ? collegeYearId
-        : activeEnrollment?.collegeYearId,
-      universityNumber: activeEnrollment?.universityNumber ?? null,
+      collegeYearId: finalCollegeYearId ?? undefined,
+      universityNumber: finalUniversityNumber,
     });
 
     await guestPreferenceRepo.delete({ where: { deviceId } });
   }
 }
-

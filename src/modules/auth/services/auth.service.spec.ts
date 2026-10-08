@@ -86,6 +86,173 @@ describe("AuthService complete registration", () => {
     expect(result.accessToken).toBe("token");
   });
 
+    describe("AuthService login guest preference migration", () => {
+      function createLoginService(options: {
+        guestPreference?: Record<string, unknown> | null;
+        activeEnrollment?: Record<string, unknown> | null;
+        user?: Record<string, unknown>;
+      } = {}) {
+        const guestPreferenceRepo = {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue(options.guestPreference ?? null),
+          delete: jest.fn().mockResolvedValue({}),
+        };
+        const prisma = {
+          user: {
+            findUnique: jest.fn(),
+          },
+          guestPreference: guestPreferenceRepo,
+          college: {
+            findUnique: jest.fn().mockResolvedValue({
+              id: "college-1",
+              universityId: "university-1",
+            }),
+          },
+          university: {
+            findUnique: jest.fn().mockResolvedValue({ id: "university-1" }),
+          },
+          department: {
+            findUnique: jest.fn().mockResolvedValue({
+              id: "department-1",
+              collegeId: "college-1",
+            }),
+          },
+          collegeYear: {
+            findUnique: jest.fn().mockResolvedValue({
+              id: "year-1",
+              collegeId: "college-1",
+              departmentId: "department-1",
+            }),
+          },
+        };
+        const jwt = { signAsync: jest.fn().mockResolvedValue("access-token") };
+        const enrollments = {
+          getActiveEnrollment: jest
+            .fn()
+            .mockResolvedValue(options.activeEnrollment ?? null),
+          changeAcademicProfile: jest
+            .fn()
+            .mockResolvedValue({ id: "new-enrollment" }),
+        };
+        const service = new AuthService(
+          prisma as any,
+          jwt as any,
+          {} as any,
+          {} as any,
+          {} as any,
+          enrollments as any,
+        );
+        jest.spyOn(service, "validateUser").mockResolvedValue(
+          (options.user ?? {
+            id: "user-1",
+            userableId: "student-1",
+            userableType: "STUDENT",
+            password: "hashed",
+            status: "active",
+          }) as any,
+        );
+
+        return { service, prisma, jwt, enrollments, guestPreferenceRepo };
+      }
+
+      const matchingPreference = {
+        deviceId: "guest-device-1",
+        collegeId: "college-1",
+        departmentId: "department-1",
+        collegeYearId: "year-1",
+      };
+
+      const matchingEnrollment = {
+        universityId: "university-1",
+        collegeId: "college-1",
+        departmentId: "department-1",
+        collegeYearId: "year-1",
+        universityNumber: "100",
+      };
+
+      it("logs in and consumes a matching guest preference without changing the profile", async () => {
+        const { service, enrollments, guestPreferenceRepo, jwt } =
+          createLoginService({
+            guestPreference: matchingPreference,
+            activeEnrollment: matchingEnrollment,
+          });
+
+        const result = await service.login({
+          phone: "0999999999",
+          password: "password123",
+          deviceId: "guest-device-1",
+        });
+
+        expect(result.accessToken).toBe("access-token");
+        expect(jwt.signAsync).toHaveBeenCalled();
+        expect(enrollments.changeAcademicProfile).not.toHaveBeenCalled();
+        expect(guestPreferenceRepo.delete).toHaveBeenCalledWith({
+          where: { deviceId: "guest-device-1" },
+        });
+      });
+
+      it("changes a different academic profile, consumes the preference, and logs in", async () => {
+        const { service, enrollments, guestPreferenceRepo } = createLoginService({
+          guestPreference: matchingPreference,
+          activeEnrollment: {
+            ...matchingEnrollment,
+            collegeId: "college-2",
+          },
+        });
+
+        const result = await service.login({
+          phone: "0999999999",
+          password: "password123",
+          deviceId: "guest-device-1",
+        });
+
+        expect(result.accessToken).toBe("access-token");
+        expect(enrollments.changeAcademicProfile).toHaveBeenCalledWith(
+          "student-1",
+          {
+            universityId: "university-1",
+            collegeId: "college-1",
+            departmentId: "department-1",
+            collegeYearId: "year-1",
+            universityNumber: "100",
+          },
+        );
+        expect(guestPreferenceRepo.delete).toHaveBeenCalledWith({
+          where: { deviceId: "guest-device-1" },
+        });
+      });
+
+      it("logs in without changing academics when no guest preference exists", async () => {
+        const { service, enrollments, guestPreferenceRepo } = createLoginService();
+
+        const result = await service.login({
+          phone: "0999999999",
+          password: "password123",
+          deviceId: "guest-device-1",
+        });
+
+        expect(result.accessToken).toBe("access-token");
+        expect(enrollments.getActiveEnrollment).not.toHaveBeenCalled();
+        expect(enrollments.changeAcademicProfile).not.toHaveBeenCalled();
+        expect(guestPreferenceRepo.delete).not.toHaveBeenCalled();
+      });
+
+      it("keeps invalid credentials unauthorized", async () => {
+        const { service } = createLoginService();
+        jest
+          .spyOn(service, "validateUser")
+          .mockRejectedValue(new UnauthorizedException("بيانات الدخول غير صحيحة"));
+
+        await expect(
+          service.login({
+            phone: "0999999999",
+            password: "wrong-password",
+            deviceId: "guest-device-1",
+          }),
+        ).rejects.toBeInstanceOf(UnauthorizedException);
+      });
+    });
   it("rejects mismatched profile data before opening a transaction", async () => {
     const { service, prisma } = createService();
 
