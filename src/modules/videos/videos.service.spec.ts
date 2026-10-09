@@ -893,7 +893,6 @@ describe("VideosService protected sessions", () => {
         previousDeviceId: "legacy-device",
         videoPublicKey: deviceKey.publicKey,
       }),
-      select: { videoKeyVersion: true },
     });
   });
 
@@ -1079,6 +1078,192 @@ describe("VideosService protected sessions", () => {
         "VIDEO_DEVICE_LIMIT_EXCEEDED_REPLACEMENT_REQUIRED",
       );
       expect(prisma.videoPlaybackSession.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("video device follows the single-device login", () => {
+    const student = { userId: "user-1", type: "STUDENT" };
+
+    function boundUser(loginDeviceId: string) {
+      return {
+        id: "user-1",
+        userableId: "student-1",
+        userableType: "STUDENT",
+        status: "active",
+        loginDeviceId,
+      };
+    }
+
+    it("re-keys the bound phone after a reinstall instead of asking for a replacement", async () => {
+      const oldKey = createDeviceKey();
+      const newKey = createDeviceKey();
+      const { service, prisma } = createService({
+        user: boundUser("device-1"),
+        device: {
+          id: "device-row-1",
+          deviceId: "device-1",
+          revokedAt: null,
+          replacedAt: null,
+          videoPublicKey: oldKey.publicKey,
+          videoKeyVersion: 1,
+        },
+      });
+
+      await expect(
+        service.registerVideoDeviceKey(
+          {
+            deviceId: "device-1",
+            publicKey: newKey.publicKey,
+            algorithm: "ECDSA_P256_SHA256",
+          } as any,
+          student,
+        ),
+      ).resolves.toMatchObject({ registered: true });
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.studentDevice.update).toHaveBeenCalledWith({
+        where: { id: "device-row-1" },
+        data: expect.objectContaining({ videoPublicKey: newKey.publicKey }),
+      });
+      // Sessions signed with the wiped key end.
+      expect(prisma.videoPlaybackSession.updateMany).toHaveBeenCalledWith({
+        where: {
+          userId: "user-1",
+          deviceId: { in: ["device-1"] },
+          revokedAt: null,
+        },
+        data: { revokedAt: expect.any(Date) },
+      });
+    });
+
+    it("keeps re-registration of the same key idempotent", async () => {
+      const key = createDeviceKey();
+      const { service, prisma } = createService({
+        user: boundUser("device-1"),
+        device: {
+          id: "device-row-1",
+          deviceId: "device-1",
+          revokedAt: null,
+          videoPublicKey: key.publicKey,
+          videoKeyVersion: 4,
+        },
+      });
+
+      await expect(
+        service.registerVideoDeviceKey(
+          {
+            deviceId: "device-1",
+            publicKey: key.publicKey,
+            algorithm: "ECDSA_P256_SHA256",
+          } as any,
+          student,
+        ),
+      ).resolves.toMatchObject({ keyVersion: 4, registered: true });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("moves playback from the old installation id to the bound phone", async () => {
+      const { service, prisma } = createService({
+        user: boundUser("device-new"),
+        device: null,
+        activeDevices: [
+          {
+            id: "old-row",
+            deviceId: "install_old",
+            revokedAt: null,
+            replacedAt: null,
+          },
+        ],
+      });
+
+      await expect(
+        service.createPlaybackSession(
+          "video-1",
+          { deviceId: "device-new" },
+          student,
+        ),
+      ).resolves.toMatchObject({ videoId: "video-1" });
+
+      expect(prisma.studentDevice.update).toHaveBeenCalledWith({
+        where: { id: "old-row" },
+        data: expect.objectContaining({ revokedAt: expect.any(Date) }),
+      });
+      expect(prisma.studentDevice.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ deviceId: "device-new" }),
+      });
+    });
+
+    it("lets an exempt (test) account play on another device without revoking the first", async () => {
+      const { service, prisma } = createService({
+        user: { ...boundUser("device-A"), loginDeviceExempt: true },
+        device: null,
+        activeDevices: [
+          { id: "row-a", deviceId: "device-A", revokedAt: null, replacedAt: null },
+        ],
+      });
+
+      await expect(
+        service.createPlaybackSession("video-1", { deviceId: "device-B" }, student),
+      ).resolves.toMatchObject({ videoId: "video-1" });
+
+      expect(prisma.studentDevice.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ deviceId: "device-B" }),
+      });
+      expect(prisma.studentDevice.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "row-a" } }),
+      );
+    });
+
+    it("re-keys an exempt account's device without touching its other devices", async () => {
+      const oldKey = createDeviceKey();
+      const newKey = createDeviceKey();
+      const { service, prisma } = createService({
+        user: { ...boundUser("device-A"), loginDeviceExempt: true },
+        device: {
+          id: "row-b",
+          deviceId: "device-B",
+          revokedAt: null,
+          replacedAt: null,
+          videoPublicKey: oldKey.publicKey,
+          videoKeyVersion: 1,
+        },
+        activeDevices: [
+          { id: "row-a", deviceId: "device-A", revokedAt: null, replacedAt: null },
+          { id: "row-b", deviceId: "device-B", revokedAt: null, replacedAt: null },
+        ],
+      });
+
+      await expect(
+        service.registerVideoDeviceKey(
+          {
+            deviceId: "device-B",
+            publicKey: newKey.publicKey,
+            algorithm: "ECDSA_P256_SHA256",
+          } as any,
+          student,
+        ),
+      ).resolves.toMatchObject({ registered: true });
+
+      expect(prisma.studentDevice.update).toHaveBeenCalledWith({
+        where: { id: "row-b" },
+        data: expect.objectContaining({ videoPublicKey: newKey.publicKey }),
+      });
+      expect(prisma.studentDevice.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "row-a" } }),
+      );
+    });
+
+    it("refuses any device id other than the bound phone", async () => {
+      const { service, prisma } = createService({ user: boundUser("device-A") });
+
+      const error = await service
+        .createPlaybackSession("video-1", { deviceId: "device-1" }, student)
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe(
+        "VIDEO_DEVICE_LIMIT_EXCEEDED_REPLACEMENT_REQUIRED",
+      );
+      expect(prisma.studentDevice.create).not.toHaveBeenCalled();
     });
   });
 

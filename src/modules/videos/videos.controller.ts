@@ -8,6 +8,7 @@ import {
   Post,
   Req,
   UseGuards,
+  VERSION_NEUTRAL,
 } from "@nestjs/common";
 import {
   ApiBearerAuth,
@@ -149,7 +150,8 @@ export class VideoDevicesController {
 }
 
 @ApiTags("internal-video-edge")
-@Controller("internal/video-edge")
+// Called by the Bunny edge script, not the app: keeps its unversioned path.
+@Controller({ path: "internal/video-edge", version: VERSION_NEUTRAL })
 export class InternalVideoEdgeController {
   constructor(private readonly videos: VideosService) {}
 

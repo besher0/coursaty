@@ -2498,8 +2498,9 @@ export class AdminsService {
   }
 
   /**
-   * Frees a student account from its bound login device. The old device's
-   * session stops being accepted and the next device that signs in is bound.
+   * Frees a student account from its bound login device. Every session issued
+   * before the reset stops being accepted (so the old phone cannot claim the
+   * account again) and the next device that signs in is bound.
    */
   async resetStudentLoginDevice(studentIdOrUniversityNumber: string) {
     const student = await this.prisma.student.findFirst({
@@ -2522,13 +2523,54 @@ export class AdminsService {
 
     const reset = await this.prisma.user.updateMany({
       where: { userableType: "STUDENT", userableId: student.id },
-      data: { loginDeviceId: null, loginDeviceBoundAt: null },
+      data: {
+        loginDeviceId: null,
+        loginDeviceBoundAt: null,
+        loginDeviceResetAt: new Date(),
+      },
     });
     if (reset.count === 0) {
       throw new NotFoundException("Student account not found");
     }
 
     return { studentId: student.id, loginDeviceReset: true };
+  }
+
+  /**
+   * Lets a student account sign in and play videos on any device (test
+   * accounts), or applies the single-device login again.
+   */
+  async setStudentLoginDeviceExempt(
+    studentIdOrUniversityNumber: string,
+    exempt: boolean,
+  ) {
+    const student = await this.prisma.student.findFirst({
+      where: {
+        OR: [
+          { id: studentIdOrUniversityNumber },
+          {
+            enrollments: {
+              some: {
+                isActive: true,
+                universityNumber: studentIdOrUniversityNumber,
+              },
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!student) throw new NotFoundException("Student not found");
+
+    const updated = await this.prisma.user.updateMany({
+      where: { userableType: "STUDENT", userableId: student.id },
+      data: { loginDeviceExempt: exempt },
+    });
+    if (updated.count === 0) {
+      throw new NotFoundException("Student account not found");
+    }
+
+    return { studentId: student.id, loginDeviceExempt: exempt };
   }
 
   private generateTemporaryPassword(length: number = 8) {

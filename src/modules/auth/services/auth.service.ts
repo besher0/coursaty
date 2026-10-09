@@ -188,14 +188,17 @@ export class AuthService {
     }
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, headerDeviceId?: string) {
     const user = await this.validateUser(dto.phone, dto.password);
 
     // Checked after the password so the binding is never revealed to someone
     // who does not know it.
     const loginDeviceId =
       user.userableType === 'STUDENT'
-        ? await this.claimStudentLoginDevice(user, dto.loginDeviceId)
+        ? await this.claimStudentLoginDevice(
+            user,
+            dto.loginDeviceId ?? headerDeviceId,
+          )
         : null;
 
     if (user.userableType === 'STUDENT' && dto.deviceId?.trim()) {
@@ -218,9 +221,16 @@ export class AuthService {
    * not enforced.
    */
   private async claimStudentLoginDevice(
-    user: { id: string; loginDeviceId?: string | null },
+    user: {
+      id: string;
+      loginDeviceId?: string | null;
+      loginDeviceExempt?: boolean;
+    },
     requested?: string,
   ) {
+    // Exempt (test) accounts may sign in on any device and are never bound.
+    if (user.loginDeviceExempt) return null;
+
     const deviceId = normalizeLoginDeviceId(requested);
     const enforced = isStudentDeviceLockEnforced(this.config);
     if (!deviceId) {
@@ -284,6 +294,8 @@ export class AuthService {
       password: _password,
       loginDeviceId: _loginDeviceId,
       loginDeviceBoundAt: _loginDeviceBoundAt,
+      loginDeviceResetAt: _loginDeviceResetAt,
+      loginDeviceExempt: _loginDeviceExempt,
       ...safeUser
     } = user;
     return {

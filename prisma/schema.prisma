@@ -81,6 +81,10 @@ model User {
   /// Students only: the single device allowed to sign in (see auth/student-device-lock.ts).
   loginDeviceId      String?
   loginDeviceBoundAt DateTime?
+  /// Set by an admin reset: student tokens issued before it are void.
+  loginDeviceResetAt DateTime?
+  /// Students only: may sign in and play videos on any device (test accounts).
+  loginDeviceExempt  Boolean   @default(false)
 
   videoInteractions    VideoInteraction[]
   createdNotifications Notification[]     @relation("CreatedNotifications")
