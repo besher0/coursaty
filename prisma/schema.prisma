@@ -62,6 +62,8 @@ enum RevenueTransactionType {
 enum VideoPlaybackSessionType {
   AUTHENTICATED
   GUEST
+  // Offline download through the edge gateway (student, device-bound).
+  DOWNLOAD
 }
 
 model User {
