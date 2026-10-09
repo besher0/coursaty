@@ -321,11 +321,8 @@ export class BunnyService {
     };
   }
 
-  async createSignedHlsPlaybackUrl(
-    videoId: string,
-    expiresInSeconds?: number,
-    _preferredResolution?: string,
-  ) {
+  /** Throws a clear 502 until Bunny has finished processing the video. */
+  async assertHlsReady(videoId: string) {
     const playData = await this.getVideoPlayData(videoId);
     if (
       playData.isPlayable === false ||
@@ -338,6 +335,15 @@ export class BunnyService {
         "Bunny Stream playlist URL is not available",
       );
     }
+    return playData;
+  }
+
+  async createSignedHlsPlaybackUrl(
+    videoId: string,
+    expiresInSeconds?: number,
+    _preferredResolution?: string,
+  ) {
+    const playData = await this.assertHlsReady(videoId);
     if (!this.isBunnyStreamMediaUrl(playData.playlistUrl, videoId)) {
       throw new BadGatewayException(
         "Bunny Stream returned an invalid playlist URL",

@@ -41,6 +41,12 @@ import {
 } from "./video-errors";
 
 type TokenUser = { userId: string | number; type: string } | undefined;
+
+/**
+ * Header carrying the gateway session token, for playback and download
+ * sessions alike. The edge script reads the same name.
+ */
+export const VIDEO_ACCESS_HEADER = "X-Coursaty-Playback-Session";
 type SessionAction = "playback" | "download" | "renew" | "challenge";
 type DeviceProofAction = "video_playback" | "video_download";
 type ConsumedChallenge = {
@@ -401,7 +407,7 @@ export class VideosService {
         playbackSessionId: session.id,
         playbackUrl: this.buildGatewayPlaybackUrl(context.bunnyVideoId),
         accessToken,
-        accessHeader: "X-Coursaty-Playback-Session",
+        accessHeader: VIDEO_ACCESS_HEADER,
         expiresAt: expiresAt.toISOString(),
         videoId: context.video.id,
         bunnyVideoId: context.bunnyVideoId,
@@ -493,7 +499,7 @@ export class VideosService {
       playbackSessionId: session.id,
       playbackUrl: this.buildGatewayPlaybackUrl(bunnyVideoId),
       accessToken,
-      accessHeader: "X-Coursaty-Playback-Session",
+      accessHeader: VIDEO_ACCESS_HEADER,
       expiresAt: expiresAt.toISOString(),
       videoId: video.id,
       bunnyVideoId,
@@ -517,24 +523,38 @@ export class VideosService {
     const challenge = await this.consumeChallenge(context, dto);
     await this.verifyDeviceProof(context, dto, challenge, "video_download");
 
+    // The download URL is the gateway, never Bunny: copied into a browser
+    // without the session header it is rejected (403) by the edge. The Bunny
+    // origin stays server-side; only the token hash is stored.
+    const downloadUrl = this.buildGatewayPlaybackUrl(context.bunnyVideoId);
+    await this.bunny.assertHlsReady(context.bunnyVideoId);
+
     const ttlSeconds = this.readPositiveIntegerEnv(
       "VIDEO_DOWNLOAD_TTL_SECONDS",
       600,
     );
-    const download = await this.bunny.createSignedHlsPlaybackUrl(
-      context.bunnyVideoId,
-      ttlSeconds,
-      dto.preferredResolution,
-    );
-    const downloadSessionId = randomUUID();
-    const offlineLicense = await this.createOfflineLicense(
-      context,
-      downloadSessionId,
-    );
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+    const accessToken = randomBytes(32).toString("base64url");
+    const session = await this.prisma.videoPlaybackSession.create({
+      data: {
+        sessionType: "DOWNLOAD",
+        accessTokenHash: this.sha256(accessToken),
+        userId: context.userId,
+        studentId: context.studentId,
+        deviceId: context.deviceId,
+        videoId: context.video.id,
+        bunnyVideoId: context.bunnyVideoId,
+        expiresAt,
+      },
+    });
+    const offlineLicense = await this.createOfflineLicense(context, session.id);
 
     return {
-      downloadUrl: download.url,
-      downloadSessionId,
+      downloadUrl,
+      downloadSessionId: session.id,
+      accessToken,
+      accessHeader: VIDEO_ACCESS_HEADER,
+      expiresAt: expiresAt.toISOString(),
       videoId: context.video.id,
       bunnyVideoId: context.bunnyVideoId,
       contentVersion: context.video.contentVersion,
@@ -558,6 +578,7 @@ export class VideosService {
       });
       if (
         !current ||
+        current.sessionType !== "AUTHENTICATED" ||
         current.userId !== context.userId ||
         current.deviceId !== deviceId ||
         current.videoId !== context.video.id ||
@@ -589,7 +610,7 @@ export class VideosService {
         playbackSessionId: sessionId,
         playbackUrl: this.buildGatewayPlaybackUrl(context.bunnyVideoId),
         accessToken,
-        accessHeader: "X-Coursaty-Playback-Session",
+        accessHeader: VIDEO_ACCESS_HEADER,
         expiresAt: expiresAt.toISOString(),
         videoId: context.video.id,
         bunnyVideoId: context.bunnyVideoId,
@@ -604,6 +625,7 @@ export class VideosService {
     });
     if (
       !current ||
+      current.sessionType !== "AUTHENTICATED" ||
       current.userId !== context.userId ||
       current.deviceId !== context.deviceId ||
       current.videoId !== context.video.id ||
@@ -635,7 +657,7 @@ export class VideosService {
       playbackSessionId: sessionId,
       playbackUrl: this.buildGatewayPlaybackUrl(context.bunnyVideoId),
       accessToken,
-      accessHeader: "X-Coursaty-Playback-Session",
+      accessHeader: VIDEO_ACCESS_HEADER,
       expiresAt: expiresAt.toISOString(),
       videoId: context.video.id,
       bunnyVideoId: context.bunnyVideoId,
@@ -770,7 +792,7 @@ export class VideosService {
       playbackSessionId: session.id,
       playbackUrl: this.buildGatewayPlaybackUrl(context.bunnyVideoId),
       accessToken,
-      accessHeader: "X-Coursaty-Playback-Session",
+      accessHeader: VIDEO_ACCESS_HEADER,
       expiresAt: expiresAt.toISOString(),
       videoId: context.video.id,
       bunnyVideoId: context.bunnyVideoId,

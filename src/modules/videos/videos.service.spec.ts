@@ -1,11 +1,18 @@
 import {
+  BadGatewayException,
   ConflictException,
   ForbiddenException,
   HttpException,
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import { generateKeyPairSync, KeyObject, sign, verify } from "crypto";
+import {
+  createHash,
+  generateKeyPairSync,
+  KeyObject,
+  sign,
+  verify,
+} from "crypto";
 import { VideosService } from "./videos.service";
 
 function createDeviceKey() {
@@ -183,6 +190,10 @@ describe("VideosService protected sessions", () => {
       signBunnyStreamMediaUrlForPath: jest.fn().mockReturnValue(
         "https://vz-test.b-cdn.net/signed",
       ),
+      assertHlsReady: jest.fn().mockResolvedValue({
+        playlistUrl:
+          "https://vz-test.b-cdn.net/11111111-1111-4111-8111-111111111111/playlist.m3u8",
+      }),
       getVideoPlayData: jest.fn().mockResolvedValue({
         playlistUrl:
           "https://vz-learned.b-cdn.net/11111111-1111-4111-8111-111111111111/playlist.m3u8",
@@ -472,8 +483,9 @@ describe("VideosService protected sessions", () => {
       { userId: "user-1", type: "STUDENT" },
     );
 
-    expect(result.downloadUrl).toMatch(
-      /^https:\/\/vz-test\.b-cdn\.net\/bcdn_token=HS256-[^/]+&expires=\d+&token_path=%2F11111111-1111-4111-8111-111111111111%2F\/11111111-1111-4111-8111-111111111111\/playlist\.m3u8$/,
+    // Gateway only: a copied URL is useless without the session header.
+    expect(result.downloadUrl).toBe(
+      "https://gateway.example/11111111-1111-4111-8111-111111111111/playlist.m3u8",
     );
     expect(result.downloadSessionId).toEqual(expect.any(String));
     expect(result.offlineLicense.payload).toMatchObject({
@@ -505,6 +517,117 @@ describe("VideosService protected sessions", () => {
       Buffer.from(result.offlineLicense.signature, "base64url"),
     );
     expect(valid).toBe(true);
+  });
+
+  describe("gateway download sessions", () => {
+    const guid = "11111111-1111-4111-8111-111111111111";
+    const student = { userId: "user-1", type: "STUDENT" };
+
+    it("binds the session to student, device and video and stores only the token hash", async () => {
+      const { service, prisma } = createService();
+
+      const result = await service.createDownloadSession(
+        "video-1",
+        { deviceId: "device-1" },
+        student,
+      );
+
+      expect(result.downloadUrl).not.toMatch(/b-cdn\.net|bunnycdn|token/);
+      expect(result.accessHeader).toBe("X-Coursaty-Playback-Session");
+      expect(result.accessToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(result.downloadSessionId).toBe("playback-session-1");
+      expect(new Date(result.expiresAt).getTime()).toBeGreaterThan(Date.now());
+
+      const { data } = prisma.videoPlaybackSession.create.mock.calls[0][0];
+      expect(data).toEqual(
+        expect.objectContaining({
+          sessionType: "DOWNLOAD",
+          userId: "user-1",
+          studentId: "student-1",
+          deviceId: "device-1",
+          videoId: "video-1",
+          bunnyVideoId: guid,
+          accessTokenHash: createHash("sha256")
+            .update(result.accessToken, "utf8")
+            .digest("hex"),
+        }),
+      );
+      expect(JSON.stringify(data)).not.toContain(result.accessToken);
+      expect(prisma.offlineVideoLicense.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            downloadSessionId: "playback-session-1",
+          }),
+        }),
+      );
+    });
+
+    it("issues a different token for every download session", async () => {
+      const { service } = createService();
+
+      const first = await service.createDownloadSession(
+        "video-1",
+        { deviceId: "device-1" },
+        student,
+      );
+      const second = await service.createDownloadSession(
+        "video-1",
+        { deviceId: "device-1" },
+        student,
+      );
+
+      expect(first.accessToken).not.toBe(second.accessToken);
+    });
+
+    it("creates nothing when the gateway is not configured (no direct Bunny fallback)", async () => {
+      const { service, prisma } = createService({
+        env: { VIDEO_GATEWAY_BASE_URL: "" },
+      });
+
+      await expect(
+        service.createDownloadSession("video-1", { deviceId: "device-1" }, student),
+      ).rejects.toBeInstanceOf(BadGatewayException);
+      expect(prisma.videoPlaybackSession.create).not.toHaveBeenCalled();
+      expect(prisma.offlineVideoLicense.create).not.toHaveBeenCalled();
+    });
+
+    it("creates nothing while Bunny is still processing the video", async () => {
+      const { service, prisma, bunny } = createService();
+      bunny.assertHlsReady.mockRejectedValue(
+        new BadGatewayException("Bunny Stream video is not playable yet"),
+      );
+
+      await expect(
+        service.createDownloadSession("video-1", { deviceId: "device-1" }, student),
+      ).rejects.toBeInstanceOf(BadGatewayException);
+      expect(prisma.videoPlaybackSession.create).not.toHaveBeenCalled();
+      expect(prisma.offlineVideoLicense.create).not.toHaveBeenCalled();
+    });
+
+    it("refuses to refresh a download session as a playback session", async () => {
+      const { service, prisma } = createService();
+      prisma.videoPlaybackSession.findUnique.mockResolvedValue({
+        id: "session-1",
+        sessionType: "DOWNLOAD",
+        userId: "user-1",
+        deviceId: "device-1",
+        videoId: "video-1",
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 60000),
+      });
+
+      const error = await service
+        .refreshPlaybackSession(
+          "video-1",
+          "session-1",
+          { deviceId: "device-1" },
+          student,
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_PLAYBACK_SESSION_INVALID");
+      expect(prisma.videoPlaybackSession.update).not.toHaveBeenCalled();
+    });
   });
 
   it("fails signature verification when signedPayload bytes are changed", async () => {
@@ -1590,6 +1713,81 @@ describe("VideosService protected sessions", () => {
       ).rejects.toThrow("invalid edge secret");
     });
 
+    it("lets a download session fetch playlists, segments and keys only", async () => {
+      const { service } = edgeService({}, "DOWNLOAD");
+
+      for (const path of [
+        `/${guid}/playlist.m3u8`,
+        `/${guid}/720p/video.m3u8`,
+        `/${guid}/720p/video0.ts`,
+        `/${guid}/720p/init.m4s`,
+        `/${guid}/720p/key.key`,
+      ]) {
+        await expect(
+          service.authorizeEdgeRequest({
+            edgeSecret: "edge-secret",
+            sessionToken: "download-token",
+            method: "GET",
+            bunnyVideoId: guid,
+            path,
+          }),
+        ).resolves.toMatchObject({ allowed: true });
+      }
+      for (const path of [`/${guid}/play_720p.mp4`, `/${guid}/original`]) {
+        await expect(
+          service.authorizeEdgeRequest({
+            edgeSecret: "edge-secret",
+            sessionToken: "download-token",
+            bunnyVideoId: guid,
+            path,
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+    });
+
+    it("denies a download token on another video and a request without a token", async () => {
+      const { service } = edgeService({}, "DOWNLOAD");
+      const other = "22222222-2222-4222-8222-222222222222";
+
+      await expect(
+        service.authorizeEdgeRequest({
+          edgeSecret: "edge-secret",
+          sessionToken: "download-token",
+          bunnyVideoId: other,
+          path: `/${other}/playlist.m3u8`,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.authorizeEdgeRequest({
+          edgeSecret: "edge-secret",
+          sessionToken: "",
+          bunnyVideoId: guid,
+          path: `/${guid}/playlist.m3u8`,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("looks sessions up by token hash, so an unknown token is denied", async () => {
+      const { service, prisma } = edgeService({}, "DOWNLOAD");
+      prisma.videoPlaybackSession.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.authorizeEdgeRequest({
+          edgeSecret: "edge-secret",
+          sessionToken: "wrong-token",
+          bunnyVideoId: guid,
+          path: `/${guid}/playlist.m3u8`,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.videoPlaybackSession.findUnique).toHaveBeenCalledWith({
+        where: {
+          accessTokenHash: createHash("sha256")
+            .update("wrong-token", "utf8")
+            .digest("hex"),
+        },
+      });
+    });
+
     it("denies revoked and expired sessions", async () => {
       const { service, prisma } = edgeService();
       prisma.videoPlaybackSession.findUnique.mockResolvedValueOnce({
@@ -1636,6 +1834,7 @@ describe("VideosService protected sessions", () => {
       });
       prisma.videoPlaybackSession.findUnique.mockResolvedValue({
         id: "session-1",
+        sessionType: "AUTHENTICATED",
         userId: "teacher-user-1",
         deviceId: "teacher-device",
         videoId: "video-1",

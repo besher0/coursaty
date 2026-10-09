@@ -94,6 +94,7 @@ describe("device proof contract (shared with Flutter)", () => {
     };
     const bunny: any = {
       extractBunnyVideoId: jest.fn(),
+      assertHlsReady: jest.fn().mockResolvedValue({}),
       createSignedHlsPlaybackUrl: jest.fn().mockResolvedValue({
         url: "https://vz-test.b-cdn.net/x/playlist.m3u8",
         expiresAt: new Date(),
@@ -103,6 +104,7 @@ describe("device proof contract (shared with Flutter)", () => {
       get: (key: string) =>
         ({
           VIDEO_DEVICE_SIGNATURE_ENFORCE: "true",
+          VIDEO_GATEWAY_BASE_URL: "https://gateway.example",
           OFFLINE_LICENSE_PRIVATE_KEY_PEM: licenseKeyPem,
         })[key],
     };
