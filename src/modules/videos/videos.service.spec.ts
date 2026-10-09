@@ -519,6 +519,76 @@ describe("VideosService protected sessions", () => {
     expect(valid).toBe(true);
   });
 
+  describe("offline license expiry", () => {
+    const day = 24 * 60 * 60 * 1000;
+    const student = { userId: "user-1", type: "STUDENT" };
+
+    function videoWith(flags: { videoFree?: boolean; courseFree?: boolean }) {
+      return {
+        id: "video-1",
+        videoUrl:
+          "https://video.bunnycdn.com/play/123/11111111-1111-4111-8111-111111111111",
+        bunnyVideoId: "11111111-1111-4111-8111-111111111111",
+        size: "1234",
+        isFree: flags.videoFree ?? false,
+        contentVersion: 1,
+        offlineDownloadEnabled: true,
+        lecture: {
+          id: "lecture-1",
+          courseId: "course-1",
+          course: {
+            id: "course-1",
+            isFree: flags.courseFree ?? false,
+            status: "APPROVED",
+            expiresAt: null,
+            teacher: { isVisibleToStudents: true },
+          },
+        },
+      };
+    }
+
+    function licenseExpiry(result: any) {
+      return new Date(result.offlineLicense.payload.expiresAt).getTime();
+    }
+
+    it.each([
+      ["a free video", { videoFree: true }],
+      ["a free course", { courseFree: true }],
+    ])(
+      "ignores an old expired subscription for %s",
+      async (_label, flags) => {
+        const { service } = createService({
+          video: videoWith(flags),
+          subscription: { expiresAt: new Date(Date.now() - 30 * day) },
+        });
+
+        const result = await service.createDownloadSession(
+          "video-1",
+          { deviceId: "device-1" },
+          student,
+        );
+
+        expect(licenseExpiry(result)).toBeGreaterThan(Date.now() + 6 * day);
+      },
+    );
+
+    it("still caps a paid video's license at the subscription expiry", async () => {
+      const subscriptionEnd = new Date(Date.now() + 2 * day);
+      const { service } = createService({
+        video: videoWith({}),
+        subscription: { expiresAt: subscriptionEnd },
+      });
+
+      const result = await service.createDownloadSession(
+        "video-1",
+        { deviceId: "device-1" },
+        student,
+      );
+
+      expect(licenseExpiry(result)).toBe(subscriptionEnd.getTime());
+    });
+  });
+
   describe("gateway download sessions", () => {
     const guid = "11111111-1111-4111-8111-111111111111";
     const student = { userId: "user-1", type: "STUDENT" };

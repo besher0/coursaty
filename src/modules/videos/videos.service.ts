@@ -898,7 +898,11 @@ export class VideosService {
         },
       },
       bunnyVideoId,
-      subscriptionExpiresAt: subscription?.expiresAt ?? null,
+      // Free content does not depend on the subscription, so an old expired
+      // subscription must not cap (and thereby reject) its offline license.
+      subscriptionExpiresAt: contentIsFree
+        ? null
+        : (subscription?.expiresAt ?? null),
       courseExpiresAt: course.expiresAt ?? null,
     };
   }
