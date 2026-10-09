@@ -1193,6 +1193,66 @@ describe("VideosService protected sessions", () => {
       });
     });
 
+    it("lets an exempt (test) account play on another device without revoking the first", async () => {
+      const { service, prisma } = createService({
+        user: { ...boundUser("device-A"), loginDeviceExempt: true },
+        device: null,
+        activeDevices: [
+          { id: "row-a", deviceId: "device-A", revokedAt: null, replacedAt: null },
+        ],
+      });
+
+      await expect(
+        service.createPlaybackSession("video-1", { deviceId: "device-B" }, student),
+      ).resolves.toMatchObject({ videoId: "video-1" });
+
+      expect(prisma.studentDevice.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ deviceId: "device-B" }),
+      });
+      expect(prisma.studentDevice.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "row-a" } }),
+      );
+    });
+
+    it("re-keys an exempt account's device without touching its other devices", async () => {
+      const oldKey = createDeviceKey();
+      const newKey = createDeviceKey();
+      const { service, prisma } = createService({
+        user: { ...boundUser("device-A"), loginDeviceExempt: true },
+        device: {
+          id: "row-b",
+          deviceId: "device-B",
+          revokedAt: null,
+          replacedAt: null,
+          videoPublicKey: oldKey.publicKey,
+          videoKeyVersion: 1,
+        },
+        activeDevices: [
+          { id: "row-a", deviceId: "device-A", revokedAt: null, replacedAt: null },
+          { id: "row-b", deviceId: "device-B", revokedAt: null, replacedAt: null },
+        ],
+      });
+
+      await expect(
+        service.registerVideoDeviceKey(
+          {
+            deviceId: "device-B",
+            publicKey: newKey.publicKey,
+            algorithm: "ECDSA_P256_SHA256",
+          } as any,
+          student,
+        ),
+      ).resolves.toMatchObject({ registered: true });
+
+      expect(prisma.studentDevice.update).toHaveBeenCalledWith({
+        where: { id: "row-b" },
+        data: expect.objectContaining({ videoPublicKey: newKey.publicKey }),
+      });
+      expect(prisma.studentDevice.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "row-a" } }),
+      );
+    });
+
     it("refuses any device id other than the bound phone", async () => {
       const { service, prisma } = createService({ user: boundUser("device-A") });
 

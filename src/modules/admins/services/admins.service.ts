@@ -2536,6 +2536,43 @@ export class AdminsService {
     return { studentId: student.id, loginDeviceReset: true };
   }
 
+  /**
+   * Lets a student account sign in and play videos on any device (test
+   * accounts), or applies the single-device login again.
+   */
+  async setStudentLoginDeviceExempt(
+    studentIdOrUniversityNumber: string,
+    exempt: boolean,
+  ) {
+    const student = await this.prisma.student.findFirst({
+      where: {
+        OR: [
+          { id: studentIdOrUniversityNumber },
+          {
+            enrollments: {
+              some: {
+                isActive: true,
+                universityNumber: studentIdOrUniversityNumber,
+              },
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!student) throw new NotFoundException("Student not found");
+
+    const updated = await this.prisma.user.updateMany({
+      where: { userableType: "STUDENT", userableId: student.id },
+      data: { loginDeviceExempt: exempt },
+    });
+    if (updated.count === 0) {
+      throw new NotFoundException("Student account not found");
+    }
+
+    return { studentId: student.id, loginDeviceExempt: exempt };
+  }
+
   private generateTemporaryPassword(length: number = 8) {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
     let result = "";

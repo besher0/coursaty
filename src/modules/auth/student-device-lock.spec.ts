@@ -1,4 +1,6 @@
 import { HttpException } from '@nestjs/common';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { AuthService } from './services/auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { UserType } from './dtos/register.dto';
@@ -162,6 +164,19 @@ describe('student single-device login', () => {
     await expect(
       service.login({ ...credentials, loginDeviceId: 'device-B' }),
     ).resolves.toMatchObject({ accessToken: 'access-token' });
+  });
+
+  it('lets an exempt (test) account sign in on any device without binding it', async () => {
+    const { service, prisma, jwt } = loginService({
+      loginDeviceId: 'device-A',
+      loginDeviceExempt: true,
+    });
+
+    await service.login({ ...credentials, loginDeviceId: 'device-B' });
+    await service.login({ ...credentials });
+
+    expect(prisma.user.updateMany).not.toHaveBeenCalled();
+    expect(jwt.signAsync).toHaveBeenCalledWith({ sub: 'user-1', type: 'STUDENT' });
   });
 
   it('never returns the bound device id to the client', async () => {
@@ -408,12 +423,58 @@ describe('student sessions on other devices', () => {
     }
   });
 
+  it('accepts an exempt (test) account from any device', async () => {
+    for (const device of ['device-B', undefined]) {
+      const { strategy, prisma } = strategyFor({ ...student, loginDeviceExempt: true });
+
+      await expect(
+        strategy.validate(request(device), { sub: 'user-1', did: 'device-C' }),
+      ).resolves.toEqual({ userId: 'user-1', type: 'STUDENT' });
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+    }
+  });
+
   it('accepts any session while enforcement is switched off', async () => {
     const { strategy } = strategyFor(student, { STUDENT_SINGLE_DEVICE_ENFORCE: 'false' });
 
     await expect(
       strategy.validate(request('device-B'), { sub: 'user-1' }),
     ).resolves.toEqual({ userId: 'user-1', type: 'STUDENT' });
+  });
+});
+
+describe('login device exemption', () => {
+  it('exempts the two requested test accounts in the migration', () => {
+    const sql = readFileSync(
+      join(
+        __dirname,
+        '../../../prisma/migrations/20261013_student_login_device_exempt/migration.sql',
+      ),
+      'utf8',
+    );
+
+    expect(sql).toContain('"loginDeviceExempt" = true');
+    expect(sql).toContain("'0968045022'");
+    expect(sql).toContain("'0968045822'");
+    expect(sql).toContain(`"userableType" = 'STUDENT'`);
+  });
+
+  it('can be switched on and off by an admin', async () => {
+    const prisma = {
+      student: { findFirst: jest.fn().mockResolvedValue({ id: 'student-1' }) },
+      user: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
+    const service = Object.create(AdminsService.prototype) as AdminsService;
+    (service as any).prisma = prisma;
+
+    await expect(service.setStudentLoginDeviceExempt('student-1', true)).resolves.toEqual({
+      studentId: 'student-1',
+      loginDeviceExempt: true,
+    });
+    expect(prisma.user.updateMany).toHaveBeenCalledWith({
+      where: { userableType: 'STUDENT', userableId: 'student-1' },
+      data: { loginDeviceExempt: true },
+    });
   });
 });
 

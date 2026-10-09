@@ -173,15 +173,16 @@ export class VideosService {
   async registerVideoDeviceKey(dto: VideoDeviceKeyDto, user: TokenUser) {
     const deviceId = this.normalizeDeviceId(dto.deviceId);
     const publicKey = this.normalizeDevicePublicKey(dto.publicKey);
-    const { userId, studentId, loginDeviceId } =
+    const { userId, studentId, loginDeviceId, anyDevice } =
       await this.resolveStudentUser(user);
-    if (loginDeviceId && deviceId === loginDeviceId) {
-      return this.registerOnBoundLoginDevice(
+    if (anyDevice || (loginDeviceId && deviceId === loginDeviceId)) {
+      return this.registerTrustedVideoDevice(
         userId,
         studentId,
         deviceId,
         publicKey,
         dto.algorithm,
+        { revokeOthers: !anyDevice },
       );
     }
     const device = await this.assertDeviceAllowed(
@@ -269,14 +270,16 @@ export class VideosService {
    * The single-device login already ties the account to one phone, so on
    * that phone a new installation id or Keystore key means the app was
    * reinstalled, not that another phone took over: activate it directly
-   * instead of asking for a replacement.
+   * instead of asking for a replacement. Exempt (test) accounts may use any
+   * device, so their other devices stay active (`revokeOthers: false`).
    */
-  private async registerOnBoundLoginDevice(
+  private async registerTrustedVideoDevice(
     userId: string,
     studentId: string,
     deviceId: string,
     publicKey: string,
     algorithm: string,
+    options: { revokeOthers: boolean },
   ) {
     const existing = await this.prisma.studentDevice.findUnique({
       where: { userId_deviceId: { userId, deviceId } },
@@ -294,10 +297,13 @@ export class VideosService {
       };
     }
 
-    const updated = await this.activateVideoDevice(userId, studentId, deviceId, {
-      publicKey,
-      algorithm,
-    });
+    const updated = await this.activateVideoDevice(
+      userId,
+      studentId,
+      deviceId,
+      { publicKey, algorithm },
+      options,
+    );
     return {
       deviceId,
       algorithm,
@@ -309,8 +315,9 @@ export class VideosService {
   /**
    * Makes `deviceId` an active video device of the account, keeping at most
    * VIDEO_DEVICE_LIMIT devices: the least recently used others are revoked,
-   * lose their playback sessions and get their offline licenses revoked.
-   * With `key`, also (re)registers its public key.
+   * lose their playback sessions and get their offline licenses revoked
+   * (unless `revokeOthers` is false). With `key`, also (re)registers its
+   * public key.
    *
    * Runs in a SERIALIZABLE transaction so two phones replacing each other at
    * the same moment cannot both end up active.
@@ -320,6 +327,7 @@ export class VideosService {
     studentId: string,
     deviceId: string,
     key?: { publicKey: string; algorithm: string },
+    options: { revokeOthers?: boolean } = {},
   ): Promise<StudentDevice> {
     const limit = this.readPositiveIntegerEnv("VIDEO_DEVICE_LIMIT", 1);
 
@@ -345,7 +353,10 @@ export class VideosService {
 
       // Keep (limit - 1) other devices, revoking the least recently used.
       const overflow = Math.max(0, activeOthers.length - (limit - 1));
-      const toRevoke = sameDeviceActive ? [] : activeOthers.slice(0, overflow);
+      const toRevoke =
+        sameDeviceActive || options.revokeOthers === false
+          ? []
+          : activeOthers.slice(0, overflow);
       for (const active of toRevoke) {
         await tx.studentDevice.update({
           where: { id: active.id },
@@ -886,7 +897,7 @@ export class VideosService {
     options: { requireDownload: boolean },
   ): Promise<AccessContext> {
     const deviceId = this.normalizeDeviceId(dto.deviceId);
-    const { userId, studentId, loginDeviceId } =
+    const { userId, studentId, loginDeviceId, anyDevice } =
       await this.resolveStudentUser(user);
 
     const video = await this.prisma.video.findUnique({
@@ -961,6 +972,7 @@ export class VideosService {
       studentId,
       deviceId,
       loginDeviceId,
+      anyDevice,
     );
     const bunnyVideoId = this.resolveStoredBunnyVideoId(video);
     await this.persistLegacyBunnyVideoId(video, bunnyVideoId);
@@ -1009,6 +1021,7 @@ export class VideosService {
         userableType: true,
         status: true,
         loginDeviceId: true,
+        loginDeviceExempt: true,
       },
     });
     if (!dbUser || dbUser.userableType !== "STUDENT") {
@@ -1027,10 +1040,13 @@ export class VideosService {
     });
     if (!student) throw new NotFoundException("الطالب غير موجود");
 
+    // Exempt (test) accounts may play on any device: no binding, no limit.
+    const anyDevice = dbUser.loginDeviceExempt === true;
     return {
       userId: dbUser.id,
       studentId: student.id,
-      loginDeviceId: dbUser.loginDeviceId ?? null,
+      loginDeviceId: anyDevice ? null : (dbUser.loginDeviceId ?? null),
+      anyDevice,
     };
   }
 
@@ -1109,6 +1125,7 @@ export class VideosService {
     studentId: string,
     deviceId: string,
     loginDeviceId?: string | null,
+    anyDevice = false,
   ): Promise<StudentDevice> {
     if (loginDeviceId && deviceId !== loginDeviceId) {
       throw videoForbidden(
@@ -1130,6 +1147,11 @@ export class VideosService {
       return { ...existing, lastSeenAt };
     }
 
+    if (anyDevice) {
+      return this.activateVideoDevice(userId, studentId, deviceId, undefined, {
+        revokeOthers: false,
+      });
+    }
     if (loginDeviceId) {
       return this.activateVideoDevice(userId, studentId, deviceId);
     }

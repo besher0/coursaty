@@ -221,9 +221,16 @@ export class AuthService {
    * not enforced.
    */
   private async claimStudentLoginDevice(
-    user: { id: string; loginDeviceId?: string | null },
+    user: {
+      id: string;
+      loginDeviceId?: string | null;
+      loginDeviceExempt?: boolean;
+    },
     requested?: string,
   ) {
+    // Exempt (test) accounts may sign in on any device and are never bound.
+    if (user.loginDeviceExempt) return null;
+
     const deviceId = normalizeLoginDeviceId(requested);
     const enforced = isStudentDeviceLockEnforced(this.config);
     if (!deviceId) {
@@ -288,6 +295,7 @@ export class AuthService {
       loginDeviceId: _loginDeviceId,
       loginDeviceBoundAt: _loginDeviceBoundAt,
       loginDeviceResetAt: _loginDeviceResetAt,
+      loginDeviceExempt: _loginDeviceExempt,
       ...safeUser
     } = user;
     return {

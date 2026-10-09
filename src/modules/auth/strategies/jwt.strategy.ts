@@ -40,6 +40,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         status: true,
         loginDeviceId: true,
         loginDeviceResetAt: true,
+        loginDeviceExempt: true,
       },
     });
 
@@ -47,7 +48,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('الحساب محذوف أو غير موجود');
     }
 
-    if (user.userableType === 'STUDENT' && isStudentDeviceLockEnforced(this.config)) {
+    if (
+      user.userableType === 'STUDENT' &&
+      !user.loginDeviceExempt &&
+      isStudentDeviceLockEnforced(this.config)
+    ) {
       await this.assertStudentDevice(user, req, payload);
     }
 

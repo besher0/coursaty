@@ -4,7 +4,8 @@ import { ConfigService } from '@nestjs/config';
 /**
  * Students may sign in from a single device: the one the account was created
  * on (accounts created before device binding are bound by their first login).
- * Teachers and admins are not affected.
+ * Teachers and admins are not affected, nor are students with
+ * `User.loginDeviceExempt` (test accounts), who may use any device.
  *
  * The bound id is `User.loginDeviceId`; student tokens carry it as `did` and
  * are only accepted while it still matches. The app also sends it on every

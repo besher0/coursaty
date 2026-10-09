@@ -19,6 +19,7 @@ import { UpdateUserStatusDto } from '../dtos/update-user-status.dto';
 import { UpdateUserPasswordDto } from '../dtos/update-user-password.dto';
 import { ManageSubjectTeacherDto } from '../dtos/manage-subject-teacher.dto';
 import { ResetStudentPasswordDto } from '../dtos/reset-student-password.dto';
+import { UpdateLoginDeviceExemptDto } from '../dtos/update-login-device-exempt.dto';
 import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/modules/auth/guards/roles.guard';
 import { Roles } from '@/modules/auth/roles.decorator';
@@ -412,6 +413,22 @@ export class AdminsController {
   @ApiOkResponse({ description: 'Student login device reset' })
   async resetStudentLoginDevice(@Param('studentId') studentId: string) {
     return this.admins.resetStudentLoginDevice(studentId);
+  }
+
+  @Patch('students/:studentId/login-device-exempt')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary:
+      'Let a student account sign in and play videos on any device (test accounts), or apply the single-device login again',
+  })
+  @ApiOkResponse({ description: 'Student login device exemption updated' })
+  async updateStudentLoginDeviceExempt(
+    @Param('studentId') studentId: string,
+    @Body() body: UpdateLoginDeviceExemptDto,
+  ) {
+    return this.admins.setStudentLoginDeviceExempt(studentId, body.exempt);
   }
 
   @Get('teachers/:teacherId/profile')
