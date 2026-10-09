@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  MaxLength,
   Min,
 } from "class-validator";
 import {
@@ -54,6 +55,16 @@ export class VideoSessionDto {
   @IsOptional()
   @IsString()
   integrityToken?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "base64url DER ECDSA P-256/SHA-256 signature, made with the registered device key, over the UTF-8 canonical proof: " +
+      "lines `action=<video_playback|video_download>`, `videoId=`, `deviceId=`, `timestamp=<challengeTimestamp>`, `challenge=` joined by \\n.",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  deviceSignature?: string;
 }
 
 export class PlaybackChallengeDto {
@@ -69,9 +80,12 @@ export class VideoDeviceKeyDto {
   @IsNotEmpty()
   deviceId: string;
 
-  @ApiProperty({ description: "SPKI DER public key encoded as base64url." })
+  @ApiProperty({
+    description: "EC P-256 public key as X.509 SubjectPublicKeyInfo DER, base64url encoded.",
+  })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(1024)
   publicKey: string;
 
   @ApiProperty({ enum: ["ECDSA_P256_SHA256"] })

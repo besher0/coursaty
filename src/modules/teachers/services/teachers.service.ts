@@ -561,7 +561,8 @@ export class TeachersService {
       },
     };
 
-    await this.cacheManager.set(cacheKey, summary, 60);
+    // cache-manager v6+ TTLs are milliseconds (60 s summary cache).
+    await this.cacheManager.set(cacheKey, summary, 60_000);
 
     return summary;
   }

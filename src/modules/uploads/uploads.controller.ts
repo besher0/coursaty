@@ -103,16 +103,16 @@ export class UploadsController {
   @ApiOperation({ summary: 'Complete Bunny TUS upload and return playback links' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  completeTusVideoUpload(@Body() body: CompleteUploadVideoTusDto) {
-    return this.uploads.completeTusVideoUpload(body);
+  completeTusVideoUpload(@Body() body: CompleteUploadVideoTusDto, @Req() req: any) {
+    return this.uploads.completeTusVideoUpload(body, req?.user);
   }
 
   @Post('videos/tus/refresh')
   @ApiOperation({ summary: 'Refresh Bunny TUS signature for an existing videoId' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('TEACHER', 'ADMIN')
-  refreshTusVideoUpload(@Body() body: RefreshUploadVideoTusDto) {
-    return this.uploads.refreshTusVideoUpload(body);
+  refreshTusVideoUpload(@Body() body: RefreshUploadVideoTusDto, @Req() req: any) {
+    return this.uploads.refreshTusVideoUpload(body, req?.user);
   }
 
   @Patch('videos/settings/resolutions')

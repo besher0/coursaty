@@ -19,6 +19,7 @@ import { RefreshTusVideoUploadDto } from "../../lectures/dtos/refresh-tus-video-
 import { RevenueService } from "@/modules/revenues/services/revenue.service";
 import { RevenuePeriodQueryDto } from "@/modules/revenues/dtos";
 import { SystemSettingsService } from "@/modules/system-settings/services/system-settings.service";
+import { assertBunnyVideoWritableBy } from "@/shared/bunny/bunny-video-ownership";
 
 @Injectable()
 export class CourseService {
@@ -1165,6 +1166,7 @@ export class CourseService {
     });
     if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
+    await assertBunnyVideoWritableBy(this.prisma, bunnyVideoId, user);
 
     const streamPlayUrl = this.bunny.getStreamPlayUrl(bunnyVideoId);
     const existing = await this.prisma.video.findFirst({
@@ -1264,15 +1266,17 @@ export class CourseService {
     });
     if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
+    const bunnyVideoId = this.requireBunnyVideoGuid(dto.videoId);
+    await assertBunnyVideoWritableBy(this.prisma, bunnyVideoId, user);
 
     const refreshed = this.bunny.signTusUpload(
-      dto.videoId,
+      bunnyVideoId,
       dto.expiresInSeconds ?? 3600,
     );
     return {
       lectureId: String(lectureId),
       upload: {
-        videoId: dto.videoId,
+        videoId: bunnyVideoId,
         endpoint: refreshed.tusEndpoint,
         libraryId: refreshed.libraryId,
         authorizationExpire: refreshed.authorizationExpire,

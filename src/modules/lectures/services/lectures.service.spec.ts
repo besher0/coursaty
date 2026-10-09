@@ -104,6 +104,35 @@ describe('LecturesService media links and question ordering', () => {
     });
   });
 
+  it('does not bump contentVersion when a metadata edit re-sends the same URL', async () => {
+    const currentUrl =
+      'https://video.bunnycdn.com/play/123/11111111-1111-4111-8111-111111111111';
+    const prisma = {
+      video: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'video-1',
+          videoUrl: currentUrl,
+          bunnyVideoId: '11111111-1111-4111-8111-111111111111',
+          duration: 60,
+          lecture: { courseId: 'course-1' },
+        }),
+        update: jest.fn().mockResolvedValue({ id: 'video-1' }),
+      },
+    } as any;
+    const bunny = { extractBunnyVideoId: jest.fn() };
+    const service = new LecturesService(prisma, bunny as any);
+
+    await service.updateVideo('video-1', {
+      videoUrl: currentUrl,
+      videoName: 'Renamed',
+    });
+
+    expect(prisma.video.update).toHaveBeenCalledWith({
+      where: { id: 'video-1' },
+      data: { videoName: 'Renamed' },
+    });
+  });
+
   it('updates a file URL without changing other file fields', async () => {
     const prisma = {
       lectureFile: {

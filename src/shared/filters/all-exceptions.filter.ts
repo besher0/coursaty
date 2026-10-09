@@ -39,7 +39,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
       }
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       errorCode = exception.code;
-      message = exception.message;
+      // Prisma messages embed the query invocation and server file paths;
+      // keep them in the server log only.
+      message =
+        exception.code === 'P2002' ? 'البيانات موجودة مسبقاً' : 'تعذر تنفيذ العملية';
       status = exception.code === 'P2002' ? HttpStatus.CONFLICT : HttpStatus.BAD_REQUEST;
       details = exception.meta;
     } else if (
@@ -63,7 +66,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
       details,
     };
 
-    this.logger.error(message, (exception as any)?.stack, correlationId);
+    this.logger.error(
+      exception instanceof Prisma.PrismaClientKnownRequestError
+        ? exception.message
+        : message,
+      (exception as any)?.stack,
+      correlationId,
+    );
 
     response.status(status).json(payload);
   }

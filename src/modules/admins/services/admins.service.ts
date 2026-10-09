@@ -928,7 +928,7 @@ export class AdminsService {
 
     if (!subject)
       throw new NotFoundException(
-        "ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯",
+        "المادة/البرنامج غير موجود",
       );
 
     const permissions = await this.prisma.teacherSubjectPermission.findMany({
@@ -1002,7 +1002,7 @@ export class AdminsService {
 
     if (!subject)
       throw new NotFoundException(
-        "ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯",
+        "المادة/البرنامج غير موجود",
       );
 
     const assigned = await this.prisma.teacherSubjectPermission.findMany({
@@ -1095,10 +1095,10 @@ export class AdminsService {
 
     if (!subject)
       throw new NotFoundException(
-        "ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯",
+        "المادة/البرنامج غير موجود",
       );
     if (!teacher)
-      throw new NotFoundException("ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
+      throw new NotFoundException("الأستاذ غير موجود");
 
     const existing = await this.prisma.teacherSubjectPermission.findUnique({
       where: {
@@ -1118,7 +1118,7 @@ export class AdminsService {
       return {
         assigned: false,
         message:
-          "ط§ظ„ط£ط³طھط§ط° ظ…ط±طھط¨ط· ظ…ط³ط¨ظ‚ط§ظ‹ ط¨ظ‡ط°ظ‡ ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬",
+          "الأستاذ مرتبط مسبقاً بهذه المادة/البرنامج",
         subject: {
           id: subject.id,
           name: subject.subjectName,
@@ -1178,10 +1178,10 @@ export class AdminsService {
 
     if (!subject)
       throw new NotFoundException(
-        "ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯",
+        "المادة/البرنامج غير موجود",
       );
     if (!teacher)
-      throw new NotFoundException("ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
+      throw new NotFoundException("الأستاذ غير موجود");
 
     const removed = await this.prisma.teacherSubjectPermission.deleteMany({
       where: {
@@ -1192,7 +1192,7 @@ export class AdminsService {
 
     if (!removed.count) {
       throw new NotFoundException(
-        "ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ط±طھط¨ط· ط¨ظ‡ط°ظ‡ ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬",
+        "الأستاذ غير مرتبط بهذه المادة/البرنامج",
       );
     }
 
@@ -1220,7 +1220,7 @@ export class AdminsService {
     });
 
     if (!teacher)
-      throw new NotFoundException("ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
+      throw new NotFoundException("الأستاذ غير موجود");
 
     const permissions = await this.prisma.teacherSubjectPermission.findMany({
       where: { teacherId },
@@ -1474,7 +1474,7 @@ export class AdminsService {
       });
 
       if (!foundSubject)
-        throw new NotFoundException("ط§ظ„ظ…ط§ط¯ط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط©");
+        throw new NotFoundException("المادة غير موجودة");
       subject = {
         id: foundSubject.id,
         name: foundSubject.subjectName,
@@ -1555,7 +1555,7 @@ export class AdminsService {
       });
 
       if (!foundProgram)
-        throw new NotFoundException("ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
+        throw new NotFoundException("البرنامج غير موجود");
       program = {
         id: foundProgram.id,
         name: foundProgram.subjectName,
@@ -1621,7 +1621,7 @@ export class AdminsService {
     });
     if (!subject)
       throw new NotFoundException(
-        "ط§ظ„ظ…ط§ط¯ط©/ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯",
+        "المادة/البرنامج غير موجود",
       );
 
     const courses = await this.prisma.course.findMany({
@@ -1659,7 +1659,7 @@ export class AdminsService {
       select: { id: true, subjectName: true, isProgram: true },
     });
     if (!program)
-      throw new NotFoundException("ط§ظ„ط¨ط±ظ†ط§ظ…ط¬ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
+      throw new NotFoundException("البرنامج غير موجود");
 
     const courses = await this.prisma.course.findMany({
       where: { subjectId: programId },
@@ -1691,7 +1691,7 @@ export class AdminsService {
       select: { id: true, name: true },
     });
     if (!teacher)
-      throw new NotFoundException("ط§ظ„ط£ط³طھط§ط° ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
+      throw new NotFoundException("الأستاذ غير موجود");
 
     const now = new Date();
     const statusFilter: Prisma.CourseWhereInput =
@@ -1756,7 +1756,7 @@ export class AdminsService {
         },
       },
     });
-    if (!student) throw new NotFoundException("ط§ظ„ط·ط§ظ„ط¨ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
+    if (!student) throw new NotFoundException("الطالب غير موجود");
 
     const enrollment = student.enrollments?.[0] ?? null;
 
