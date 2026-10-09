@@ -2,24 +2,26 @@
   BadGatewayException,
   BadRequestException,
   ForbiddenException,
-  HttpException,
-  HttpStatus,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { CACHE_MANAGER } from "@nestjs/cache-manager";
 import { ConfigService } from "@nestjs/config";
+import { Prisma, StudentDevice } from "@prisma/client";
 import { Cache } from "cache-manager";
 import {
   createHash,
   createPrivateKey,
   createPublicKey,
+  KeyObject,
   randomBytes,
   randomUUID,
   sign,
   timingSafeEqual,
+  verify,
 } from "crypto";
 import { PrismaService } from "@/prisma/prisma.service";
 import { BunnyService } from "@/shared/bunny/bunny.service";
@@ -30,13 +32,27 @@ import {
   VideoSessionDto,
 } from "./dtos/video-session.dto";
 import { PlayIntegrityService } from "./play-integrity.service";
+import {
+  VideoErrorCode,
+  videoBadRequest,
+  videoConflict,
+  videoForbidden,
+  videoTooManyRequests,
+} from "./video-errors";
 
 type TokenUser = { userId: string | number; type: string } | undefined;
-type SessionAction = "playback" | "download" | "renew";
+type SessionAction = "playback" | "download" | "renew" | "challenge";
+type DeviceProofAction = "video_playback" | "video_download";
+type ConsumedChallenge = {
+  id: string;
+  challengeHash: string;
+  createdAt: Date;
+};
 type AccessContext = {
   userId: string;
   studentId: string;
   deviceId: string;
+  device: StudentDevice;
   video: {
     id: string;
     videoUrl: string;
@@ -86,6 +102,9 @@ const OFFLINE_LICENSE_PAYLOAD_KEYS: Array<keyof OfflineLicensePayload> = [
 
 @Injectable()
 export class VideosService {
+  private readonly logger = new Logger(VideosService.name);
+  private resolvedStreamCdnHost: string | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly bunny: BunnyService,
@@ -108,7 +127,8 @@ export class VideosService {
       where: { id: videoId },
       select: { id: true },
     });
-    if (!video) throw new NotFoundException("ط§ظ„ظپظٹط¯ظٹظˆ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
+    if (!video) throw new NotFoundException("الفيديو غير موجود");
+    await this.enforceRateLimit("challenge", userId, deviceId, video.id);
 
     const challenge = randomBytes(32).toString("base64url");
     const ttlSeconds = this.readPositiveIntegerEnv(
@@ -136,61 +156,105 @@ export class VideosService {
     };
   }
 
+  /**
+   * Registers the device public key for an already-allowed device.
+   *
+   * Re-sending the same key is idempotent. A *different* key for a device that
+   * already has one is never accepted silently: it goes through the explicit
+   * replacement endpoint, otherwise anyone holding the account credentials
+   * could overwrite the key bound to someone else's installation id.
+   */
   async registerVideoDeviceKey(dto: VideoDeviceKeyDto, user: TokenUser) {
     const deviceId = this.normalizeDeviceId(dto.deviceId);
+    const publicKey = this.normalizeDevicePublicKey(dto.publicKey);
     const { userId, studentId } = await this.resolveStudentUser(user);
-    await this.assertDeviceAllowed(userId, studentId, deviceId);
+    const device = await this.assertDeviceAllowed(userId, studentId, deviceId);
 
-    const updated = await this.prisma.studentDevice.update({
-      where: { userId_deviceId: { userId, deviceId } },
+    const storedKey = this.tryNormalizeStoredPublicKey(device.videoPublicKey);
+    if (storedKey === publicKey) {
+      return {
+        deviceId,
+        algorithm: dto.algorithm,
+        keyVersion: device.videoKeyVersion,
+        registered: true,
+      };
+    }
+    if (storedKey) {
+      throw videoConflict(
+        VideoErrorCode.DEVICE_KEY_MISMATCH_REPLACEMENT_REQUIRED,
+        "تغيّر مفتاح الأمان لهذا الجهاز. يلزم تأكيد إعادة ربط الجهاز بالحساب",
+      );
+    }
+
+    // First key for this device. The conditional update keeps two concurrent
+    // registrations from silently overwriting each other.
+    const claimed = await this.prisma.studentDevice.updateMany({
+      where: { id: device.id, videoPublicKey: device.videoPublicKey ?? null },
       data: {
-        videoPublicKey: dto.publicKey,
+        videoPublicKey: publicKey,
         videoKeyAlgorithm: dto.algorithm,
         videoKeyCreatedAt: new Date(),
         videoKeyVersion: { increment: 1 },
       },
-      select: { videoKeyVersion: true },
     });
+    const current = await this.prisma.studentDevice.findUnique({
+      where: { id: device.id },
+    });
+    if (
+      claimed.count !== 1 &&
+      this.tryNormalizeStoredPublicKey(current?.videoPublicKey) !== publicKey
+    ) {
+      throw videoConflict(
+        VideoErrorCode.DEVICE_KEY_MISMATCH_REPLACEMENT_REQUIRED,
+        "تغيّر مفتاح الأمان لهذا الجهاز. يلزم تأكيد إعادة ربط الجهاز بالحساب",
+      );
+    }
 
     return {
       deviceId,
       algorithm: dto.algorithm,
-      keyVersion: updated.videoKeyVersion,
+      keyVersion: current?.videoKeyVersion ?? device.videoKeyVersion,
       registered: true,
     };
   }
 
+  /**
+   * Explicit, user-confirmed replacement. Identity always comes from the JWT.
+   *
+   * Runs in a SERIALIZABLE transaction so two phones replacing each other at
+   * the same moment cannot both end up active. Devices pushed out by the limit
+   * lose their playback sessions immediately and their offline licenses are
+   * marked revoked (renewal already fails for a revoked device).
+   */
   async replaceVideoDeviceKey(dto: ReplaceVideoDeviceKeyDto, user: TokenUser) {
     const deviceId = this.normalizeDeviceId(dto.deviceId);
+    const publicKey = this.normalizeDevicePublicKey(dto.publicKey);
     const { userId, studentId } = await this.resolveStudentUser(user);
-    const now = new Date();
+    const limit = this.readPositiveIntegerEnv("VIDEO_DEVICE_LIMIT", 1);
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.runSerializable(async (tx) => {
+      const now = new Date();
       const existingSameDevice = await tx.studentDevice.findUnique({
         where: { userId_deviceId: { userId, deviceId } },
       });
+      const sameDeviceActive = Boolean(
+        existingSameDevice && !existingSameDevice.revokedAt,
+      );
+      const keyChanged =
+        this.tryNormalizeStoredPublicKey(existingSameDevice?.videoPublicKey) !==
+        publicKey;
 
-      if (existingSameDevice && !existingSameDevice.revokedAt) {
-        return tx.studentDevice.update({
-          where: { id: existingSameDevice.id },
-          data: {
-            lastSeenAt: now,
-            videoPublicKey: dto.publicKey,
-            videoKeyAlgorithm: dto.algorithm,
-            videoKeyCreatedAt: now,
-            videoKeyVersion: { increment: 1 },
-          },
-          select: { videoKeyVersion: true },
-        });
-      }
+      const activeOthers = (
+        await tx.studentDevice.findMany({
+          where: { userId, revokedAt: null },
+          orderBy: { lastSeenAt: "asc" },
+        })
+      ).filter((active) => active.deviceId !== deviceId);
 
-      const activeDevices = await tx.studentDevice.findMany({
-        where: { userId, revokedAt: null },
-        orderBy: { firstSeenAt: "asc" },
-      });
-      const previousDeviceId = activeDevices[0]?.deviceId ?? null;
-
-      for (const active of activeDevices) {
+      // Keep (limit - 1) other devices, revoking the least recently used.
+      const overflow = Math.max(0, activeOthers.length - (limit - 1));
+      const toRevoke = sameDeviceActive ? [] : activeOthers.slice(0, overflow);
+      for (const active of toRevoke) {
         await tx.studentDevice.update({
           where: { id: active.id },
           data: {
@@ -200,6 +264,50 @@ export class VideosService {
         });
       }
 
+      const invalidatedDeviceIds = toRevoke.map((active) => active.deviceId);
+      if (existingSameDevice && keyChanged) {
+        invalidatedDeviceIds.push(deviceId);
+      }
+      if (invalidatedDeviceIds.length) {
+        await tx.videoPlaybackSession.updateMany({
+          where: {
+            userId,
+            deviceId: { in: invalidatedDeviceIds },
+            revokedAt: null,
+          },
+          data: { revokedAt: now },
+        });
+      }
+      if (toRevoke.length) {
+        await tx.offlineVideoLicense.updateMany({
+          where: {
+            userId,
+            deviceId: { in: toRevoke.map((active) => active.deviceId) },
+            revokedAt: null,
+          },
+          data: { revokedAt: now },
+        });
+      }
+
+      const keyData = keyChanged
+        ? {
+            videoPublicKey: publicKey,
+            videoKeyAlgorithm: dto.algorithm,
+            videoKeyCreatedAt: now,
+            videoKeyVersion: { increment: 1 },
+          }
+        : {};
+
+      if (existingSameDevice && sameDeviceActive) {
+        return tx.studentDevice.update({
+          where: { id: existingSameDevice.id },
+          data: { lastSeenAt: now, ...keyData },
+          select: { videoKeyVersion: true },
+        });
+      }
+
+      const previousDeviceId =
+        toRevoke[0]?.deviceId ?? existingSameDevice?.previousDeviceId ?? null;
       if (existingSameDevice) {
         return tx.studentDevice.update({
           where: { id: existingSameDevice.id },
@@ -209,10 +317,7 @@ export class VideosService {
             replacedAt: null,
             revokedAt: null,
             lastSeenAt: now,
-            videoPublicKey: dto.publicKey,
-            videoKeyAlgorithm: dto.algorithm,
-            videoKeyCreatedAt: now,
-            videoKeyVersion: { increment: 1 },
+            ...keyData,
           },
           select: { videoKeyVersion: true },
         });
@@ -225,7 +330,7 @@ export class VideosService {
           deviceId,
           previousDeviceId,
           lastSeenAt: now,
-          videoPublicKey: dto.publicKey,
+          videoPublicKey: publicKey,
           videoKeyAlgorithm: dto.algorithm,
           videoKeyCreatedAt: now,
         },
@@ -261,9 +366,12 @@ export class VideosService {
       context.video.id,
     );
 
+    const challenge = await this.consumeChallenge(context, dto);
+    await this.verifyDeviceProof(context, dto, challenge, "video_playback");
+
     const appOnlyEnabled = this.readBooleanEnv("VIDEO_APP_ONLY_ENABLED", false);
     if (appOnlyEnabled) {
-      await this.verifyAppOnlyPlayback(context, dto);
+      await this.verifyPlayIntegrity(context, dto, challenge);
     }
 
     if (
@@ -340,32 +448,30 @@ export class VideosService {
         },
       },
     });
-    if (!video) throw new NotFoundException("ط§ظ„ظپظٹط¯ظٹظˆ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
+    if (!video) throw new NotFoundException("الفيديو غير موجود");
     if (!video.isFree) {
-      throw new ForbiddenException(
-        "ط§ظ„طھط´ط؛ظٹظ„ ظ„ظ„ط²ظˆط§ط± ظ…طھط§ط­ ظ„ظ„ظپظٹط¯ظٹظˆظ‡ط§طھ ط§ظ„ظ…ط¬ط§ظ†ظٹط© ظپظ‚ط·",
+      throw videoForbidden(
+        VideoErrorCode.GUEST_FREE_ONLY,
+        "التشغيل للزوار متاح للفيديوهات المجانية فقط",
       );
     }
     if (
       video.lecture.course.status !== "APPROVED" ||
       !video.lecture.course.teacher.isVisibleToStudents
     ) {
-      throw new NotFoundException("ط§ظ„ظپظٹط¯ظٹظˆ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
+      throw new NotFoundException("الفيديو غير موجود");
     }
     if (
       video.lecture.course.expiresAt &&
       video.lecture.course.expiresAt.getTime() <= Date.now()
     ) {
-      throw new ForbiddenException("ط§ظ†طھظ‡طھ طµظ„ط§ط­ظٹط© ط§ظ„ظˆطµظˆظ„ ظ„ظ„ظƒظˆط±ط³");
-    }
-
-    const bunnyVideoId =
-      video.bunnyVideoId || this.bunny.extractBunnyVideoId(video.videoUrl);
-    if (!bunnyVideoId) {
-      throw new BadRequestException(
-        "ظ‡ط°ط§ ط§ظ„ظپظٹط¯ظٹظˆ ظ„ط§ ظٹط­طھظˆظٹ ط¹ظ„ظ‰ ظ…ط¹ط±ظپ Bunny Stream طµط§ظ„ط­",
+      throw videoForbidden(
+        VideoErrorCode.COURSE_EXPIRED,
+        "انتهت صلاحية الوصول للكورس",
       );
     }
+
+    const bunnyVideoId = this.resolveStoredBunnyVideoId(video);
 
     const ttlSeconds = this.readPositiveIntegerEnv(
       "VIDEO_PLAYBACK_SESSION_TTL_SECONDS",
@@ -408,6 +514,8 @@ export class VideosService {
       context.deviceId,
       context.video.id,
     );
+    const challenge = await this.consumeChallenge(context, dto);
+    await this.verifyDeviceProof(context, dto, challenge, "video_download");
 
     const ttlSeconds = this.readPositiveIntegerEnv(
       "VIDEO_DOWNLOAD_TTL_SECONDS",
@@ -456,7 +564,10 @@ export class VideosService {
         current.revokedAt ||
         current.expiresAt.getTime() <= Date.now()
       ) {
-        throw new ForbiddenException("ط·آ¬ط¸â€‍ط·آ³ط·آ© ط·آ§ط¸â€‍ط·ع¾ط·آ´ط·ط›ط¸ظ¹ط¸â€‍ ط·ط›ط¸ظ¹ط·آ± ط·آµط·آ§ط¸â€‍ط·آ­ط·آ©");
+        throw videoForbidden(
+          VideoErrorCode.PLAYBACK_SESSION_INVALID,
+          "جلسة التشغيل غير صالحة",
+        );
       }
 
       const ttlSeconds = this.readPositiveIntegerEnv(
@@ -499,7 +610,10 @@ export class VideosService {
       current.revokedAt ||
       current.expiresAt.getTime() <= Date.now()
     ) {
-      throw new ForbiddenException("ط¬ظ„ط³ط© ط§ظ„طھط´ط؛ظٹظ„ ط؛ظٹط± طµط§ظ„ط­ط©");
+      throw videoForbidden(
+          VideoErrorCode.PLAYBACK_SESSION_INVALID,
+          "جلسة التشغيل غير صالحة",
+        );
     }
 
     const ttlSeconds = this.readPositiveIntegerEnv(
@@ -562,12 +676,19 @@ export class VideosService {
     ) {
       throw new ForbiddenException("playback session denied");
     }
-    if (session.sessionType === "GUEST" && !this.isGuestHlsPath(path)) {
-      throw new ForbiddenException("guest download denied");
+    // Playback sessions (guest or authenticated) only ever need HLS assets;
+    // MP4 fallbacks/originals stay behind the download-session flow.
+    if (!this.isHlsMediaPath(path)) {
+      throw new ForbiddenException(
+        session.sessionType === "GUEST"
+          ? "guest download denied"
+          : "media path denied",
+      );
     }
 
+    const cdnHost = await this.resolveStreamCdnHost(bunnyVideoId);
     const sourceUrl = this.bunny.signBunnyStreamMediaUrlForPath(
-      `https://video.bunnycdn.com/${path}`,
+      `https://${cdnHost}/${path}`,
       this.readPositiveIntegerEnv("VIDEO_EDGE_ORIGIN_TTL_SECONDS", 120),
     );
 
@@ -693,19 +814,25 @@ export class VideosService {
       },
     });
 
-    if (!video) throw new NotFoundException("ط§ظ„ظپظٹط¯ظٹظˆ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
+    if (!video) throw new NotFoundException("الفيديو غير موجود");
     if (options.requireDownload && !video.offlineDownloadEnabled) {
-      throw new ForbiddenException("ط§ظ„طھط­ظ…ظٹظ„ ط؛ظٹط± ظ…طھط§ط­ ظ„ظ‡ط°ط§ ط§ظ„ظپظٹط¯ظٹظˆ");
+      throw videoForbidden(
+        VideoErrorCode.DOWNLOAD_DISABLED,
+        "التحميل غير متاح لهذا الفيديو",
+      );
     }
 
     const course = video.lecture.course;
     if (!course.teacher.isVisibleToStudents || course.status !== "APPROVED") {
-      throw new NotFoundException("ط§ظ„ظپظٹط¯ظٹظˆ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
+      throw new NotFoundException("الفيديو غير موجود");
     }
 
     const now = Date.now();
     if (course.expiresAt && course.expiresAt.getTime() <= now) {
-      throw new ForbiddenException("ط§ظ†طھظ‡طھ طµظ„ط§ط­ظٹط© ط§ظ„ظˆطµظˆظ„ ظ„ظ„ظƒظˆط±ط³");
+      throw videoForbidden(
+        VideoErrorCode.COURSE_EXPIRED,
+        "انتهت صلاحية الوصول للكورس",
+      );
     }
 
     const subscription = await this.prisma.studentSubscription.findUnique({
@@ -715,40 +842,26 @@ export class VideosService {
 
     const contentIsFree = course.isFree || video.isFree;
     if (!contentIsFree) {
-      if (!subscription) throw new ForbiddenException("ظٹظ„ط²ظ… ط§ط´طھط±ط§ظƒ");
+      if (!subscription) {
+        throw videoForbidden(VideoErrorCode.SUBSCRIPTION_REQUIRED, "يلزم اشتراك");
+      }
       if (subscription.expiresAt && subscription.expiresAt.getTime() <= now) {
-        throw new ForbiddenException("ط§ظ†طھظ‡طھ طµظ„ط§ط­ظٹط© ط§ظ„ط§ط´طھط±ط§ظƒ ط¹ظ„ظ‰ ظ‡ط°ط§ ط§ظ„ظƒظˆط±ط³");
+        throw videoForbidden(
+          VideoErrorCode.SUBSCRIPTION_EXPIRED,
+          "انتهت صلاحية الاشتراك على هذا الكورس",
+        );
       }
     }
 
-    await this.assertDeviceAllowed(
-      userId,
-      studentId,
-      deviceId,
-      dto.legacyDeviceId,
-    );
-
-    const bunnyVideoId =
-      video.bunnyVideoId || this.bunny.extractBunnyVideoId(video.videoUrl);
-    if (!bunnyVideoId) {
-      throw new BadRequestException(
-        "ظ‡ط°ط§ ط§ظ„ظپظٹط¯ظٹظˆ ظ„ط§ ظٹط­طھظˆظٹ ط¹ظ„ظ‰ ظ…ط¹ط±ظپ Bunny Stream طµط§ظ„ط­",
-      );
-    }
-
-    if (!video.bunnyVideoId) {
-      await this.prisma.video
-        .update({
-          where: { id: video.id },
-          data: { bunnyVideoId },
-        })
-        .catch(() => undefined);
-    }
+    const device = await this.assertDeviceAllowed(userId, studentId, deviceId);
+    const bunnyVideoId = this.resolveStoredBunnyVideoId(video);
+    await this.persistLegacyBunnyVideoId(video, bunnyVideoId);
 
     return {
       userId,
       studentId,
       deviceId,
+      device,
       video: {
         ...video,
         bunnyVideoId,
@@ -770,7 +883,10 @@ export class VideosService {
 
   private async resolveStudentUser(user: TokenUser) {
     if (user?.type !== "STUDENT") {
-      throw new ForbiddenException("ظٹط¬ط¨ طھط³ط¬ظٹظ„ ط§ظ„ط¯ط®ظˆظ„ ط¨ط­ط³ط§ط¨ ط·ط§ظ„ط¨");
+      throw videoForbidden(
+        VideoErrorCode.STUDENT_REQUIRED,
+        "يجب تسجيل الدخول بحساب طالب",
+      );
     }
 
     const dbUser = await this.prisma.user.findUnique({
@@ -778,24 +894,30 @@ export class VideosService {
       select: { id: true, userableId: true, userableType: true, status: true },
     });
     if (!dbUser || dbUser.userableType !== "STUDENT") {
-      throw new ForbiddenException("ظٹط¬ط¨ طھط³ط¬ظٹظ„ ط§ظ„ط¯ط®ظˆظ„ ط¨ط­ط³ط§ط¨ ط·ط§ظ„ط¨");
+      throw videoForbidden(
+        VideoErrorCode.STUDENT_REQUIRED,
+        "يجب تسجيل الدخول بحساب طالب",
+      );
     }
     if (dbUser.status !== "active") {
-      throw new ForbiddenException("ط§ظ„ط­ط³ط§ط¨ ط؛ظٹط± ظپط¹ط§ظ„");
+      throw videoForbidden(VideoErrorCode.ACCOUNT_INACTIVE, "الحساب غير فعال");
     }
 
     const student = await this.prisma.student.findUnique({
       where: { id: dbUser.userableId },
       select: { id: true },
     });
-    if (!student) throw new NotFoundException("ط§ظ„ط·ط§ظ„ط¨ ط؛ظٹط± ظ…ظˆط¬ظˆط¯");
+    if (!student) throw new NotFoundException("الطالب غير موجود");
 
     return { userId: dbUser.id, studentId: student.id };
   }
 
   private async resolveTeacherOwnerAccess(videoId: string, user: TokenUser) {
     if (user?.type !== "TEACHER") {
-      throw new ForbiddenException("ط¸ظ¹ط·آ¬ط·آ¨ ط·ع¾ط·آ³ط·آ¬ط¸ظ¹ط¸â€‍ ط·آ§ط¸â€‍ط·آ¯ط·آ®ط¸ث†ط¸â€‍ ط·آ¨ط·آ­ط·آ³ط·آ§ط·آ¨ ط·آ£ط·آ³ط·ع¾ط·آ§ط·آ°");
+      throw videoForbidden(
+        VideoErrorCode.TEACHER_REQUIRED,
+        "يجب تسجيل الدخول بحساب أستاذ",
+      );
     }
 
     const dbUser = await this.prisma.user.findUnique({
@@ -803,10 +925,13 @@ export class VideosService {
       select: { id: true, userableId: true, userableType: true, status: true },
     });
     if (!dbUser || dbUser.userableType !== "TEACHER") {
-      throw new ForbiddenException("ط¸ظ¹ط·آ¬ط·آ¨ ط·ع¾ط·آ³ط·آ¬ط¸ظ¹ط¸â€‍ ط·آ§ط¸â€‍ط·آ¯ط·آ®ط¸ث†ط¸â€‍ ط·آ¨ط·آ­ط·آ³ط·آ§ط·آ¨ ط·آ£ط·آ³ط·ع¾ط·آ§ط·آ°");
+      throw videoForbidden(
+        VideoErrorCode.TEACHER_REQUIRED,
+        "يجب تسجيل الدخول بحساب أستاذ",
+      );
     }
     if (dbUser.status !== "active") {
-      throw new ForbiddenException("ط·آ§ط¸â€‍ط·آ­ط·آ³ط·آ§ط·آ¨ ط·ط›ط¸ظ¹ط·آ± ط¸ظ¾ط·آ¹ط·آ§ط¸â€‍");
+      throw videoForbidden(VideoErrorCode.ACCOUNT_INACTIVE, "الحساب غير فعال");
     }
 
     const video = await this.prisma.video.findUnique({
@@ -826,27 +951,16 @@ export class VideosService {
         },
       },
     });
-    if (!video) throw new NotFoundException("ط·آ§ط¸â€‍ط¸ظ¾ط¸ظ¹ط·آ¯ط¸ظ¹ط¸ث† ط·ط›ط¸ظ¹ط·آ± ط¸â€¦ط¸ث†ط·آ¬ط¸ث†ط·آ¯");
+    if (!video) throw new NotFoundException("الفيديو غير موجود");
     if (video.lecture.course.teacherId !== dbUser.userableId) {
-      throw new ForbiddenException("ط¸â€‍ط·آ§ ط·ع¾ط¸â€¦ط¸â€‍ط¸ئ’ ط·آµط¸â€‍ط·آ§ط·آ­ط¸ظ¹ط·آ© ط·ع¾ط·آ´ط·ط›ط¸ظ¹ط¸â€‍ ط¸â€،ط·آ°ط·آ§ ط·آ§ط¸â€‍ط¸ظ¾ط¸ظ¹ط·آ¯ط¸ظ¹ط¸ث†");
-    }
-
-    const bunnyVideoId =
-      video.bunnyVideoId || this.bunny.extractBunnyVideoId(video.videoUrl);
-    if (!bunnyVideoId) {
-      throw new BadRequestException(
-        "ط¸â€،ط·آ°ط·آ§ ط·آ§ط¸â€‍ط¸ظ¾ط¸ظ¹ط·آ¯ط¸ظ¹ط¸ث† ط¸â€‍ط·آ§ ط¸ظ¹ط·آ­ط·ع¾ط¸ث†ط¸ظ¹ ط·آ¹ط¸â€‍ط¸â€° ط¸â€¦ط·آ¹ط·آ±ط¸ظ¾ Bunny Stream ط·آµط·آ§ط¸â€‍ط·آ­",
+      throw videoForbidden(
+        VideoErrorCode.TEACHER_NOT_OWNER,
+        "لا تملك صلاحية تشغيل هذا الفيديو",
       );
     }
 
-    if (!video.bunnyVideoId) {
-      await this.prisma.video
-        .update({
-          where: { id: video.id },
-          data: { bunnyVideoId },
-        })
-        .catch(() => undefined);
-    }
+    const bunnyVideoId = this.resolveStoredBunnyVideoId(video);
+    await this.persistLegacyBunnyVideoId(video, bunnyVideoId);
 
     return {
       userId: dbUser.id,
@@ -856,34 +970,52 @@ export class VideosService {
     };
   }
 
+  /**
+   * Returns the active StudentDevice row for (user, installation id),
+   * registering it when the per-account limit still has room.
+   *
+   * The slow path (new or previously revoked device) is SERIALIZABLE so two
+   * new installations racing each other cannot both slip under the limit.
+   */
   private async assertDeviceAllowed(
     userId: string,
     studentId: string,
     deviceId: string,
-    _legacyDeviceId?: string | null,
-  ) {
+  ): Promise<StudentDevice> {
     const existing = await this.prisma.studentDevice.findUnique({
       where: { userId_deviceId: { userId, deviceId } },
     });
 
     if (existing && !existing.revokedAt) {
+      const lastSeenAt = new Date();
       await this.prisma.studentDevice.update({
         where: { id: existing.id },
-        data: { lastSeenAt: new Date() },
+        data: { lastSeenAt },
       });
-      return;
+      return { ...existing, lastSeenAt };
     }
 
     const limit = this.readPositiveIntegerEnv("VIDEO_DEVICE_LIMIT", 1);
-    const activeDevices = await this.prisma.studentDevice.findMany({
-      where: { userId, revokedAt: null },
-      orderBy: { firstSeenAt: "asc" },
-    });
+    return this.runSerializable(async (tx) => {
+      const current = await tx.studentDevice.findUnique({
+        where: { userId_deviceId: { userId, deviceId } },
+      });
+      if (current && !current.revokedAt) return current;
 
-    if (activeDevices.length < limit) {
-      if (existing) {
-        await this.prisma.studentDevice.update({
-          where: { id: existing.id },
+      const activeDevices = await tx.studentDevice.findMany({
+        where: { userId, revokedAt: null },
+        orderBy: { firstSeenAt: "asc" },
+      });
+      if (activeDevices.length >= limit) {
+        throw videoForbidden(
+          VideoErrorCode.DEVICE_LIMIT_EXCEEDED_REPLACEMENT_REQUIRED,
+          "هذا الحساب مرتبط بجهاز آخر. يلزم تأكيد استبدال الجهاز للمتابعة",
+        );
+      }
+
+      if (current) {
+        return tx.studentDevice.update({
+          where: { id: current.id },
           data: {
             studentId,
             revokedAt: null,
@@ -891,40 +1023,89 @@ export class VideosService {
             lastSeenAt: new Date(),
           },
         });
-        return;
       }
 
-      await this.prisma.studentDevice.create({
+      return tx.studentDevice.create({
         data: { userId, studentId, deviceId },
       });
-      return;
-    }
-
-    throw new ForbiddenException(
-      "VIDEO_DEVICE_LIMIT_EXCEEDED_REPLACEMENT_REQUIRED",
-    );
+    });
   }
-  private async verifyAppOnlyPlayback(
+
+  /**
+   * Verifies that the request was signed by the private key registered for
+   * this (user, installation id). In audit mode (enforcement off) failures are
+   * logged and playback continues; with VIDEO_DEVICE_SIGNATURE_ENFORCE=true a
+   * missing or invalid proof is rejected.
+   */
+  private async verifyDeviceProof(
     context: AccessContext,
     dto: VideoSessionDto,
+    challenge: ConsumedChallenge | null,
+    action: DeviceProofAction,
   ) {
-    const device = await this.prisma.studentDevice.findUnique({
-      where: {
-        userId_deviceId: { userId: context.userId, deviceId: context.deviceId },
-      },
-      select: { videoPublicKey: true },
-    });
-    if (
-      this.readBooleanEnv("VIDEO_DEVICE_KEY_REQUIRED", false) &&
-      !device?.videoPublicKey
-    ) {
-      throw new ForbiddenException("ظ…ظپطھط§ط­ ط§ظ„ط¬ظ‡ط§ط² ط؛ظٹط± ظ…ط³ط¬ظ„");
+    const enforce = this.readBooleanEnv("VIDEO_DEVICE_SIGNATURE_ENFORCE", false);
+    const keyRequired =
+      enforce || this.readBooleanEnv("VIDEO_DEVICE_KEY_REQUIRED", false);
+
+    const publicKey = this.tryParseDevicePublicKey(
+      context.device?.videoPublicKey,
+    );
+    if (!publicKey) {
+      if (keyRequired) {
+        throw videoForbidden(
+          VideoErrorCode.DEVICE_KEY_NOT_REGISTERED,
+          "مفتاح الجهاز غير مسجل",
+        );
+      }
+      return false;
     }
 
-    const challenge = await this.consumeChallenge(context, dto);
+    if (!challenge || !dto.deviceSignature) {
+      if (enforce) {
+        throw videoForbidden(
+          VideoErrorCode.DEVICE_SIGNATURE_REQUIRED,
+          "يلزم توقيع الجهاز لتشغيل الفيديو",
+        );
+      }
+      return false;
+    }
+
+    const payload = this.buildDeviceProofPayload(action, {
+      videoId: context.video.id,
+      deviceId: context.deviceId,
+      timestamp: challenge.createdAt.getTime(),
+      challenge: challenge.challengeHash,
+    });
+    const valid = this.verifyDeviceSignature(
+      publicKey,
+      payload,
+      dto.deviceSignature,
+    );
+    if (!valid) {
+      this.logger.warn(
+        `device signature rejected action=${action} enforced=${enforce}`,
+      );
+      if (enforce) {
+        throw videoForbidden(
+          VideoErrorCode.DEVICE_SIGNATURE_INVALID,
+          "تعذر التحقق من توقيع الجهاز",
+        );
+      }
+    }
+    return valid;
+  }
+
+  private async verifyPlayIntegrity(
+    context: AccessContext,
+    dto: VideoSessionDto,
+    challenge: ConsumedChallenge | null,
+  ) {
     if (!challenge) {
       if (this.readBooleanEnv("VIDEO_PLAY_INTEGRITY_ENFORCE", false)) {
-        throw new ForbiddenException("طھط­ط¯ظٹ ط§ظ„طھط´ط؛ظٹظ„ ظ…ط·ظ„ظˆط¨");
+        throw videoForbidden(
+          VideoErrorCode.PLAYBACK_CHALLENGE_REQUIRED,
+          "تحدي التشغيل مطلوب",
+        );
       }
       return;
     }
@@ -943,12 +1124,28 @@ export class VideosService {
         this.readEnv("GOOGLE_PLAY_PACKAGE_NAME") ||
         "com.YamanKartal.coursaty_app",
     });
-    if (!verdict.ok)
-      throw new ForbiddenException("ظپط´ظ„ ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† Play Integrity");
+    if (!verdict.ok) {
+      throw videoForbidden(
+        VideoErrorCode.PLAY_INTEGRITY_FAILED,
+        "فشل التحقق من Play Integrity",
+      );
+    }
   }
 
-  private async consumeChallenge(context: AccessContext, dto: VideoSessionDto) {
+  /**
+   * Single-use: the conditional update means two concurrent requests that
+   * present the same challenge cannot both consume it.
+   */
+  private async consumeChallenge(
+    context: AccessContext,
+    dto: VideoSessionDto,
+  ): Promise<ConsumedChallenge | null> {
     if (!dto.challengeId) return null;
+    const invalid = () =>
+      videoForbidden(
+        VideoErrorCode.PLAYBACK_CHALLENGE_INVALID,
+        "تحدي التشغيل غير صالح",
+      );
     const row = await this.prisma.videoPlaybackChallenge.findUnique({
       where: { id: dto.challengeId },
     });
@@ -960,12 +1157,14 @@ export class VideosService {
       row.videoId !== context.video.id ||
       row.deviceId !== context.deviceId
     ) {
-      throw new ForbiddenException("طھط­ط¯ظٹ ط§ظ„طھط´ط؛ظٹظ„ ط؛ظٹط± طµط§ظ„ط­");
+      throw invalid();
     }
-    await this.prisma.videoPlaybackChallenge.update({
-      where: { id: row.id },
-      data: { usedAt: new Date() },
+    const now = new Date();
+    const claimed = await this.prisma.videoPlaybackChallenge.updateMany({
+      where: { id: row.id, usedAt: null, expiresAt: { gt: now } },
+      data: { usedAt: now },
     });
+    if (claimed.count !== 1) throw invalid();
     return row;
   }
 
@@ -975,14 +1174,179 @@ export class VideosService {
     timestamp: number;
     challenge: string;
   }) {
-    const canonical = [
-      "action=video_playback",
+    return this.sha256Base64Url(
+      this.buildDeviceProofPayload("video_playback", input),
+    );
+  }
+
+  /** Exact bytes the device signs (UTF-8). Must match the Flutter client. */
+  private buildDeviceProofPayload(
+    action: DeviceProofAction,
+    input: {
+      videoId: string;
+      deviceId: string;
+      timestamp: number;
+      challenge: string;
+    },
+  ) {
+    return [
+      `action=${action}`,
       `videoId=${input.videoId}`,
       `deviceId=${input.deviceId}`,
       `timestamp=${input.timestamp}`,
       `challenge=${input.challenge}`,
     ].join("\n");
-    return this.sha256Base64Url(canonical);
+  }
+
+  private verifyDeviceSignature(
+    publicKey: KeyObject,
+    payload: string,
+    signature: string,
+  ) {
+    try {
+      return verify(
+        "sha256",
+        Buffer.from(payload, "utf8"),
+        { key: publicKey, dsaEncoding: "der" },
+        Buffer.from(String(signature).trim(), "base64url"),
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /** Validates an EC P-256 SPKI key and returns its canonical base64url DER. */
+  private normalizeDevicePublicKey(value: string) {
+    const key = this.tryParseDevicePublicKey(value);
+    if (!key) {
+      throw videoBadRequest(
+        VideoErrorCode.DEVICE_KEY_INVALID,
+        "مفتاح الجهاز غير صالح",
+      );
+    }
+    return key.export({ type: "spki", format: "der" }).toString("base64url");
+  }
+
+  private tryNormalizeStoredPublicKey(value?: string | null) {
+    const key = this.tryParseDevicePublicKey(value);
+    return key
+      ? key.export({ type: "spki", format: "der" }).toString("base64url")
+      : null;
+  }
+
+  private tryParseDevicePublicKey(value?: string | null): KeyObject | null {
+    const raw = String(value ?? "").trim();
+    if (!raw || raw.length > 1024) return null;
+    try {
+      const key = createPublicKey({
+        key: Buffer.from(raw, "base64url"),
+        format: "der",
+        type: "spki",
+      });
+      if (
+        key.asymmetricKeyType !== "ec" ||
+        key.asymmetricKeyDetails?.namedCurve !== "prime256v1"
+      ) {
+        return null;
+      }
+      return key;
+    } catch {
+      return null;
+    }
+  }
+
+  private resolveStoredBunnyVideoId(video: {
+    bunnyVideoId: string | null;
+    videoUrl: string;
+  }) {
+    const bunnyVideoId =
+      video.bunnyVideoId || this.bunny.extractBunnyVideoId(video.videoUrl);
+    if (!bunnyVideoId) {
+      throw videoBadRequest(
+        VideoErrorCode.BUNNY_ID_MISSING,
+        "هذا الفيديو لا يحتوي على معرف Bunny Stream صالح",
+      );
+    }
+    return bunnyVideoId;
+  }
+
+  private async persistLegacyBunnyVideoId(
+    video: { id: string; bunnyVideoId: string | null },
+    bunnyVideoId: string,
+  ) {
+    if (video.bunnyVideoId) return;
+    await this.prisma.video
+      .update({
+        where: { id: video.id },
+        data: { bunnyVideoId },
+      })
+      .catch(() => undefined);
+  }
+
+  private async runSerializable<T>(
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+    attempts = 3,
+  ): Promise<T> {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(work, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (error) {
+        if (!this.isRetryableTransactionError(error)) throw error;
+        if (attempt >= attempts) {
+          throw videoConflict(
+            VideoErrorCode.DEVICE_CONCURRENT_UPDATE,
+            "يجري تحديث أجهزة هذا الحساب حالياً، أعد المحاولة",
+          );
+        }
+      }
+    }
+  }
+
+  private isRetryableTransactionError(error: unknown) {
+    // P2034: serialization failure / deadlock. P2002: a concurrent insert of
+    // the same (userId, deviceId) won; the retry re-reads it.
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === "P2034" || error.code === "P2002")
+    );
+  }
+
+  /**
+   * Bunny serves HLS from the library pull zone (vz-*.b-cdn.net), not from the
+   * video.bunnycdn.com API host. Prefer explicit config; otherwise learn the
+   * host once from Bunny's play data for this library.
+   */
+  private async resolveStreamCdnHost(bunnyVideoId: string) {
+    const configured = this.normalizeHostname(
+      this.readEnv("BUNNY_STREAM_CDN_HOSTNAME"),
+    );
+    if (configured) return configured;
+    if (this.resolvedStreamCdnHost) return this.resolvedStreamCdnHost;
+
+    const playData = await this.bunny
+      .getVideoPlayData(bunnyVideoId)
+      .catch((): null => null);
+    const host = this.normalizeHostname(playData?.playlistUrl);
+    if (!host) {
+      throw new BadGatewayException(
+        "Missing BUNNY_STREAM_CDN_HOSTNAME for the video gateway",
+      );
+    }
+    this.resolvedStreamCdnHost = host;
+    return host;
+  }
+
+  private normalizeHostname(value?: string | null) {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    try {
+      return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`)
+        .hostname.toLowerCase();
+    } catch {
+      return "";
+    }
   }
 
   private buildGatewayPlaybackUrl(bunnyVideoId: string) {
@@ -1002,8 +1366,10 @@ export class VideosService {
     return normalized.slice(1);
   }
 
-  private isGuestHlsPath(path: string) {
-    const extension = path.split("/").pop()?.split(".").pop()?.toLowerCase();
+  private isHlsMediaPath(path: string) {
+    const fileName = path.split(/[?#]/)[0].split("/").pop() ?? "";
+    if (!fileName.includes(".")) return false;
+    const extension = fileName.split(".").pop()?.toLowerCase();
     return ["m3u8", "ts", "m4s", "aac", "key", "vtt"].includes(extension ?? "");
   }
 
@@ -1062,7 +1428,7 @@ export class VideosService {
 
     const expiresAt = new Date(Math.min(...candidates));
     if (expiresAt.getTime() <= issuedAt.getTime()) {
-      throw new ForbiddenException("ظ„ط§ ظٹظ…ظƒظ† ط¥طµط¯ط§ط± ط±ط®طµط© Offline ظ…ظ†طھظ‡ظٹط©");
+      throw new ForbiddenException("لا يمكن إصدار رخصة Offline منتهية");
     }
     return expiresAt;
   }
@@ -1118,33 +1484,31 @@ export class VideosService {
       "VIDEO_RATE_LIMIT_WINDOW_SECONDS",
       300,
     );
-    const defaultLimit =
-      action === "download" ? 5 : action === "playback" ? 20 : 10;
-    const envKey =
-      action === "download"
-        ? "VIDEO_DOWNLOAD_RATE_LIMIT"
-        : action === "playback"
-          ? "VIDEO_PLAYBACK_RATE_LIMIT"
-          : "VIDEO_RENEW_RATE_LIMIT";
+    const limits: Record<SessionAction, [string, number]> = {
+      download: ["VIDEO_DOWNLOAD_RATE_LIMIT", 5],
+      playback: ["VIDEO_PLAYBACK_RATE_LIMIT", 20],
+      renew: ["VIDEO_RENEW_RATE_LIMIT", 10],
+      challenge: ["VIDEO_CHALLENGE_RATE_LIMIT", 40],
+    };
+    const [envKey, defaultLimit] = limits[action];
     const limit = this.readPositiveIntegerEnv(envKey, defaultLimit);
     const cacheKey = `video-session:${action}:${userId}:${deviceId}:${videoId}`;
     const current = Number((await this.cache.get(cacheKey)) ?? 0);
 
     if (current >= limit) {
-      throw new HttpException(
-        "طھظ… طھط¬ط§ظˆط² ط¹ط¯ط¯ ط§ظ„ظ…ط­ط§ظˆظ„ط§طھ ط§ظ„ظ…ط³ظ…ظˆط­",
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+      throw videoTooManyRequests("تم تجاوز عدد المحاولات المسموح");
     }
 
-    await this.cache.set(cacheKey, current + 1, windowSeconds);
+    // cache-manager v6+ (used by @nestjs/cache-manager 3) takes the TTL in
+    // milliseconds; passing seconds made the window last a fraction of a second.
+    await this.cache.set(cacheKey, current + 1, windowSeconds * 1000);
   }
 
   private normalizeDeviceId(deviceId?: string | null) {
     const normalized = String(deviceId ?? "").trim();
-    if (!normalized) throw new BadRequestException("deviceId ظ…ط·ظ„ظˆط¨");
+    if (!normalized) throw new BadRequestException("deviceId مطلوب");
     if (normalized.length > 255)
-      throw new BadRequestException("deviceId ط·ظˆظٹظ„ ط¬ط¯ظ‹ط§");
+      throw new BadRequestException("deviceId طويل جدًا");
     return normalized;
   }
 

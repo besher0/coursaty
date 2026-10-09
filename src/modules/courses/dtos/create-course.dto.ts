@@ -116,6 +116,15 @@ export class CreateCourseDto {
   @IsBoolean()
   isCompleted?: boolean;
 
+  @ApiPropertyOptional({
+    default: true,
+    description:
+      "Whether the course price (base, discount and final) is shown to students. Display only: subscriptions still use the stored price.",
+  })
+  @IsOptional()
+  @IsBoolean()
+  isPriceVisible?: boolean;
+
   @ApiPropertyOptional({ description: "Course expiry date (ISO string)" })
   @IsOptional()
   @Transform(({ value }) => {

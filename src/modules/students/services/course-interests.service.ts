@@ -150,6 +150,7 @@ export class CourseInterestsService {
     price: Prisma.Decimal | number | string;
     courseDiscountPercentage?: Prisma.Decimal | number | string | null;
     isFree?: boolean;
+    isPriceVisible?: boolean;
     expiresAt?: Date | null;
   }, paymentQrUrl: string | null) {
     const basePrice = Number(course.price);
@@ -164,6 +165,7 @@ export class CourseInterestsService {
       imageUrl: course.imageUrl ?? null,
       basePrice,
       discountedPrice,
+      isPriceVisible: course.isPriceVisible ?? true,
       paymentQrUrl,
       isFree: course.isFree ?? false,
       expiresAt: course.expiresAt ?? null,

@@ -19,6 +19,7 @@ import { RefreshTusVideoUploadDto } from "../../lectures/dtos/refresh-tus-video-
 import { RevenueService } from "@/modules/revenues/services/revenue.service";
 import { RevenuePeriodQueryDto } from "@/modules/revenues/dtos";
 import { SystemSettingsService } from "@/modules/system-settings/services/system-settings.service";
+import { assertBunnyVideoWritableBy } from "@/shared/bunny/bunny-video-ownership";
 
 @Injectable()
 export class CourseService {
@@ -217,6 +218,7 @@ export class CourseService {
         duration: 0,
         isFree: dto.isFree,
         isCompleted: dto.isCompleted ?? false,
+        isPriceVisible: dto.isPriceVisible ?? true,
         expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
         teacherId,
         subjectId: dto.subjectId ? String(dto.subjectId) : null,
@@ -364,6 +366,8 @@ export class CourseService {
     }
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
     if (dto.isCompleted !== undefined) data.isCompleted = dto.isCompleted;
+    if (dto.isPriceVisible !== undefined)
+      data.isPriceVisible = dto.isPriceVisible;
     if (dto.expiresAt !== undefined)
       data.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
     if (dto.introVideoUrl !== undefined) data.introVideoUrl = dto.introVideoUrl;
@@ -601,6 +605,7 @@ export class CourseService {
         name: course.name,
         basePrice: basePrice,
         discountedPrice: priceAfterCourseDiscount,
+        isPriceVisible: course.isPriceVisible ?? true,
         paymentQrUrl: systemPaymentQrUrl,
         isFree: course.isFree,
         isCompleted: course.isCompleted ?? false,
@@ -746,6 +751,7 @@ export class CourseService {
         imageUrl: course.imageUrl ?? null,
         basePrice,
         discountedPrice: courseDiscountedPrice,
+        isPriceVisible: course.isPriceVisible ?? true,
         isCompleted: course.isCompleted ?? false,
       },
       details: {
@@ -920,6 +926,7 @@ export class CourseService {
         expiresAt: true,
         price: true,
         courseDiscountPercentage: true,
+        isPriceVisible: true,
         teacherPercentage: true,
       },
     });
@@ -970,6 +977,7 @@ export class CourseService {
         discountPercentage: Number(discountPercentage.toFixed(2)),
         afterDiscount: discountedPrice,
         hasDiscount: discountPercentage > 0,
+        isPriceVisible: course.isPriceVisible ?? true,
       },
       subscriptions: {
         count: invoice.summary.totalSubscribers,
@@ -1165,6 +1173,7 @@ export class CourseService {
     });
     if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
+    await assertBunnyVideoWritableBy(this.prisma, bunnyVideoId, user);
 
     const streamPlayUrl = this.bunny.getStreamPlayUrl(bunnyVideoId);
     const existing = await this.prisma.video.findFirst({
@@ -1264,15 +1273,17 @@ export class CourseService {
     });
     if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
+    const bunnyVideoId = this.requireBunnyVideoGuid(dto.videoId);
+    await assertBunnyVideoWritableBy(this.prisma, bunnyVideoId, user);
 
     const refreshed = this.bunny.signTusUpload(
-      dto.videoId,
+      bunnyVideoId,
       dto.expiresInSeconds ?? 3600,
     );
     return {
       lectureId: String(lectureId),
       upload: {
-        videoId: dto.videoId,
+        videoId: bunnyVideoId,
         endpoint: refreshed.tusEndpoint,
         libraryId: refreshed.libraryId,
         authorizationExpire: refreshed.authorizationExpire,

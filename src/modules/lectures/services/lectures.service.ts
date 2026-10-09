@@ -24,6 +24,7 @@ import { RefreshTusVideoUploadDto } from "../dtos/refresh-tus-video-upload.dto";
 import { UploadLectureFileDto } from "../dtos/upload-lecture-file.dto";
 import { randomUUID } from "crypto";
 import * as path from "path";
+import { assertBunnyVideoWritableBy } from "@/shared/bunny/bunny-video-ownership";
 
 @Injectable()
 export class LecturesService {
@@ -175,7 +176,7 @@ export class LecturesService {
       select: { id: true, courseId: true },
     });
     if (!lecture)
-      throw new NotFoundException("ط§ظ„ظ…ط­ط§ط¶ط±ط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط©");
+      throw new NotFoundException("المحاضرة غير موجودة");
 
     return this.prisma.$transaction(async (tx) => {
       const videos = await tx.video.findMany({
@@ -937,6 +938,7 @@ export class LecturesService {
     });
     if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnership(user, lecture.courseId);
+    await assertBunnyVideoWritableBy(this.prisma, bunnyVideoId, user);
 
     const streamPlayUrl = this.bunny.getStreamPlayUrl(bunnyVideoId);
     const existing = await this.prisma.video.findFirst({
@@ -1034,15 +1036,17 @@ export class LecturesService {
     });
     if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
     await this.assertCourseOwnership(user, lecture.courseId);
+    const bunnyVideoId = this.requireBunnyVideoGuid(dto.videoId);
+    await assertBunnyVideoWritableBy(this.prisma, bunnyVideoId, user);
 
     const refreshed = this.bunny.signTusUpload(
-      dto.videoId,
+      bunnyVideoId,
       dto.expiresInSeconds ?? 3600,
     );
     return {
       lectureId: String(lectureId),
       upload: {
-        videoId: dto.videoId,
+        videoId: bunnyVideoId,
         endpoint: refreshed.tusEndpoint,
         libraryId: refreshed.libraryId,
         authorizationExpire: refreshed.authorizationExpire,
@@ -1068,10 +1072,15 @@ export class LecturesService {
     if (dto.videoName !== undefined) data.videoName = dto.videoName;
     if (dto.videoUrl !== undefined) {
       const videoUrl = this.requireSafeVideoUrl(dto.videoUrl);
-      data.videoUrl = videoUrl;
-      const bunnyVideoId = this.bunny.extractBunnyVideoId(videoUrl);
-      if (bunnyVideoId || !video.bunnyVideoId) data.bunnyVideoId = bunnyVideoId;
-      data.contentVersion = { increment: 1 };
+      // Re-sending the current URL is not a content change; bumping
+      // contentVersion here would invalidate every offline download.
+      if (videoUrl !== video.videoUrl) {
+        data.videoUrl = videoUrl;
+        const bunnyVideoId = this.bunny.extractBunnyVideoId(videoUrl);
+        if (bunnyVideoId || !video.bunnyVideoId)
+          data.bunnyVideoId = bunnyVideoId;
+        data.contentVersion = { increment: 1 };
+      }
     }
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.isFree !== undefined) data.isFree = dto.isFree;

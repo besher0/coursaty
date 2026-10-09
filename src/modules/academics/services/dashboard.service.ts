@@ -256,6 +256,7 @@ export class DashboardService {
       description: course.description,
       imageUrl: course.imageUrl ?? null,
       price: course.price,
+      isPriceVisible: course.isPriceVisible ?? true,
       isFree: course.isFree ?? false,
       isCompleted: course.isCompleted ?? false,
       season: course.season
@@ -2004,6 +2005,7 @@ export class DashboardService {
       studentsCount: course._count.subscriptions,
       duration: durationMap.get(course.id) ?? 0,
       isFree: course.isFree ?? false,
+      isPriceVisible: course.isPriceVisible ?? true,
       year: course.collegeYear?.academicYear
         ? {
             id: course.collegeYear.academicYear.id,

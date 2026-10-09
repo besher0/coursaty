@@ -1,6 +1,48 @@
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import { generateKeyPairSync, verify } from "crypto";
+import {
+  ConflictException,
+  ForbiddenException,
+  HttpException,
+  NotFoundException,
+} from "@nestjs/common";
+import { Prisma } from "@prisma/client";
+import { generateKeyPairSync, KeyObject, sign, verify } from "crypto";
 import { VideosService } from "./videos.service";
+
+function createDeviceKey() {
+  const pair = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  return {
+    privateKey: pair.privateKey,
+    publicKey: pair.publicKey
+      .export({ type: "spki", format: "der" })
+      .toString("base64url"),
+  };
+}
+
+function signProof(
+  privateKey: KeyObject,
+  input: {
+    action?: string;
+    videoId?: string;
+    deviceId?: string;
+    timestamp: number;
+    challenge: string;
+  },
+) {
+  const payload = [
+    `action=${input.action ?? "video_playback"}`,
+    `videoId=${input.videoId ?? "video-1"}`,
+    `deviceId=${input.deviceId ?? "device-1"}`,
+    `timestamp=${input.timestamp}`,
+    `challenge=${input.challenge}`,
+  ].join("\n");
+  return sign("sha256", Buffer.from(payload, "utf8"), privateKey).toString(
+    "base64url",
+  );
+}
+
+function errorCodeOf(error: unknown) {
+  return ((error as HttpException).getResponse() as any)?.error;
+}
 
 describe("VideosService protected sessions", () => {
   function createKeyPair() {
@@ -102,6 +144,7 @@ describe("VideosService protected sessions", () => {
         update: jest
           .fn()
           .mockResolvedValue({ id: "device-row-1", videoKeyVersion: 2 }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findMany: jest.fn().mockResolvedValue(activeDevices),
         create: jest
           .fn()
@@ -109,16 +152,19 @@ describe("VideosService protected sessions", () => {
       },
       offlineVideoLicense: {
         create: jest.fn().mockResolvedValue({ id: "license-1" }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       videoPlaybackSession: {
         create: jest.fn().mockResolvedValue({ id: "playback-session-1" }),
         findUnique: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       videoPlaybackChallenge: {
         create: jest.fn().mockResolvedValue({ id: "challenge-1" }),
         findUnique: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     } as any;
     prisma.$transaction = jest.fn((callback: any) => callback(prisma));
@@ -135,8 +181,12 @@ describe("VideosService protected sessions", () => {
         expiresAt: new Date("2026-10-06T18:05:00.000Z"),
       }),
       signBunnyStreamMediaUrlForPath: jest.fn().mockReturnValue(
-        "https://video.bunnycdn.com/signed",
+        "https://vz-test.b-cdn.net/signed",
       ),
+      getVideoPlayData: jest.fn().mockResolvedValue({
+        playlistUrl:
+          "https://vz-learned.b-cdn.net/11111111-1111-4111-8111-111111111111/playlist.m3u8",
+      }),
     };
     const config = {
       get: jest.fn(
@@ -150,6 +200,7 @@ describe("VideosService protected sessions", () => {
             VIDEO_DEVICE_LIMIT: "1",
             VIDEO_GATEWAY_BASE_URL: "https://gateway.example",
             VIDEO_EDGE_SHARED_SECRET: "edge-secret",
+            ...(overrides.env ?? {}),
           })[key],
       ),
     };
@@ -172,6 +223,7 @@ describe("VideosService protected sessions", () => {
       prisma,
       bunny,
       cache,
+      playIntegrity,
       publicKeyPem: keys.publicKeyPem,
     };
   }
@@ -618,10 +670,11 @@ describe("VideosService protected sessions", () => {
       activeDevices: [legacyDevice],
     });
 
+    const deviceKey = createDeviceKey();
     const result = await service.replaceVideoDeviceKey(
       {
         deviceId: "new-installation-id",
-        publicKey: "public-key",
+        publicKey: deviceKey.publicKey,
         algorithm: "ECDSA_P256_SHA256",
       },
       { userId: "user-1", type: "STUDENT" },
@@ -645,7 +698,7 @@ describe("VideosService protected sessions", () => {
         studentId: "student-1",
         deviceId: "new-installation-id",
         previousDeviceId: "legacy-device",
-        videoPublicKey: "public-key",
+        videoPublicKey: deviceKey.publicKey,
       }),
       select: { videoKeyVersion: true },
     });
@@ -691,7 +744,7 @@ describe("VideosService protected sessions", () => {
     await first.service.registerVideoDeviceKey(
       {
         deviceId: "install-ABC",
-        publicKey: "public-key-a",
+        publicKey: createDeviceKey().publicKey,
         algorithm: "ECDSA_P256_SHA256",
       },
       { userId: "user-1", type: "STUDENT" },
@@ -699,7 +752,7 @@ describe("VideosService protected sessions", () => {
     await second.service.registerVideoDeviceKey(
       {
         deviceId: "install-ABC",
-        publicKey: "public-key-b",
+        publicKey: createDeviceKey().publicKey,
         algorithm: "ECDSA_P256_SHA256",
       },
       { userId: "user-2", type: "STUDENT" },
@@ -786,5 +839,952 @@ describe("VideosService protected sessions", () => {
         { userId: "teacher-user-1", type: "TEACHER" },
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  describe("device limit error contract", () => {
+    it("exposes the replacement code as errorCode for the mobile client", async () => {
+      const { service } = createService({
+        device: null,
+        activeDevices: [{ id: "row-old", deviceId: "old-device", revokedAt: null }],
+      });
+
+      const error = await service
+        .createPlaybackSession(
+          "video-1",
+          { deviceId: "device-2" },
+          { userId: "user-1", type: "STUDENT" },
+        )
+        .catch((e) => e);
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      // AllExceptionsFilter maps `error` -> response.errorCode.
+      expect(errorCodeOf(error)).toBe(
+        "VIDEO_DEVICE_LIMIT_EXCEEDED_REPLACEMENT_REQUIRED",
+      );
+    });
+
+    it("asks a replaced (revoked) device to confirm replacement instead of playing", async () => {
+      const { service, prisma } = createService({
+        device: {
+          id: "row-replaced",
+          deviceId: "device-1",
+          revokedAt: new Date(),
+          replacedAt: new Date(),
+        },
+        activeDevices: [{ id: "row-new", deviceId: "new-phone", revokedAt: null }],
+      });
+
+      const error = await service
+        .createPlaybackSession(
+          "video-1",
+          { deviceId: "device-1" },
+          { userId: "user-1", type: "STUDENT" },
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe(
+        "VIDEO_DEVICE_LIMIT_EXCEEDED_REPLACEMENT_REQUIRED",
+      );
+      expect(prisma.videoPlaybackSession.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("device key registration", () => {
+    it("rejects a malformed public key", async () => {
+      const { service } = createService();
+
+      const error = await service
+        .registerVideoDeviceKey(
+          { deviceId: "device-1", publicKey: "not-a-key", algorithm: "ECDSA_P256_SHA256" },
+          { userId: "user-1", type: "STUDENT" },
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_DEVICE_KEY_INVALID");
+    });
+
+    it("rejects a key on a non P-256 curve", async () => {
+      const { service } = createService();
+      const p384 = generateKeyPairSync("ec", { namedCurve: "secp384r1" })
+        .publicKey.export({ type: "spki", format: "der" })
+        .toString("base64url");
+
+      const error = await service
+        .registerVideoDeviceKey(
+          { deviceId: "device-1", publicKey: p384, algorithm: "ECDSA_P256_SHA256" },
+          { userId: "user-1", type: "STUDENT" },
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_DEVICE_KEY_INVALID");
+    });
+
+    it("is idempotent when the same key is registered again", async () => {
+      const deviceKey = createDeviceKey();
+      const { service, prisma } = createService({
+        device: {
+          id: "device-row-1",
+          deviceId: "device-1",
+          revokedAt: null,
+          videoPublicKey: deviceKey.publicKey,
+          videoKeyVersion: 3,
+        },
+      });
+
+      const result = await service.registerVideoDeviceKey(
+        { deviceId: "device-1", publicKey: deviceKey.publicKey, algorithm: "ECDSA_P256_SHA256" },
+        { userId: "user-1", type: "STUDENT" },
+      );
+
+      expect(result).toMatchObject({ registered: true, keyVersion: 3 });
+      expect(prisma.studentDevice.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("never silently overwrites an existing key with a different one", async () => {
+      const original = createDeviceKey();
+      const attacker = createDeviceKey();
+      const { service, prisma } = createService({
+        device: {
+          id: "device-row-1",
+          deviceId: "device-1",
+          revokedAt: null,
+          videoPublicKey: original.publicKey,
+          videoKeyVersion: 2,
+        },
+      });
+
+      const error = await service
+        .registerVideoDeviceKey(
+          { deviceId: "device-1", publicKey: attacker.publicKey, algorithm: "ECDSA_P256_SHA256" },
+          { userId: "user-1", type: "STUDENT" },
+        )
+        .catch((e) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(errorCodeOf(error)).toBe(
+        "VIDEO_DEVICE_KEY_MISMATCH_REPLACEMENT_REQUIRED",
+      );
+      expect(prisma.studentDevice.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("stores the first key in canonical base64url SPKI form", async () => {
+      const deviceKey = createDeviceKey();
+      const { service, prisma } = createService({
+        device: { id: "device-row-1", deviceId: "device-1", revokedAt: null, videoPublicKey: null, videoKeyVersion: 1 },
+      });
+      prisma.studentDevice.findUnique
+        .mockResolvedValueOnce({ id: "device-row-1", deviceId: "device-1", revokedAt: null, videoPublicKey: null, videoKeyVersion: 1 })
+        .mockResolvedValueOnce({ id: "device-row-1", videoPublicKey: deviceKey.publicKey, videoKeyVersion: 2 });
+
+      const standardBase64 = Buffer.from(deviceKey.publicKey, "base64url").toString("base64");
+      const result = await service.registerVideoDeviceKey(
+        { deviceId: "device-1", publicKey: standardBase64, algorithm: "ECDSA_P256_SHA256" },
+        { userId: "user-1", type: "STUDENT" },
+      );
+
+      expect(result).toMatchObject({ registered: true, keyVersion: 2 });
+      expect(prisma.studentDevice.updateMany).toHaveBeenCalledWith({
+        where: { id: "device-row-1", videoPublicKey: null },
+        data: expect.objectContaining({ videoPublicKey: deviceKey.publicKey }),
+      });
+    });
+  });
+
+  describe("device replacement", () => {
+    it("runs serializable and invalidates the replaced device's sessions and licenses", async () => {
+      const deviceKey = createDeviceKey();
+      const { service, prisma } = createService({
+        device: null,
+        activeDevices: [{ id: "row-old", deviceId: "old-phone", revokedAt: null, replacedAt: null }],
+      });
+
+      await service.replaceVideoDeviceKey(
+        { deviceId: "new-phone", publicKey: deviceKey.publicKey, algorithm: "ECDSA_P256_SHA256" },
+        { userId: "user-1", type: "STUDENT" },
+      );
+
+      expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+      expect(prisma.videoPlaybackSession.updateMany).toHaveBeenCalledWith({
+        where: { userId: "user-1", deviceId: { in: ["old-phone"] }, revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+      expect(prisma.offlineVideoLicense.updateMany).toHaveBeenCalledWith({
+        where: { userId: "user-1", deviceId: { in: ["old-phone"] }, revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+    });
+
+    it("re-keying the current device keeps other devices and kills its old sessions", async () => {
+      const oldKey = createDeviceKey();
+      const newKey = createDeviceKey();
+      const { service, prisma } = createService({
+        env: { VIDEO_DEVICE_LIMIT: "2" },
+        device: {
+          id: "device-row-1",
+          deviceId: "device-1",
+          revokedAt: null,
+          videoPublicKey: oldKey.publicKey,
+        },
+        activeDevices: [
+          { id: "device-row-1", deviceId: "device-1", revokedAt: null },
+          { id: "row-tablet", deviceId: "tablet", revokedAt: null },
+        ],
+      });
+
+      await service.replaceVideoDeviceKey(
+        { deviceId: "device-1", publicKey: newKey.publicKey, algorithm: "ECDSA_P256_SHA256" },
+        { userId: "user-1", type: "STUDENT" },
+      );
+
+      expect(prisma.studentDevice.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "row-tablet" } }),
+      );
+      expect(prisma.videoPlaybackSession.updateMany).toHaveBeenCalledWith({
+        where: { userId: "user-1", deviceId: { in: ["device-1"] }, revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+    });
+
+    it("retries a serialization conflict and then reports a clear conflict", async () => {
+      const deviceKey = createDeviceKey();
+      const { service, prisma } = createService({ device: null, activeDevices: [] });
+      const conflict = new Prisma.PrismaClientKnownRequestError("conflict", {
+        code: "P2034",
+        clientVersion: "5.22.0",
+      });
+      prisma.$transaction = jest.fn().mockRejectedValue(conflict);
+
+      const error = await service
+        .replaceVideoDeviceKey(
+          { deviceId: "new-phone", publicKey: deviceKey.publicKey, algorithm: "ECDSA_P256_SHA256" },
+          { userId: "user-1", type: "STUDENT" },
+        )
+        .catch((e) => e);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(3);
+      expect(errorCodeOf(error)).toBe("VIDEO_DEVICE_CONCURRENT_UPDATE");
+    });
+
+    it("succeeds when a retry wins after a serialization conflict", async () => {
+      const deviceKey = createDeviceKey();
+      const { service, prisma } = createService({ device: null, activeDevices: [] });
+      const original = prisma.$transaction;
+      prisma.$transaction = jest
+        .fn()
+        .mockRejectedValueOnce(
+          new Prisma.PrismaClientKnownRequestError("conflict", {
+            code: "P2034",
+            clientVersion: "5.22.0",
+          }),
+        )
+        .mockImplementation(original);
+
+      await expect(
+        service.replaceVideoDeviceKey(
+          { deviceId: "new-phone", publicKey: deviceKey.publicKey, algorithm: "ECDSA_P256_SHA256" },
+          { userId: "user-1", type: "STUDENT" },
+        ),
+      ).resolves.toMatchObject({ replaced: true });
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    });
+
+    it("derives the account from the JWT, never from the request body", async () => {
+      const deviceKey = createDeviceKey();
+      const { service, prisma } = createService({ device: null, activeDevices: [] });
+
+      await service.replaceVideoDeviceKey(
+        {
+          deviceId: "new-phone",
+          publicKey: deviceKey.publicKey,
+          algorithm: "ECDSA_P256_SHA256",
+          userId: "victim-user",
+          studentId: "victim-student",
+        } as any,
+        { userId: "user-1", type: "STUDENT" },
+      );
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "user-1" } }),
+      );
+      expect(prisma.studentDevice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ userId: "user-1", studentId: "student-1" }),
+        }),
+      );
+    });
+
+    it("rejects replacement for non-student accounts", async () => {
+      const deviceKey = createDeviceKey();
+      const { service } = createService();
+
+      await expect(
+        service.replaceVideoDeviceKey(
+          { deviceId: "d", publicKey: deviceKey.publicKey, algorithm: "ECDSA_P256_SHA256" },
+          { userId: "teacher-user-1", type: "TEACHER" },
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe("device signature proof", () => {
+    const challengeCreatedAt = new Date(Date.now() - 1000);
+
+    function setupProof(
+      options: {
+        env?: Record<string, string>;
+        storedKey?: string | null;
+        challenge?: Record<string, any> | null;
+      } = {},
+    ) {
+      const deviceKey = createDeviceKey();
+      const harness = createService({
+        env: { VIDEO_DEVICE_SIGNATURE_ENFORCE: "true", ...(options.env ?? {}) },
+        device: {
+          id: "device-row-1",
+          deviceId: "device-1",
+          revokedAt: null,
+          videoPublicKey:
+            options.storedKey === undefined ? deviceKey.publicKey : options.storedKey,
+        },
+      });
+      harness.prisma.videoPlaybackChallenge.findUnique.mockResolvedValue(
+        options.challenge === undefined
+          ? {
+              id: "challenge-1",
+              challengeHash: "challenge-value",
+              userId: "user-1",
+              videoId: "video-1",
+              deviceId: "device-1",
+              createdAt: challengeCreatedAt,
+              expiresAt: new Date(Date.now() + 60000),
+              usedAt: null,
+            }
+          : options.challenge,
+      );
+      return { ...harness, deviceKey };
+    }
+
+    const student = { userId: "user-1", type: "STUDENT" };
+
+    it("accepts a valid Keystore-style signature over the canonical payload", async () => {
+      const { service, deviceKey, prisma } = setupProof();
+      const deviceSignature = signProof(deviceKey.privateKey, {
+        timestamp: challengeCreatedAt.getTime(),
+        challenge: "challenge-value",
+      });
+
+      await expect(
+        service.createPlaybackSession(
+          "video-1",
+          { deviceId: "device-1", challengeId: "challenge-1", deviceSignature },
+          student,
+        ),
+      ).resolves.toMatchObject({ videoId: "video-1" });
+      expect(prisma.videoPlaybackChallenge.updateMany).toHaveBeenCalledWith({
+        where: { id: "challenge-1", usedAt: null, expiresAt: { gt: expect.any(Date) } },
+        data: { usedAt: expect.any(Date) },
+      });
+    });
+
+    it("rejects a tampered signature when enforced", async () => {
+      const { service, deviceKey } = setupProof();
+      const signature = Buffer.from(
+        signProof(deviceKey.privateKey, {
+          timestamp: challengeCreatedAt.getTime(),
+          challenge: "challenge-value",
+        }),
+        "base64url",
+      );
+      signature[signature.length - 1] ^= 1;
+
+      const error = await service
+        .createPlaybackSession(
+          "video-1",
+          {
+            deviceId: "device-1",
+            challengeId: "challenge-1",
+            deviceSignature: signature.toString("base64url"),
+          },
+          student,
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_DEVICE_SIGNATURE_INVALID");
+    });
+
+    it("rejects a signature made by a different key", async () => {
+      const { service } = setupProof();
+      const deviceSignature = signProof(createDeviceKey().privateKey, {
+        timestamp: challengeCreatedAt.getTime(),
+        challenge: "challenge-value",
+      });
+
+      const error = await service
+        .createPlaybackSession(
+          "video-1",
+          { deviceId: "device-1", challengeId: "challenge-1", deviceSignature },
+          student,
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_DEVICE_SIGNATURE_INVALID");
+    });
+
+    it("does not accept a playback proof for a download session", async () => {
+      const { service, deviceKey } = setupProof();
+      const deviceSignature = signProof(deviceKey.privateKey, {
+        action: "video_playback",
+        timestamp: challengeCreatedAt.getTime(),
+        challenge: "challenge-value",
+      });
+
+      const error = await service
+        .createDownloadSession(
+          "video-1",
+          { deviceId: "device-1", challengeId: "challenge-1", deviceSignature },
+          student,
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_DEVICE_SIGNATURE_INVALID");
+    });
+
+    it("accepts a download proof signed for the download action", async () => {
+      const { service, deviceKey } = setupProof();
+      const deviceSignature = signProof(deviceKey.privateKey, {
+        action: "video_download",
+        timestamp: challengeCreatedAt.getTime(),
+        challenge: "challenge-value",
+      });
+
+      await expect(
+        service.createDownloadSession(
+          "video-1",
+          { deviceId: "device-1", challengeId: "challenge-1", deviceSignature },
+          student,
+        ),
+      ).resolves.toMatchObject({ videoId: "video-1" });
+    });
+
+    it("requires a proof when enforced", async () => {
+      const { service } = setupProof();
+
+      const error = await service
+        .createPlaybackSession("video-1", { deviceId: "device-1" }, student)
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_DEVICE_SIGNATURE_REQUIRED");
+    });
+
+    it("requires a registered key when enforced", async () => {
+      const { service } = setupProof({ storedKey: null });
+
+      const error = await service
+        .createPlaybackSession("video-1", { deviceId: "device-1" }, student)
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_DEVICE_KEY_NOT_REGISTERED");
+    });
+
+    it("lets audit mode continue without a proof", async () => {
+      const { service } = setupProof({ env: { VIDEO_DEVICE_SIGNATURE_ENFORCE: "false" } });
+
+      await expect(
+        service.createPlaybackSession("video-1", { deviceId: "device-1" }, student),
+      ).resolves.toMatchObject({ videoId: "video-1" });
+    });
+
+    it("rejects a replayed challenge", async () => {
+      const { service, deviceKey } = setupProof({
+        challenge: {
+          id: "challenge-1",
+          challengeHash: "challenge-value",
+          userId: "user-1",
+          videoId: "video-1",
+          deviceId: "device-1",
+          createdAt: challengeCreatedAt,
+          expiresAt: new Date(Date.now() + 60000),
+          usedAt: new Date(),
+        },
+      });
+      const deviceSignature = signProof(deviceKey.privateKey, {
+        timestamp: challengeCreatedAt.getTime(),
+        challenge: "challenge-value",
+      });
+
+      const error = await service
+        .createPlaybackSession(
+          "video-1",
+          { deviceId: "device-1", challengeId: "challenge-1", deviceSignature },
+          student,
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_PLAYBACK_CHALLENGE_INVALID");
+    });
+
+    it("rejects a challenge consumed concurrently by another request", async () => {
+      const { service, deviceKey, prisma } = setupProof();
+      prisma.videoPlaybackChallenge.updateMany.mockResolvedValue({ count: 0 });
+      const deviceSignature = signProof(deviceKey.privateKey, {
+        timestamp: challengeCreatedAt.getTime(),
+        challenge: "challenge-value",
+      });
+
+      const error = await service
+        .createPlaybackSession(
+          "video-1",
+          { deviceId: "device-1", challengeId: "challenge-1", deviceSignature },
+          student,
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_PLAYBACK_CHALLENGE_INVALID");
+    });
+
+    it("rejects an expired challenge", async () => {
+      const { service } = setupProof({
+        challenge: {
+          id: "challenge-1",
+          challengeHash: "challenge-value",
+          userId: "user-1",
+          videoId: "video-1",
+          deviceId: "device-1",
+          createdAt: new Date(Date.now() - 120000),
+          expiresAt: new Date(Date.now() - 60000),
+          usedAt: null,
+        },
+      });
+
+      const error = await service
+        .createPlaybackSession(
+          "video-1",
+          { deviceId: "device-1", challengeId: "challenge-1", deviceSignature: "x" },
+          student,
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_PLAYBACK_CHALLENGE_INVALID");
+    });
+
+    it("rejects a challenge issued to a different device", async () => {
+      const { service } = setupProof({
+        challenge: {
+          id: "challenge-1",
+          challengeHash: "challenge-value",
+          userId: "user-1",
+          videoId: "video-1",
+          deviceId: "other-device",
+          createdAt: challengeCreatedAt,
+          expiresAt: new Date(Date.now() + 60000),
+          usedAt: null,
+        },
+      });
+
+      const error = await service
+        .createPlaybackSession(
+          "video-1",
+          { deviceId: "device-1", challengeId: "challenge-1", deviceSignature: "x" },
+          student,
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_PLAYBACK_CHALLENGE_INVALID");
+    });
+  });
+
+  describe("Play Integrity modes", () => {
+    it("does not fail when no token is available and enforcement is off", async () => {
+      const { service } = createService({ env: { VIDEO_APP_ONLY_ENABLED: "true" } });
+
+      await expect(
+        service.createPlaybackSession(
+          "video-1",
+          { deviceId: "device-1" },
+          { userId: "user-1", type: "STUDENT" },
+        ),
+      ).resolves.toMatchObject({ videoId: "video-1" });
+    });
+
+    it("requires a challenge when enforcement is on", async () => {
+      const { service } = createService({
+        env: { VIDEO_APP_ONLY_ENABLED: "true", VIDEO_PLAY_INTEGRITY_ENFORCE: "true" },
+      });
+
+      const error = await service
+        .createPlaybackSession(
+          "video-1",
+          { deviceId: "device-1" },
+          { userId: "user-1", type: "STUDENT" },
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_PLAYBACK_CHALLENGE_REQUIRED");
+    });
+
+    it("rejects a failed verdict when enforced", async () => {
+      const { service, prisma, playIntegrity } = createService({
+        env: { VIDEO_APP_ONLY_ENABLED: "true", VIDEO_PLAY_INTEGRITY_ENFORCE: "true" },
+      });
+      prisma.videoPlaybackChallenge.findUnique.mockResolvedValue({
+        id: "challenge-1",
+        challengeHash: "c",
+        userId: "user-1",
+        videoId: "video-1",
+        deviceId: "device-1",
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 60000),
+        usedAt: null,
+      });
+      playIntegrity.verify.mockResolvedValue({ ok: false, enforced: true });
+
+      const error = await service
+        .createPlaybackSession(
+          "video-1",
+          { deviceId: "device-1", challengeId: "challenge-1", integrityToken: "t" },
+          { userId: "user-1", type: "STUDENT" },
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_PLAY_INTEGRITY_FAILED");
+    });
+  });
+
+  describe("rate limiting", () => {
+    it("stores the window in milliseconds for cache-manager v6+", async () => {
+      const { service, cache } = createService();
+
+      await service.createPlaybackSession(
+        "video-1",
+        { deviceId: "device-1" },
+        { userId: "user-1", type: "STUDENT" },
+      );
+
+      expect(cache.set).toHaveBeenCalledWith(
+        "video-session:playback:user-1:device-1:video-1",
+        1,
+        300_000,
+      );
+    });
+
+    it("returns a coded 429 once the limit is reached", async () => {
+      const { service, cache } = createService();
+      cache.get.mockResolvedValue(20);
+
+      const error = await service
+        .createPlaybackSession(
+          "video-1",
+          { deviceId: "device-1" },
+          { userId: "user-1", type: "STUDENT" },
+        )
+        .catch((e) => e);
+
+      expect(error.getStatus()).toBe(429);
+      expect(errorCodeOf(error)).toBe("VIDEO_RATE_LIMITED");
+    });
+  });
+
+  describe("edge gateway authorization", () => {
+    const guid = "11111111-1111-4111-8111-111111111111";
+
+    function edgeService(env: Record<string, string> = {}, sessionType = "AUTHENTICATED") {
+      const harness = createService({ env });
+      harness.prisma.videoPlaybackSession.findUnique.mockResolvedValue({
+        sessionType,
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 600000),
+        bunnyVideoId: guid,
+      });
+      return harness;
+    }
+
+    it("signs the origin on the Bunny pull-zone host, not the API host", async () => {
+      const { service, bunny } = edgeService({
+        BUNNY_STREAM_CDN_HOSTNAME: "https://vz-abc.b-cdn.net/",
+      });
+
+      await service.authorizeEdgeRequest({
+        edgeSecret: "edge-secret",
+        sessionToken: "token",
+        method: "GET",
+        bunnyVideoId: guid,
+        path: `/${guid}/720p/video0.ts`,
+      });
+
+      expect(bunny.signBunnyStreamMediaUrlForPath).toHaveBeenCalledWith(
+        `https://vz-abc.b-cdn.net/${guid}/720p/video0.ts`,
+        120,
+      );
+    });
+
+    it("learns the pull-zone host from Bunny play data when not configured", async () => {
+      const { service, bunny } = edgeService();
+
+      await service.authorizeEdgeRequest({
+        edgeSecret: "edge-secret",
+        sessionToken: "token",
+        bunnyVideoId: guid,
+        path: `/${guid}/playlist.m3u8`,
+      });
+      await service.authorizeEdgeRequest({
+        edgeSecret: "edge-secret",
+        sessionToken: "token",
+        bunnyVideoId: guid,
+        path: `/${guid}/playlist.m3u8`,
+      });
+
+      expect(bunny.signBunnyStreamMediaUrlForPath).toHaveBeenCalledWith(
+        `https://vz-learned.b-cdn.net/${guid}/playlist.m3u8`,
+        120,
+      );
+      expect(bunny.getVideoPlayData).toHaveBeenCalledTimes(1);
+    });
+
+    it("denies MP4 fallbacks for authenticated playback sessions", async () => {
+      const { service } = edgeService();
+
+      await expect(
+        service.authorizeEdgeRequest({
+          edgeSecret: "edge-secret",
+          sessionToken: "token",
+          bunnyVideoId: guid,
+          path: `/${guid}/play_720p.mp4`,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("denies a session token for a different Bunny video", async () => {
+      const { service } = edgeService();
+      const other = "22222222-2222-4222-8222-222222222222";
+
+      await expect(
+        service.authorizeEdgeRequest({
+          edgeSecret: "edge-secret",
+          sessionToken: "token",
+          bunnyVideoId: other,
+          path: `/${other}/playlist.m3u8`,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("denies path traversal and a wrong edge secret", async () => {
+      const { service } = edgeService();
+
+      await expect(
+        service.authorizeEdgeRequest({
+          edgeSecret: "edge-secret",
+          sessionToken: "token",
+          bunnyVideoId: guid,
+          path: `/${guid}/../other/playlist.m3u8`,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.authorizeEdgeRequest({
+          edgeSecret: "wrong",
+          sessionToken: "token",
+          bunnyVideoId: guid,
+          path: `/${guid}/playlist.m3u8`,
+        }),
+      ).rejects.toThrow("invalid edge secret");
+    });
+
+    it("denies revoked and expired sessions", async () => {
+      const { service, prisma } = edgeService();
+      prisma.videoPlaybackSession.findUnique.mockResolvedValueOnce({
+        sessionType: "AUTHENTICATED",
+        revokedAt: new Date(),
+        expiresAt: new Date(Date.now() + 600000),
+        bunnyVideoId: guid,
+      });
+      prisma.videoPlaybackSession.findUnique.mockResolvedValueOnce({
+        sessionType: "AUTHENTICATED",
+        revokedAt: null,
+        expiresAt: new Date(Date.now() - 1),
+        bunnyVideoId: guid,
+      });
+
+      for (let i = 0; i < 2; i += 1) {
+        await expect(
+          service.authorizeEdgeRequest({
+            edgeSecret: "edge-secret",
+            sessionToken: "token",
+            bunnyVideoId: guid,
+            path: `/${guid}/playlist.m3u8`,
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+    });
+  });
+
+  describe("teacher and student isolation", () => {
+    it("never runs student device checks for a teacher refresh", async () => {
+      const { service, prisma } = createService({
+        user: {
+          id: "teacher-user-1",
+          userableId: "teacher-1",
+          userableType: "TEACHER",
+          status: "active",
+        },
+        video: {
+          id: "video-1",
+          videoUrl: "https://video.bunnycdn.com/play/123/11111111-1111-4111-8111-111111111111",
+          bunnyVideoId: "11111111-1111-4111-8111-111111111111",
+          lecture: { course: { teacherId: "teacher-1" } },
+        },
+      });
+      prisma.videoPlaybackSession.findUnique.mockResolvedValue({
+        id: "session-1",
+        userId: "teacher-user-1",
+        deviceId: "teacher-device",
+        videoId: "video-1",
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 60000),
+      });
+
+      await expect(
+        service.refreshPlaybackSession(
+          "video-1",
+          "session-1",
+          { deviceId: "teacher-device" },
+          { userId: "teacher-user-1", type: "TEACHER" },
+        ),
+      ).resolves.toMatchObject({ playbackSessionId: "session-1" });
+      expect(prisma.studentDevice.findUnique).not.toHaveBeenCalled();
+    });
+
+    it("rejects a teacher refresh from a different device id", async () => {
+      const { service, prisma } = createService({
+        user: {
+          id: "teacher-user-1",
+          userableId: "teacher-1",
+          userableType: "TEACHER",
+          status: "active",
+        },
+        video: {
+          id: "video-1",
+          videoUrl: "https://video.bunnycdn.com/play/123/11111111-1111-4111-8111-111111111111",
+          bunnyVideoId: "11111111-1111-4111-8111-111111111111",
+          lecture: { course: { teacherId: "teacher-1" } },
+        },
+      });
+      prisma.videoPlaybackSession.findUnique.mockResolvedValue({
+        id: "session-1",
+        userId: "teacher-user-1",
+        deviceId: "teacher-device",
+        videoId: "video-1",
+        revokedAt: null,
+        expiresAt: new Date(Date.now() + 60000),
+      });
+
+      const error = await service
+        .refreshPlaybackSession(
+          "video-1",
+          "session-1",
+          { deviceId: "another-device" },
+          { userId: "teacher-user-1", type: "TEACHER" },
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_PLAYBACK_SESSION_INVALID");
+    });
+
+    it("rejects teacher download sessions (student-only endpoint)", async () => {
+      const { service } = createService();
+
+      const error = await service
+        .createDownloadSession(
+          "video-1",
+          { deviceId: "teacher-device" },
+          { userId: "teacher-user-1", type: "TEACHER" },
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_STUDENT_REQUIRED");
+    });
+
+    it("rejects a student refresh of an expired session so the client starts a new one", async () => {
+      const { service, prisma } = createService();
+      prisma.videoPlaybackSession.findUnique.mockResolvedValue({
+        id: "session-1",
+        userId: "user-1",
+        deviceId: "device-1",
+        videoId: "video-1",
+        revokedAt: null,
+        expiresAt: new Date(Date.now() - 1000),
+      });
+
+      const error = await service
+        .refreshPlaybackSession(
+          "video-1",
+          "session-1",
+          { deviceId: "device-1" },
+          { userId: "user-1", type: "STUDENT" },
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_PLAYBACK_SESSION_INVALID");
+    });
+  });
+
+  describe("access error codes", () => {
+    it("distinguishes missing subscription from expired subscription", async () => {
+      const missing = await createService({ subscription: null })
+        .service.createPlaybackSession(
+          "video-1",
+          { deviceId: "device-1" },
+          { userId: "user-1", type: "STUDENT" },
+        )
+        .catch((e) => e);
+      const expired = await createService({
+        subscription: { expiresAt: new Date(Date.now() - 1000) },
+      })
+        .service.createPlaybackSession(
+          "video-1",
+          { deviceId: "device-1" },
+          { userId: "user-1", type: "STUDENT" },
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(missing)).toBe("VIDEO_SUBSCRIPTION_REQUIRED");
+      expect(errorCodeOf(expired)).toBe("VIDEO_SUBSCRIPTION_EXPIRED");
+    });
+
+    it("returns a coded error for videos without a Bunny GUID", async () => {
+      const { service } = createService({
+        extractedBunnyVideoId: null,
+        video: {
+          id: "video-1",
+          videoUrl: "nullplay_",
+          bunnyVideoId: null,
+          size: null,
+          isFree: true,
+          contentVersion: 1,
+          offlineDownloadEnabled: true,
+          lecture: {
+            id: "lecture-1",
+            courseId: "course-1",
+            course: {
+              id: "course-1",
+              isFree: true,
+              status: "APPROVED",
+              expiresAt: null,
+              teacher: { isVisibleToStudents: true },
+            },
+          },
+        },
+      });
+
+      const error = await service
+        .createPlaybackSession(
+          "video-1",
+          { deviceId: "device-1" },
+          { userId: "user-1", type: "STUDENT" },
+        )
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe("VIDEO_BUNNY_ID_MISSING");
+    });
   });
 });

@@ -381,6 +381,7 @@ model Course {
   duration                 Int          @default(0)
   isFree                   Boolean      @default(false)
   isCompleted              Boolean      @default(false)
+  isPriceVisible           Boolean      @default(true)
   expiresAt                DateTime?
   introVideoUrl            String?
   discussionGroupUrl       String?

@@ -8,6 +8,7 @@ import * as path from 'path';
 import { UpdateBunnyVideoSettingsDto } from './dtos/update-bunny-video-settings.dto';
 import { CompleteUploadVideoTusDto } from './dtos/complete-upload-video-tus.dto';
 import { RefreshUploadVideoTusDto } from './dtos/refresh-upload-video-tus.dto';
+import { assertBunnyVideoWritableBy } from '@/shared/bunny/bunny-video-ownership';
 
 @Injectable()
 export class UploadsService {
@@ -232,8 +233,12 @@ export class UploadsService {
     };
   }
 
-  async completeTusVideoUpload(dto: CompleteUploadVideoTusDto) {
+  async completeTusVideoUpload(
+    dto: CompleteUploadVideoTusDto,
+    user?: { userId: string | number; type: string },
+  ) {
     const bunnyVideoId = this.requireBunnyVideoGuid(dto.videoId);
+    await assertBunnyVideoWritableBy(this.prisma, bunnyVideoId, user);
     const videoTitle = dto.title?.trim() || `video-${bunnyVideoId}`;
     const streamPlayback = await this.bunny.getStreamPlaybackPayload(bunnyVideoId, dto.preferredResolution);
 
@@ -246,12 +251,17 @@ export class UploadsService {
     };
   }
 
-  async refreshTusVideoUpload(dto: RefreshUploadVideoTusDto) {
-    const refreshed = this.bunny.signTusUpload(dto.videoId, dto.expiresInSeconds ?? 3600);
+  async refreshTusVideoUpload(
+    dto: RefreshUploadVideoTusDto,
+    user?: { userId: string | number; type: string },
+  ) {
+    const bunnyVideoId = this.requireBunnyVideoGuid(dto.videoId);
+    await assertBunnyVideoWritableBy(this.prisma, bunnyVideoId, user);
+    const refreshed = this.bunny.signTusUpload(bunnyVideoId, dto.expiresInSeconds ?? 3600);
 
     return {
       upload: {
-        videoId: dto.videoId,
+        videoId: bunnyVideoId,
         endpoint: refreshed.tusEndpoint,
         libraryId: refreshed.libraryId,
         authorizationExpire: refreshed.authorizationExpire,
