@@ -401,6 +401,19 @@ export class AdminsController {
     return this.admins.resetStudentPassword(studentId, body?.password);
   }
 
+  @Post('students/:studentId/reset-login-device')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary:
+      'Unbind the student from their login device (new phone, factory reset). The next device to sign in becomes the bound device and the old device is signed out.',
+  })
+  @ApiOkResponse({ description: 'Student login device reset' })
+  async resetStudentLoginDevice(@Param('studentId') studentId: string) {
+    return this.admins.resetStudentLoginDevice(studentId);
+  }
+
   @Get('teachers/:teacherId/profile')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)

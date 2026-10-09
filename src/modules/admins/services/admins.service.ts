@@ -2497,6 +2497,40 @@ export class AdminsService {
     };
   }
 
+  /**
+   * Frees a student account from its bound login device. The old device's
+   * session stops being accepted and the next device that signs in is bound.
+   */
+  async resetStudentLoginDevice(studentIdOrUniversityNumber: string) {
+    const student = await this.prisma.student.findFirst({
+      where: {
+        OR: [
+          { id: studentIdOrUniversityNumber },
+          {
+            enrollments: {
+              some: {
+                isActive: true,
+                universityNumber: studentIdOrUniversityNumber,
+              },
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!student) throw new NotFoundException("Student not found");
+
+    const reset = await this.prisma.user.updateMany({
+      where: { userableType: "STUDENT", userableId: student.id },
+      data: { loginDeviceId: null, loginDeviceBoundAt: null },
+    });
+    if (reset.count === 0) {
+      throw new NotFoundException("Student account not found");
+    }
+
+    return { studentId: student.id, loginDeviceReset: true };
+  }
+
   private generateTemporaryPassword(length: number = 8) {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
     let result = "";

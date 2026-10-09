@@ -1,4 +1,5 @@
-﻿import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+﻿import { ConflictException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/prisma/prisma.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { RegisterDto } from '../dtos/register.dto';
@@ -11,6 +12,12 @@ import { StudentsService } from '@/modules/students/services/students.service';
 import { EnrollmentsService } from '@/modules/students/services/enrollments.service';
 import { TeachersService } from '@/modules/teachers/services/teachers.service';
 import { AdminsService } from '@/modules/admins/services/admins.service';
+import {
+  isStudentDeviceLockEnforced,
+  normalizeLoginDeviceId,
+  studentDeviceIdRequired,
+  studentDeviceLocked,
+} from '../student-device-lock';
 
 type RegisterTeacherAffiliationInput = {
   universityId: string;
@@ -20,6 +27,8 @@ type RegisterTeacherAffiliationInput = {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
@@ -27,6 +36,7 @@ export class AuthService {
     private readonly teachersService: TeachersService,
     private readonly adminsService: AdminsService,
     private readonly enrollments: EnrollmentsService,
+    private readonly config?: ConfigService,
   ) {}
 
   async register(dto: RegisterDto, requester?: { userId: string | number; type: string }) {
@@ -34,6 +44,7 @@ export class AuthService {
     const hash = await bcrypt.hash(dto.password, 10);
     try {
       const userStatus = dto.userableType === 'TEACHER' ? 'pending' : 'active';
+      const loginDeviceId = this.creationLoginDevice(dto.userableType, dto.loginDeviceId);
 
       const user = await this.prisma.$transaction(async (tx) => {
         const createdUser = await tx.user.create({
@@ -45,6 +56,7 @@ export class AuthService {
             status: userStatus,
             fcmToken: dto.fcmToken,
             gender: dto.gender,
+            ...this.loginDeviceBinding(loginDeviceId),
           },
         });
 
@@ -67,8 +79,9 @@ export class AuthService {
         return createdUser;
       });
 
-      const payload = { sub: user.id.toString(), type: user.userableType };
-      const accessToken = await this.jwt.signAsync(payload);
+      const accessToken = await this.jwt.signAsync(
+        this.tokenPayload(user, loginDeviceId),
+      );
 
       return {
         accessToken,
@@ -91,6 +104,7 @@ export class AuthService {
     this.validateCompleteRegistrationProfile(dto);
     const hash = await bcrypt.hash(dto.password, 10);
     const userStatus = dto.userableType === 'TEACHER' ? 'pending' : 'active';
+    const loginDeviceId = this.creationLoginDevice(dto.userableType, dto.loginDeviceId);
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
@@ -110,6 +124,7 @@ export class AuthService {
             status: userStatus,
             fcmToken: dto.fcmToken,
             gender: dto.gender,
+            ...this.loginDeviceBinding(loginDeviceId),
           },
         });
 
@@ -123,10 +138,9 @@ export class AuthService {
       };
 
       if (result.user.userableType !== 'ADMIN') {
-        response.accessToken = await this.jwt.signAsync({
-          sub: result.user.id,
-          type: result.user.userableType,
-        });
+        response.accessToken = await this.jwt.signAsync(
+          this.tokenPayload(result.user, loginDeviceId),
+        );
       }
 
       return response;
@@ -177,15 +191,86 @@ export class AuthService {
   async login(dto: LoginDto) {
     const user = await this.validateUser(dto.phone, dto.password);
 
+    // Checked after the password so the binding is never revealed to someone
+    // who does not know it.
+    const loginDeviceId =
+      user.userableType === 'STUDENT'
+        ? await this.claimStudentLoginDevice(user, dto.loginDeviceId)
+        : null;
+
     if (user.userableType === 'STUDENT' && dto.deviceId?.trim()) {
       await this.applyGuestPreferenceToStudent(user.userableId, dto.deviceId.trim());
     }
 
-    const payload = { sub: user.id.toString(), type: user.userableType };
-    const accessToken = await this.jwt.signAsync(payload);
+    const accessToken = await this.jwt.signAsync(
+      this.tokenPayload(user, loginDeviceId),
+    );
     return {
       accessToken,
       user: this.mapAuthUser(user),
+    };
+  }
+
+  /**
+   * Students sign in from one device only: the one bound at registration, or
+   * for older accounts the first device that signs in. Returns the device id
+   * to embed in the token (`did`), or null when no id was sent and the lock is
+   * not enforced.
+   */
+  private async claimStudentLoginDevice(
+    user: { id: string; loginDeviceId?: string | null },
+    requested?: string,
+  ) {
+    const deviceId = normalizeLoginDeviceId(requested);
+    const enforced = isStudentDeviceLockEnforced(this.config);
+    if (!deviceId) {
+      // Older app versions do not send a device id and cannot be bound.
+      if (enforced) throw studentDeviceIdRequired();
+      return null;
+    }
+
+    let boundDeviceId = user.loginDeviceId ?? null;
+    if (!boundDeviceId) {
+      const claimed = await this.prisma.user.updateMany({
+        where: { id: user.id, loginDeviceId: null },
+        data: this.loginDeviceBinding(deviceId),
+      });
+      if (claimed.count === 1) return deviceId;
+      // Another device bound the account at the same moment.
+      const current = await this.prisma.user.findUnique({
+        where: { id: user.id },
+        select: { loginDeviceId: true },
+      });
+      boundDeviceId = current?.loginDeviceId ?? null;
+    }
+
+    if (boundDeviceId === deviceId) return deviceId;
+    if (enforced) throw studentDeviceLocked();
+    this.logger.warn(
+      `student login from a second device allowed (STUDENT_SINGLE_DEVICE_ENFORCE=false) userId=${user.id}`,
+    );
+    return deviceId;
+  }
+
+  /** The creating device of a student account; other roles are never bound. */
+  private creationLoginDevice(userableType: string, requested?: string) {
+    return userableType === 'STUDENT' ? normalizeLoginDeviceId(requested) : null;
+  }
+
+  private loginDeviceBinding(loginDeviceId: string | null) {
+    return loginDeviceId
+      ? { loginDeviceId, loginDeviceBoundAt: new Date() }
+      : {};
+  }
+
+  private tokenPayload(
+    user: { id: string; userableType: string },
+    loginDeviceId: string | null,
+  ) {
+    return {
+      sub: user.id.toString(),
+      type: user.userableType,
+      ...(loginDeviceId ? { did: loginDeviceId } : {}),
     };
   }
 
@@ -195,7 +280,12 @@ export class AuthService {
     password: string;
     [key: string]: unknown;
   }) {
-    const { password: _password, ...safeUser } = user;
+    const {
+      password: _password,
+      loginDeviceId: _loginDeviceId,
+      loginDeviceBoundAt: _loginDeviceBoundAt,
+      ...safeUser
+    } = user;
     return {
       ...safeUser,
       id: user.id.toString(),
