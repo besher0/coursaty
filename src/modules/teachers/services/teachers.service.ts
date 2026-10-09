@@ -453,6 +453,7 @@ export class TeachersService {
           imageUrl: true,
           duration: true,
           isCompleted: true,
+          isPriceVisible: true,
           season: {
             select: { id: true, seasonName: true, seasonNumber: true },
           },
@@ -526,6 +527,7 @@ export class TeachersService {
         imageUrl: course.imageUrl ?? null,
         duration: durationMap.get(course.id) ?? 0,
         isCompleted: course.isCompleted ?? false,
+        isPriceVisible: course.isPriceVisible ?? true,
         teacher: {
           id: teacher.id,
           name: teacher.name,
@@ -594,6 +596,7 @@ export class TeachersService {
           imageUrl: true,
           duration: true,
           isCompleted: true,
+          isPriceVisible: true,
           expiresAt: true,
           status: true,
           university: { select: { id: true, name: true } },
@@ -637,6 +640,7 @@ export class TeachersService {
               imageUrl: string | null;
               duration: number;
               isCompleted: boolean;
+              isPriceVisible: boolean;
               expiresAt: Date | null;
               studentsCount: number;
               createdAt: Date;
@@ -696,6 +700,7 @@ export class TeachersService {
         imageUrl: course.imageUrl ?? null,
         duration: durationMap.get(course.id) ?? 0,
         isCompleted: course.isCompleted ?? false,
+        isPriceVisible: course.isPriceVisible ?? true,
         expiresAt: course.expiresAt ?? null,
         status: course.status,
         createdAt: course.createdAt,

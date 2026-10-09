@@ -187,6 +187,7 @@ export class FinancialsService {
         imageUrl: true,
         price: true,
         courseDiscountPercentage: true,
+        isPriceVisible: true,
         expiresAt: true,
         status: true,
         teacher: { select: { id: true, name: true, image: true } },

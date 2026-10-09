@@ -31,6 +31,7 @@ export class AdminsService {
       description: course.description ?? null,
       imageUrl: course.imageUrl ?? null,
       price: course.price,
+      isPriceVisible: course.isPriceVisible ?? true,
       duration: course.resolvedDuration ?? 0,
       isCompleted: course.isCompleted ?? false,
       status: course.status,
