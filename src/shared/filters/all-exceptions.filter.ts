@@ -8,6 +8,7 @@ import {
 import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { LoggerService } from '../logger/logger.service';
+import { isRetiredApiPath } from '../../app.setup';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -21,7 +22,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const correlationId =
       (request as any).correlationId || request.headers['x-correlation-id'];
 
-    let status = HttpStatus.INTERNAL_SERVER_ERROR;
+    let status: number = HttpStatus.INTERNAL_SERVER_ERROR;
     let errorCode = 'INTERNAL_SERVER_ERROR';
     let message = 'Internal server error';
     let details: unknown;
@@ -55,6 +56,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
       errorCode = obj.code;
       status = obj.status;
       message = obj.message;
+    }
+
+    // No route matched outside /v2: an app build from before /v2.
+    if (
+      status === HttpStatus.NOT_FOUND &&
+      isRetiredApiPath(request.path ?? request.url ?? '')
+    ) {
+      status = 426; // Upgrade Required
+      errorCode = 'APP_UPDATE_REQUIRED';
+      message = 'يرجى تحديث التطبيق إلى آخر إصدار من المتجر لمتابعة الاستخدام';
+      details = undefined;
     }
 
     const payload = {

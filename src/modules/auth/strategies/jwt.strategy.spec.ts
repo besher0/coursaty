@@ -19,7 +19,7 @@ describe('JwtStrategy', () => {
     const strategy = new JwtStrategy(config as any, prisma as any);
 
     await expect(
-      strategy.validate({ sub: 'user-1', type: 'STUDENT' }),
+      strategy.validate({ headers: {} } as any, { sub: 'user-1', type: 'STUDENT' }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
@@ -36,7 +36,7 @@ describe('JwtStrategy', () => {
     const strategy = new JwtStrategy(config as any, prisma as any);
 
     await expect(
-      strategy.validate({ sub: 'user-1', type: 'STUDENT' }),
+      strategy.validate({ headers: {} } as any, { sub: 'user-1', type: 'STUDENT' }),
     ).resolves.toEqual({ userId: 'user-1', type: 'ADMIN' });
   });
 });

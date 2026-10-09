@@ -7,9 +7,12 @@ import { ConfigService } from '@nestjs/config';
  * Teachers and admins are not affected.
  *
  * The bound id is `User.loginDeviceId`; student tokens carry it as `did` and
- * are only accepted while it still matches, so a session on another device
- * ends as soon as the binding is reset or when it predates the binding.
+ * are only accepted while it still matches. The app also sends it on every
+ * request in LOGIN_DEVICE_HEADER, which lets a session from before device
+ * binding bind the first device that uses it (see JwtStrategy).
  */
+export const LOGIN_DEVICE_HEADER = 'x-coursaty-device';
+
 export const StudentDeviceErrorCode = {
   DEVICE_LOCKED: 'AUTH_STUDENT_DEVICE_LOCKED',
   DEVICE_ID_REQUIRED: 'AUTH_DEVICE_ID_REQUIRED',

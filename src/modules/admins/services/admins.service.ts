@@ -2498,8 +2498,9 @@ export class AdminsService {
   }
 
   /**
-   * Frees a student account from its bound login device. The old device's
-   * session stops being accepted and the next device that signs in is bound.
+   * Frees a student account from its bound login device. Every session issued
+   * before the reset stops being accepted (so the old phone cannot claim the
+   * account again) and the next device that signs in is bound.
    */
   async resetStudentLoginDevice(studentIdOrUniversityNumber: string) {
     const student = await this.prisma.student.findFirst({
@@ -2522,7 +2523,11 @@ export class AdminsService {
 
     const reset = await this.prisma.user.updateMany({
       where: { userableType: "STUDENT", userableId: student.id },
-      data: { loginDeviceId: null, loginDeviceBoundAt: null },
+      data: {
+        loginDeviceId: null,
+        loginDeviceBoundAt: null,
+        loginDeviceResetAt: new Date(),
+      },
     });
     if (reset.count === 0) {
       throw new NotFoundException("Student account not found");

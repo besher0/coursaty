@@ -1,10 +1,11 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Headers, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthService } from '../services/auth.service';
 import { RegisterDto } from '../dtos/register.dto';
 import { LoginDto } from '../dtos/login.dto';
 import { RegisterCompleteDto } from '../dtos/register-complete.dto';
 import { OptionalJwtAuthGuard } from '../guards/optional-jwt-auth.guard';
+import { LOGIN_DEVICE_HEADER } from '../student-device-lock';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -32,7 +33,10 @@ export class AuthController {
   @Post('login')
   @ApiOperation({ summary: 'Login and get JWT' })
   @ApiOkResponse({ description: 'JWT token returned' })
-  async login(@Body() dto: LoginDto) {
-    return this.auth.login(dto);
+  async login(
+    @Body() dto: LoginDto,
+    @Headers(LOGIN_DEVICE_HEADER) headerDeviceId?: string,
+  ) {
+    return this.auth.login(dto, headerDeviceId);
   }
 }
