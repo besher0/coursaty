@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   Matches,
+  MaxLength,
   MinLength,
   ValidateNested,
 } from 'class-validator';
@@ -37,6 +38,15 @@ export class RegisterCompleteDto {
   @IsOptional()
   @IsEnum(UserGender)
   gender?: UserGender;
+
+  @ApiPropertyOptional({
+    description:
+      'Student login device id. Students can only sign in from the device the account is bound to.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  loginDeviceId?: string;
 
   @ApiPropertyOptional({ type: CreateStudentDto })
   @IsOptional()

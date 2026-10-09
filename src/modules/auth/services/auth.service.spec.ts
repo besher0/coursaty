@@ -150,6 +150,7 @@ describe("AuthService complete registration", () => {
             userableType: "STUDENT",
             password: "hashed",
             status: "active",
+            loginDeviceId: "device-A",
           }) as any,
         );
 
@@ -182,6 +183,7 @@ describe("AuthService complete registration", () => {
           phone: "0999999999",
           password: "password123",
           deviceId: "guest-device-1",
+          loginDeviceId: "device-A",
         });
 
         expect(result.accessToken).toBe("access-token");
@@ -205,6 +207,7 @@ describe("AuthService complete registration", () => {
           phone: "0999999999",
           password: "password123",
           deviceId: "guest-device-1",
+          loginDeviceId: "device-A",
         });
 
         expect(result.accessToken).toBe("access-token");
@@ -230,6 +233,7 @@ describe("AuthService complete registration", () => {
           phone: "0999999999",
           password: "password123",
           deviceId: "guest-device-1",
+          loginDeviceId: "device-A",
         });
 
         expect(result.accessToken).toBe("access-token");

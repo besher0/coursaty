@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class LoginDto {
   @ApiProperty()
@@ -14,4 +14,13 @@ export class LoginDto {
   @IsOptional()
   @IsString()
   deviceId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Student login device id. Students can only sign in from the device the account is bound to.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  loginDeviceId?: string;
 }

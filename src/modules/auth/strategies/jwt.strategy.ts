@@ -3,10 +3,18 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/prisma/prisma.service';
+import {
+  isStudentDeviceLockEnforced,
+  normalizeLoginDeviceId,
+  studentSessionDeviceMismatch,
+} from '../student-device-lock';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(config: ConfigService, private readonly prisma: PrismaService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -21,11 +29,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         id: true,
         userableType: true,
         status: true,
+        loginDeviceId: true,
       },
     });
 
     if (!user || user.status === 'deleted') {
       throw new UnauthorizedException('الحساب محذوف أو غير موجود');
+    }
+
+    // A student session is valid only on the account's bound device. Tokens
+    // from before device binding (no `did`) or for another device end here.
+    if (user.userableType === 'STUDENT' && isStudentDeviceLockEnforced(this.config)) {
+      const tokenDeviceId = normalizeLoginDeviceId(payload?.did);
+      if (!tokenDeviceId || tokenDeviceId !== user.loginDeviceId) {
+        throw studentSessionDeviceMismatch();
+      }
     }
 
     return { userId: user.id, type: user.userableType };

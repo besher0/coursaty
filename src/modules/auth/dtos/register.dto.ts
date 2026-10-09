@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsEnum, IsOptional, IsString, IsUUID, Matches, MinLength, ValidateNested } from 'class-validator';
+import { IsArray, IsEnum, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ValidateNested } from 'class-validator';
 
 export enum UserType {
   STUDENT = 'STUDENT',
@@ -56,6 +56,15 @@ export class RegisterDto {
   @IsOptional()
   @IsEnum(UserGender)
   gender?: UserGender;
+
+  @ApiPropertyOptional({
+    description:
+      'Student login device id. Students can only sign in from the device the account is bound to.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  loginDeviceId?: string;
 
   @ApiPropertyOptional({
     type: [RegisterTeacherAffiliationDto],
