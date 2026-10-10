@@ -866,7 +866,14 @@ export class FinancialsService {
       expiresAt,
     };
 
-    const subscription = await this.prisma.$transaction(async (tx) => {
+    let subscription;
+    try {
+      subscription = await this.prisma.$transaction(async (tx) => {
+        // Insert first: the database unique constraint handles concurrent requests.
+        // A repeated redemption rolls back before usage or revenue is changed.
+        await tx.codeRedemption.create({
+          data: { codeId: code.id, studentId },
+        });
       if (code.usageLimit !== null && code.usageLimit !== undefined) {
         if (code.usageCount >= code.usageLimit) {
           throw new BadRequestException("تم الوصول لحد استخدام الكود");
@@ -958,7 +965,23 @@ export class FinancialsService {
       });
 
       return updatedSubscription;
-    });
+      });
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
+        const alreadyRedeemed = await this.prisma.codeRedemption.findUnique({
+          where: { codeId_studentId: { codeId: code.id, studentId } },
+          select: { id: true },
+        });
+        if (alreadyRedeemed) {
+          throw new ApiCodeException(
+            HttpStatus.CONFLICT,
+            "CODE_ALREADY_REDEEMED",
+            "لقد استخدمت هذا الكود مسبقاً",
+          );
+        }
+      }
+      throw error;
+    }
 
     return subscription;
   }
