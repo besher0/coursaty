@@ -747,6 +747,18 @@ model Code {
   @@index([usedByStudentId])
 }
 
+
+model CodeRedemption {
+  id        String   @id @default(uuid())
+  codeId    String
+  studentId String
+  createdAt DateTime @default(now())
+
+  // Prevent the same student from consuming a code twice, even concurrently.
+  @@unique([codeId, studentId])
+  @@index([studentId])
+}
+
 model StudentSubscription {
   id                   String    @id @default(uuid())
   studentId            String
