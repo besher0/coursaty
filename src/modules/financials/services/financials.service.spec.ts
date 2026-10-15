@@ -2,6 +2,33 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { FinancialsService } from './financials.service';
 
 describe('FinancialsService subscription expiry', () => {
+  it('defaults newly created codes to one use when omitted', async () => {
+    const prisma = {
+      code: { create: jest.fn().mockResolvedValue({ id: 'code-1', codeValue: 'abcd1234', codeGroup: { isForPrinting: false } }) },
+    };
+    const service = createService(prisma);
+    await service.createCode('group-1', 'abcd1234');
+    expect(prisma.code.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ usageLimit: 1 }) }),
+    );
+  });
+
+  it('rejects an exhausted code with CODE_ALREADY_REDEEMED', async () => {
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue({ userableId: 'student-1' }) },
+      student: { findUnique: jest.fn().mockResolvedValue({ id: 'student-1' }) },
+      code: { findUnique: jest.fn().mockResolvedValue({
+        id: 'code-1', status: 'ACTIVE', usageLimit: 2, usageCount: 2,
+      }) },
+    };
+    const service = createService(prisma);
+    await expect(service.subscribeWithCodeValue(
+      { userId: 'user-1', type: 'STUDENT' }, 'abcd1234',
+    )).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'CODE_ALREADY_REDEEMED' }),
+    });
+  });
+
   const activatedAt = new Date('2026-06-01T12:00:00.000Z');
 
   function createService(prisma: any = {}) {
@@ -145,6 +172,8 @@ describe('FinancialsService subscription expiry', () => {
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      codeRedemption: { create: jest.fn().mockResolvedValue({ id: 'redemption-1' }) },
+      $executeRaw: jest.fn().mockResolvedValue(1),
       studentSubscription: { upsert: jest.fn().mockResolvedValue({ id: 'subscription-1' }) },
       revenueTransaction: { create: jest.fn().mockResolvedValue({ id: 'revenue-1' }) },
     };
@@ -248,6 +277,8 @@ describe('FinancialsService subscription expiry', () => {
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      codeRedemption: { create: jest.fn().mockResolvedValue({ id: 'redemption-1' }) },
+      $executeRaw: jest.fn().mockResolvedValue(1),
       studentSubscription: { upsert: jest.fn().mockResolvedValue({ id: 'subscription-1' }) },
       revenueTransaction: { create: jest.fn().mockResolvedValue({ id: 'revenue-1' }) },
     };
@@ -338,6 +369,8 @@ describe('FinancialsService subscription expiry', () => {
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      codeRedemption: { create: jest.fn().mockResolvedValue({ id: 'redemption-1' }) },
+      $executeRaw: jest.fn().mockResolvedValue(1),
       studentSubscription: { upsert: jest.fn().mockResolvedValue({ id: 'subscription-1' }) },
       revenueTransaction: { create: jest.fn().mockResolvedValue({ id: 'revenue-1' }) },
     };
@@ -406,6 +439,8 @@ describe('FinancialsService subscription expiry', () => {
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      codeRedemption: { create: jest.fn().mockResolvedValue({ id: 'redemption-1' }) },
+      $executeRaw: jest.fn().mockResolvedValue(1),
       studentSubscription: { upsert: jest.fn().mockResolvedValue({ id: 'subscription-1' }) },
       revenueTransaction: { create: jest.fn().mockRejectedValue(ledgerError) },
     };
@@ -645,6 +680,8 @@ describe('FinancialsService manual payment requests', () => {
           .fn()
           .mockResolvedValue({ ...pendingRequest, status: 'APPROVED' }),
       },
+      codeRedemption: { create: jest.fn().mockResolvedValue({ id: 'redemption-1' }) },
+      $executeRaw: jest.fn().mockResolvedValue(1),
       studentSubscription: { upsert: jest.fn().mockResolvedValue({ id: 'subscription-1' }) },
       revenueTransaction: { create: jest.fn().mockResolvedValue({ id: 'revenue-1' }) },
       studentCourseInterest: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
