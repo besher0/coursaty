@@ -91,7 +91,7 @@ export class CodeManagementService {
         codeGroupId: dto.codeGroupId,
         codeValue,
         status: 'ACTIVE',
-        usageLimit: dto.usageLimit || null,
+        usageLimit: dto.usageLimit ?? 1,
         validUntil: null,
         allowedUniversityNumber: dto.allowedUniversityNumber || null,
         validForDays: dto.validForDays || null,
