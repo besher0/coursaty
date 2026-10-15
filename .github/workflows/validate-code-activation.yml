@@ -1,0 +1,19 @@
+name: Validate code activation
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [fix/code-multi-use-limits-20261015]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm test -- --runInBand
+      - run: npm run build

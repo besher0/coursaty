@@ -734,7 +734,7 @@ model Code {
   allowedUniversityNumber String?
   validForDays            Int?
   validUntil              DateTime?
-  usageLimit              Int?
+  usageLimit              Int?       @default(1)
   usageCount              Int        @default(0)
   usedByStudentId         String?
   usedAt                  DateTime?

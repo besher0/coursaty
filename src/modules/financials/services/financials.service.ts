@@ -576,7 +576,7 @@ export class FinancialsService {
           codeGroupId,
           codeValue: value,
           allowedUniversityNumber,
-          usageLimit,
+          usageLimit: usageLimit ?? 1,
           validForDays,
           validUntil: validUntilDate,
         },
@@ -646,7 +646,7 @@ export class FinancialsService {
       const data = Array.from(codes).map((codeValue) => ({
         codeGroupId: dto.codeGroupId,
         codeValue,
-        usageLimit: dto.usageLimit,
+        usageLimit: dto.usageLimit ?? 1,
         validForDays: dto.validForDays,
         validUntil: validUntilDate,
       }));
@@ -669,7 +669,7 @@ export class FinancialsService {
       where: { id: dto.codeGroupId },
       data: {
         prefix: prefix || null,
-        usageLimit: dto.usageLimit ?? null,
+        usageLimit: dto.usageLimit ?? 1,
         validForDays: dto.validForDays ?? null,
         validUntil: validUntilDate ?? null,
       },
@@ -767,7 +767,9 @@ export class FinancialsService {
     const code = await this.prisma.code.findUnique({ where: { codeValue } });
     if (!code) throw new BadRequestException("الكود غير صالح");
     if (code.status !== "ACTIVE")
-      throw new BadRequestException("الكود غير فعال");
+      throw new ApiCodeException(HttpStatus.CONFLICT, "CODE_ALREADY_REDEEMED", "الكود مفعل مسبقا");
+    if (code.usageCount >= (code.usageLimit ?? 1))
+      throw new ApiCodeException(HttpStatus.CONFLICT, "CODE_ALREADY_REDEEMED", "الكود مفعل مسبقا");
 
     const redemptionExpiry = this.getCodeRedemptionExpiry(
       code.createdAt,
@@ -874,22 +876,27 @@ export class FinancialsService {
         await tx.codeRedemption.create({
           data: { codeId: code.id, studentId },
         });
-      // Atomically claim this code once, regardless of its historical usageLimit.
-      // Only one concurrent transaction can change usageCount from zero.
-      const claimed = await tx.code.updateMany({
-        where: { id: code.id, status: "ACTIVE", usageCount: 0 },
-        data: {
-          usageCount: { increment: 1 },
-          status: "USED",
-          usedAt: now,
-          usedByStudentId: studentId,
-        },
-      });
-      if (claimed.count !== 1) {
+      // Atomically consume one available use. The conditional UPDATE prevents
+      // concurrent requests from exceeding the limit.
+      const limit = code.usageLimit ?? 1;
+      const claimed = await tx.$executeRaw`
+        UPDATE "Code"
+        SET "usageCount" = "usageCount" + 1,
+            "status" = CASE
+              WHEN "usageCount" + 1 >= ${limit} THEN 'USED'::"CodeStatus"
+              ELSE 'ACTIVE'::"CodeStatus"
+            END,
+            "usedAt" = ${now},
+            "usedByStudentId" = ${studentId}
+        WHERE "id" = ${code.id}
+          AND "status" = 'ACTIVE'::"CodeStatus"
+          AND "usageCount" < ${limit}
+      `;
+      if (claimed !== 1) {
         throw new ApiCodeException(
           HttpStatus.CONFLICT,
           "CODE_ALREADY_REDEEMED",
-          "تم استخدام هذا الكود مسبقاً",
+          "الكود مفعل مسبقا",
         );
       }
 
@@ -947,7 +954,7 @@ export class FinancialsService {
           throw new ApiCodeException(
             HttpStatus.CONFLICT,
             "CODE_ALREADY_REDEEMED",
-            "لقد استخدمت هذا الكود مسبقاً",
+            "الكود مفعل مسبقا",
           );
         }
       }
