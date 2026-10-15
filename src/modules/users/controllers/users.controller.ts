@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, UseGuards, Req } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Param, ParseUUIDPipe, Patch, UseGuards, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UsersService } from '../services/users.service';
 import { UpdateFcmDto } from '../dtos/update-fcm.dto';
@@ -14,12 +14,20 @@ export class UsersController {
   constructor(private readonly users: UsersService) {}
 
   @Patch(':id/fcm-token')
-  @ApiOperation({ summary: 'Update user FCM token' })
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update user FCM token (own account, or any as admin)' })
   @ApiOkResponse({ description: 'FCM token updated' })
+  @UseGuards(JwtAuthGuard)
   async updateFcm(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() body: UpdateFcmDto,
+    @Req() req: any,
   ) {
+    // Was open to anyone: changing another user's token redirects their
+    // notifications to the caller's device.
+    if (req.user?.type !== 'ADMIN' && String(req.user?.userId) !== id) {
+      throw new ForbiddenException('لا يمكن تعديل حساب مستخدم آخر');
+    }
     return this.users.updateFcmToken(id, body.fcmToken);
   }
 
