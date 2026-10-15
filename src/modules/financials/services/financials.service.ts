@@ -874,52 +874,23 @@ export class FinancialsService {
         await tx.codeRedemption.create({
           data: { codeId: code.id, studentId },
         });
-      if (code.usageLimit !== null && code.usageLimit !== undefined) {
-        if (code.usageCount >= code.usageLimit) {
-          throw new BadRequestException("تم الوصول لحد استخدام الكود");
-        }
-
-        const updated = await tx.code.updateMany({
-          where: {
-            id: code.id,
-            usageCount: { lt: code.usageLimit },
-          },
-          data: {
-            usageCount: { increment: 1 },
-            usedAt: new Date(),
-          },
-        });
-
-        if (updated.count === 0)
-          throw new BadRequestException("تم الوصول لحد استخدام الكود");
-
-        const newUsageCount = code.usageCount + 1;
-        if (newUsageCount >= code.usageLimit) {
-          await tx.code.update({
-            where: { id: code.id },
-            data: { status: "USED" },
-          });
-        }
-      } else {
-        await tx.code.update({
-          where: { id: code.id },
-          data: {
-            usageCount: { increment: 1 },
-            usedAt: new Date(),
-          },
-        });
-      }
-
-      if (
-        code.usageLimit === 1 ||
-        code.usageLimit === undefined ||
-        code.usageLimit === null
-      ) {
-        // For single-use codes, store the student who used it
-        await tx.code.update({
-          where: { id: code.id },
-          data: { usedByStudentId: studentId },
-        });
+      // Atomically claim this code once, regardless of its historical usageLimit.
+      // Only one concurrent transaction can change usageCount from zero.
+      const claimed = await tx.code.updateMany({
+        where: { id: code.id, status: "ACTIVE", usageCount: 0 },
+        data: {
+          usageCount: { increment: 1 },
+          status: "USED",
+          usedAt: now,
+          usedByStudentId: studentId,
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new ApiCodeException(
+          HttpStatus.CONFLICT,
+          "CODE_ALREADY_REDEEMED",
+          "تم استخدام هذا الكود مسبقاً",
+        );
       }
 
       const updatedSubscription = await tx.studentSubscription.upsert({
