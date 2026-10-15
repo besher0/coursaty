@@ -16,6 +16,7 @@ export interface RevenueReportFilters extends RevenuePeriodInput {
 export interface RevenueCourseSeed {
   id: string;
   name: string;
+  teacherName?: string | null;
 }
 
 interface ResolvedRevenuePeriod {
@@ -41,10 +42,31 @@ interface MutableLineItem {
   platformRevenue: number;
 }
 
+interface MutableCodeGroupBreakdown {
+  codeGroupId: string | null;
+  discountPercentage: number;
+  subscriptionsCount: number;
+  discountAmount: number;
+  revenue: number;
+}
+
 interface MutableCourseInvoice {
   course: RevenueCourseSeed;
   lineItems: Map<string, MutableLineItem>;
+  codeGroups: Map<string, MutableCodeGroupBreakdown>;
   summary: MutableSummary;
+}
+
+/** The amounts of one transaction that summaries add up. */
+interface TransactionAmounts {
+  studentId: string;
+  renewal: boolean;
+  coursePrice: number;
+  courseDiscountAmount: number;
+  codeDiscountAmount: number;
+  finalPrice: number;
+  teacherRevenue: number;
+  platformRevenue: number;
 }
 
 @Injectable()
@@ -74,13 +96,35 @@ export class RevenueService {
     courseSeeds: RevenueCourseSeed[] = [],
   ): Promise<RevenueInvoiceDto> {
     const transactions = await this.findTransactions(filters);
-    return this.buildInvoiceFromTransactions(transactions, filters, courseSeeds);
+    const codeGroupNames = await this.findCodeGroupNames(transactions);
+    return this.buildInvoiceFromTransactions(
+      transactions,
+      filters,
+      courseSeeds,
+      codeGroupNames,
+    );
+  }
+
+  /** Batch names of the code groups used by [transactions]. */
+  async findCodeGroupNames(
+    transactions: Pick<RevenueTransaction, 'codeGroupId'>[],
+  ): Promise<Map<string, string>> {
+    const ids = Array.from(
+      new Set(transactions.map((t) => t.codeGroupId).filter((id): id is string => !!id)),
+    );
+    if (ids.length === 0) return new Map();
+    const groups = await this.prisma.codeGroup.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, batchName: true },
+    });
+    return new Map(groups.map((group) => [group.id, group.batchName]));
   }
 
   buildInvoiceFromTransactions(
     transactions: RevenueTransaction[],
     filters: RevenueReportFilters = {},
     courseSeeds: RevenueCourseSeed[] = [],
+    codeGroupNames: Map<string, string> = new Map(),
   ): RevenueInvoiceDto {
     const courses = new Map<string, MutableCourseInvoice>();
     const invoiceSummary = this.createMutableSummary();
@@ -93,6 +137,9 @@ export class RevenueService {
       const course = courses.get(transaction.courseId) ??
         this.createMutableCourse({ id: transaction.courseId, name: transaction.courseName });
       courses.set(transaction.courseId, course);
+      if (!course.course.teacherName && transaction.teacherName) {
+        course.course = { ...course.course, teacherName: transaction.teacherName };
+      }
 
       const coursePrice = this.toNumber(transaction.coursePrice);
       const courseDiscountPercentage = this.toNumber(transaction.courseDiscountPercentage);
@@ -144,13 +191,43 @@ export class RevenueService {
       line.teacherRevenue += teacherRevenue;
       line.platformRevenue += platformRevenue;
 
-      this.addToSummary(course.summary, transaction.studentId, discount, finalPrice, teacherRevenue, platformRevenue);
-      this.addToSummary(invoiceSummary, transaction.studentId, discount, finalPrice, teacherRevenue, platformRevenue);
+      const groupKey = `${transaction.codeGroupId ?? 'none'}|${codeDiscountPercentage}`;
+      let group = course.codeGroups.get(groupKey);
+      if (!group) {
+        group = {
+          codeGroupId: transaction.codeGroupId ?? null,
+          discountPercentage: codeDiscountPercentage,
+          subscriptionsCount: 0,
+          discountAmount: 0,
+          revenue: 0,
+        };
+        course.codeGroups.set(groupKey, group);
+      }
+      group.subscriptionsCount += 1;
+      group.discountAmount += codeDiscountAmount;
+      group.revenue += finalPrice;
+
+      const amounts: TransactionAmounts = {
+        studentId: transaction.studentId,
+        renewal: transaction.type === 'RENEWAL',
+        coursePrice,
+        courseDiscountAmount,
+        codeDiscountAmount,
+        finalPrice,
+        teacherRevenue,
+        platformRevenue,
+      };
+      this.addToSummary(course.summary, amounts);
+      this.addToSummary(invoiceSummary, amounts);
     }
 
     const serializedCourses = Array.from(courses.values())
       .map((course) => ({
-        course: course.course,
+        course: {
+          id: course.course.id,
+          name: course.course.name,
+          teacherName: course.course.teacherName ?? null,
+        },
         lineItems: Array.from(course.lineItems.values())
           .map((line) => {
             const discountPerSubscriber = line.courseDiscountAmount + line.codeDiscountAmount;
@@ -174,6 +251,18 @@ export class RevenueService {
             };
           })
           .sort((a, b) => b.coursePrice - a.coursePrice || b.discount.percentage - a.discount.percentage),
+        codeGroups: Array.from(course.codeGroups.values())
+          .map((group) => ({
+            codeGroupId: group.codeGroupId,
+            batchName: group.codeGroupId
+              ? (codeGroupNames.get(group.codeGroupId) ?? null)
+              : null,
+            discountPercentage: this.roundPercentage(group.discountPercentage),
+            subscriptionsCount: group.subscriptionsCount,
+            discountAmount: this.roundCurrency(group.discountAmount),
+            revenue: this.roundCurrency(group.revenue),
+          }))
+          .sort((a, b) => b.revenue - a.revenue),
         summary: this.serializeSummary(course.summary),
       }))
       .sort((a, b) =>
@@ -234,7 +323,12 @@ export class RevenueService {
   }
 
   private createMutableCourse(course: RevenueCourseSeed): MutableCourseInvoice {
-    return { course, lineItems: new Map(), summary: this.createMutableSummary() };
+    return {
+      course,
+      lineItems: new Map(),
+      codeGroups: new Map(),
+      summary: this.createMutableSummary(),
+    };
   }
 
   private createMutableSummary(): MutableSummary {
@@ -242,6 +336,11 @@ export class RevenueService {
       totalSubscribers: 0,
       uniqueSubscribersCount: 0,
       totalDiscount: 0,
+      grossRevenue: 0,
+      courseDiscount: 0,
+      codeDiscount: 0,
+      initialSubscriptions: 0,
+      renewals: 0,
       totalRevenues: 0,
       teacherRevenue: 0,
       platformRevenue: 0,
@@ -249,20 +348,18 @@ export class RevenueService {
     };
   }
 
-  private addToSummary(
-    summary: MutableSummary,
-    studentId: string,
-    discount: number,
-    finalPrice: number,
-    teacherRevenue: number,
-    platformRevenue: number,
-  ) {
+  private addToSummary(summary: MutableSummary, amounts: TransactionAmounts) {
     summary.totalSubscribers += 1;
-    summary.uniqueStudentIds.add(studentId);
-    summary.totalDiscount += discount;
-    summary.totalRevenues += finalPrice;
-    summary.teacherRevenue += teacherRevenue;
-    summary.platformRevenue += platformRevenue;
+    summary.uniqueStudentIds.add(amounts.studentId);
+    if (amounts.renewal) summary.renewals += 1;
+    else summary.initialSubscriptions += 1;
+    summary.grossRevenue += amounts.coursePrice;
+    summary.courseDiscount += amounts.courseDiscountAmount;
+    summary.codeDiscount += amounts.codeDiscountAmount;
+    summary.totalDiscount += amounts.courseDiscountAmount + amounts.codeDiscountAmount;
+    summary.totalRevenues += amounts.finalPrice;
+    summary.teacherRevenue += amounts.teacherRevenue;
+    summary.platformRevenue += amounts.platformRevenue;
   }
 
   private serializeSummary(summary: MutableSummary): RevenueSummaryDto {
@@ -270,6 +367,11 @@ export class RevenueService {
       totalSubscribers: summary.totalSubscribers,
       uniqueSubscribersCount: summary.uniqueStudentIds.size,
       totalDiscount: this.roundCurrency(summary.totalDiscount),
+      grossRevenue: this.roundCurrency(summary.grossRevenue),
+      courseDiscount: this.roundCurrency(summary.courseDiscount),
+      codeDiscount: this.roundCurrency(summary.codeDiscount),
+      initialSubscriptions: summary.initialSubscriptions,
+      renewals: summary.renewals,
       totalRevenues: this.roundCurrency(summary.totalRevenues),
       teacherRevenue: this.roundCurrency(summary.teacherRevenue),
       platformRevenue: this.roundCurrency(summary.platformRevenue),

@@ -22,7 +22,7 @@ export class CodeGroupsController {
     return this.financials.createCodeGroup(
       body.courseId,
       body.batchName,
-      body.discountPercentage,
+      body.discountPercentage ?? 0,
       body.isForPrinting,
       body.prefix,
       body.validForDays,

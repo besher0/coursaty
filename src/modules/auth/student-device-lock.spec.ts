@@ -479,10 +479,15 @@ describe('login device exemption', () => {
 });
 
 describe('admin login device reset', () => {
-  function adminsWith(student: { id: string } | null, updated = 1) {
+  function adminsWith(student: { id: string } | null, users = [{ id: 'user-1' }]) {
+    const updateMany = () => jest.fn().mockResolvedValue({ count: 1 });
     const prisma = {
       student: { findFirst: jest.fn().mockResolvedValue(student) },
-      user: { updateMany: jest.fn().mockResolvedValue({ count: updated }) },
+      user: { findMany: jest.fn().mockResolvedValue(users), updateMany: updateMany() },
+      videoPlaybackSession: { updateMany: updateMany() },
+      studentDevice: { updateMany: updateMany() },
+      offlineVideoLicense: { updateMany: updateMany() },
+      $transaction: jest.fn((operations: Promise<unknown>[]) => Promise.all(operations)),
     };
     const service = Object.create(AdminsService.prototype);
     service.prisma = prisma;
@@ -497,7 +502,7 @@ describe('admin login device reset', () => {
       loginDeviceReset: true,
     });
     expect(prisma.user.updateMany).toHaveBeenCalledWith({
-      where: { userableType: 'STUDENT', userableId: 'student-1' },
+      where: { id: { in: ['user-1'] } },
       data: {
         loginDeviceId: null,
         loginDeviceBoundAt: null,
@@ -506,11 +511,40 @@ describe('admin login device reset', () => {
     });
   });
 
+  it('stops everything the old phone still holds, not only its sign-in', async () => {
+    const { service, prisma } = adminsWith({ id: 'student-1' });
+
+    await service.resetStudentLoginDevice('student-1');
+
+    const open = { userId: { in: ['user-1'] }, revokedAt: null };
+    expect(prisma.videoPlaybackSession.updateMany).toHaveBeenCalledWith({
+      where: open,
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(prisma.studentDevice.updateMany).toHaveBeenCalledWith({
+      where: open,
+      data: { revokedAt: expect.any(Date), replacedAt: expect.any(Date) },
+    });
+    expect(prisma.offlineVideoLicense.updateMany).toHaveBeenCalledWith({
+      where: open,
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
   it('reports unknown students', async () => {
     const { service } = adminsWith(null);
 
     await expect(service.resetStudentLoginDevice('missing')).rejects.toThrow(
       'Student not found',
+    );
+  });
+
+  it('reports a student without an account', async () => {
+    const { service } = adminsWith({ id: 'student-1' }, []);
+
+    await expect(service.resetStudentLoginDevice('student-1')).rejects.toThrow(
+      'Student account not found',
     );
   });
 });

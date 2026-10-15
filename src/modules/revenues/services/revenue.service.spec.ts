@@ -68,10 +68,63 @@ describe('RevenueService', () => {
       totalSubscribers: 2,
       uniqueSubscribersCount: 1,
       totalDiscount: 56,
+      grossRevenue: 200,
+      courseDiscount: 20,
+      codeDiscount: 36,
+      initialSubscriptions: 1,
+      renewals: 1,
       totalRevenues: 144,
       teacherRevenue: 36,
       platformRevenue: 108,
     });
+    // Discount split adds back up: gross - course - code = paid.
+    expect(200 - 20 - 36).toBe(invoice.summary.totalRevenues);
+  });
+
+  it('breaks each course down by code batch, with receipts (no code) on their own', () => {
+    const invoice = service.buildInvoiceFromTransactions(
+      [
+        transaction(),
+        transaction({ id: 'tx-2', studentId: 'student-2' }),
+        transaction({
+          id: 'tx-3',
+          studentId: 'student-3',
+          codeId: null,
+          codeGroupId: null,
+          codeDiscountPercentage: 0,
+          codeDiscountAmount: 0,
+          finalPrice: 90,
+          teacherRevenue: 22.5,
+          platformRevenue: 67.5,
+        }),
+      ],
+      {},
+      [],
+      new Map([['group-1', 'Printed batch A']]),
+    );
+
+    const [course] = invoice.courses;
+    expect(course.course.teacherName).toBe('Teacher One');
+    expect(course.codeGroups).toEqual([
+      {
+        codeGroupId: 'group-1',
+        batchName: 'Printed batch A',
+        discountPercentage: 20,
+        subscriptionsCount: 2,
+        discountAmount: 36,
+        revenue: 144,
+      },
+      {
+        codeGroupId: null,
+        batchName: null,
+        discountPercentage: 0,
+        subscriptionsCount: 1,
+        discountAmount: 0,
+        revenue: 90,
+      },
+    ]);
+    const paid = course.codeGroups.reduce((sum, g) => sum + g.revenue, 0);
+    expect(paid).toBe(course.summary.totalRevenues);
   });
 
   it('separates changed prices, discounts, and teacher percentages and always emits a discount field', () => {
@@ -133,12 +186,18 @@ describe('RevenueService', () => {
     const invoice = service.buildInvoiceFromTransactions([], {}, [{ id: 'course-1', name: 'Course One' }]);
     expect(invoice.courses).toEqual([
       {
-        course: { id: 'course-1', name: 'Course One' },
+        course: { id: 'course-1', name: 'Course One', teacherName: null },
         lineItems: [],
+        codeGroups: [],
         summary: {
           totalSubscribers: 0,
           uniqueSubscribersCount: 0,
           totalDiscount: 0,
+          grossRevenue: 0,
+          courseDiscount: 0,
+          codeDiscount: 0,
+          initialSubscriptions: 0,
+          renewals: 0,
           totalRevenues: 0,
           teacherRevenue: 0,
           platformRevenue: 0,

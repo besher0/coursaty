@@ -452,6 +452,9 @@ export class VideosService {
     if (user?.type === "TEACHER") {
       return this.createTeacherPlaybackSession(videoId, dto, user);
     }
+    if (user?.type === "ADMIN") {
+      return this.createAdminPlaybackSession(videoId, user);
+    }
 
     const context = await this.resolveVideoAccess(videoId, dto, user, {
       requireDownload: false,
@@ -844,6 +847,44 @@ export class VideosService {
       keyId: this.readEnv("OFFLINE_LICENSE_KEY_ID") || "default",
       publicKey: this.getOfflinePublicKeyPem(),
       encoding: "pem",
+    };
+  }
+
+  /**
+   * Admins review any video. They get a signed Bunny HLS URL valid for
+   * VIDEO_ADMIN_PLAYBACK_TTL_SECONDS (default 3 hours) so a review is not
+   * cut off; no device binding or gateway session is involved.
+   */
+  private async createAdminPlaybackSession(videoId: string, user: TokenUser) {
+    const admin = await this.prisma.user.findUnique({
+      where: { id: String(user.userId) },
+      select: { userableType: true, status: true },
+    });
+    if (!admin || admin.userableType !== "ADMIN") {
+      throw new ForbiddenException("صلاحية مدير مطلوبة");
+    }
+    if (admin.status !== "active") {
+      throw videoForbidden(VideoErrorCode.ACCOUNT_INACTIVE, "الحساب غير فعال");
+    }
+
+    const video = await this.prisma.video.findUnique({
+      where: { id: String(videoId) },
+      select: { id: true, videoUrl: true, bunnyVideoId: true },
+    });
+    if (!video) throw new NotFoundException("الفيديو غير موجود");
+    const bunnyVideoId = this.resolveStoredBunnyVideoId(video);
+    await this.persistLegacyBunnyVideoId(video, bunnyVideoId);
+
+    const signed = await this.bunny.createSignedHlsPlaybackUrl(
+      bunnyVideoId,
+      this.readPositiveIntegerEnv("VIDEO_ADMIN_PLAYBACK_TTL_SECONDS", 3 * 60 * 60),
+    );
+    return {
+      playbackSessionId: null,
+      playbackUrl: signed.url,
+      expiresAt: signed.expiresAt.toISOString(),
+      videoId: video.id,
+      bunnyVideoId,
     };
   }
 

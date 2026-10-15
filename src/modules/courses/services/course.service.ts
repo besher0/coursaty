@@ -330,7 +330,7 @@ export class CourseService {
       raw.collegeId !== undefined ||
       raw.universityId !== undefined ||
       raw.status !== undefined ||
-      raw.teacherPercentage !== undefined ||
+      (raw.teacherPercentage !== undefined && user?.type !== "ADMIN") ||
       raw.approvedById !== undefined ||
       raw.approvedAt !== undefined ||
       raw.departmentId !== undefined
@@ -364,6 +364,10 @@ export class CourseService {
         discountedPriceInput,
       ) as any;
     }
+    // Only admins reach here with it. Every subscription stores the share it
+    // was sold with, so past revenue and teacher balances do not change.
+    if (dto.teacherPercentage !== undefined)
+      data.teacherPercentage = dto.teacherPercentage as any;
     if (dto.isFree !== undefined) data.isFree = dto.isFree;
     if (dto.isCompleted !== undefined) data.isCompleted = dto.isCompleted;
     if (dto.isPriceVisible !== undefined)

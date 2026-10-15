@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsISO8601,
@@ -22,11 +22,12 @@ export class CreateCodeGroupDto {
   @IsNotEmpty()
   batchName: string;
 
-  @ApiProperty({ minimum: 0, maximum: 100 })
+  @ApiPropertyOptional({ minimum: 0, maximum: 100, default: 0 })
+  @IsOptional()
   @IsNumber()
   @Min(0)
   @Max(100)
-  discountPercentage: number;
+  discountPercentage?: number;
 
   @ApiProperty({ description: 'Whether this group is intended for printing' })
   @IsBoolean()
