@@ -611,6 +611,7 @@ export class FinancialsService {
         codeGroup: {
           select: {
             isForPrinting: true,
+            course: { select: { id: true, name: true } },
           },
         },
       },
@@ -717,14 +718,24 @@ export class FinancialsService {
   }
 
   private mapCodeWithPrinting<
-    T extends { codeGroup?: { isForPrinting?: boolean | null } | null },
+    T extends {
+      codeGroup?: {
+        isForPrinting?: boolean | null;
+        course?: { id: string; name: string } | null;
+      } | null;
+    },
   >(code: T) {
     const { codeGroup, ...rest } = code as T & {
-      codeGroup?: { isForPrinting?: boolean | null } | null;
+      codeGroup?: {
+        isForPrinting?: boolean | null;
+        course?: { id: string; name: string } | null;
+      } | null;
     };
     return {
       ...rest,
       isForPrinting: Boolean(codeGroup?.isForPrinting),
+      courseId: codeGroup?.course?.id ?? null,
+      courseName: codeGroup?.course?.name ?? null,
     };
   }
 

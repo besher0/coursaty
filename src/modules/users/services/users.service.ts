@@ -25,7 +25,12 @@ export class UsersService {
   async updateFcmToken(id: string, fcmToken: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException("المستخدم غير موجود");
-    return this.prisma.user.update({ where: { id }, data: { fcmToken } });
+    // Never return the full row: it holds the password hash.
+    return this.prisma.user.update({
+      where: { id },
+      data: { fcmToken },
+      select: { id: true, fcmToken: true },
+    });
   }
 
   async updateUserStatus(

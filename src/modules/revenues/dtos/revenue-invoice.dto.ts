@@ -27,6 +27,21 @@ export class RevenueSummaryDto {
   @ApiProperty({ example: 2000 })
   totalDiscount: number;
 
+  @ApiProperty({ example: 20000, description: 'Course list prices before any discount' })
+  grossRevenue: number;
+
+  @ApiProperty({ example: 1000, description: 'Part of totalDiscount from the course discount' })
+  courseDiscount: number;
+
+  @ApiProperty({ example: 1000, description: 'Part of totalDiscount from discount codes' })
+  codeDiscount: number;
+
+  @ApiProperty({ example: 2, description: 'First-time subscriptions' })
+  initialSubscriptions: number;
+
+  @ApiProperty({ example: 0, description: 'Subscription renewals' })
+  renewals: number;
+
   @ApiProperty({ example: 18000, description: 'Full amount paid after discounts' })
   totalRevenues: number;
 
@@ -86,6 +101,34 @@ export class RevenueInvoiceCourseIdentityDto {
 
   @ApiProperty()
   name: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  teacherName: string | null;
+}
+
+export class RevenueCodeGroupBreakdownDto {
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    format: 'uuid',
+    description: 'null: subscriptions without a code (approved payment receipts)',
+  })
+  codeGroupId: string | null;
+
+  @ApiProperty({ type: String, nullable: true, description: 'Code batch name' })
+  batchName: string | null;
+
+  @ApiProperty({ example: 10 })
+  discountPercentage: number;
+
+  @ApiProperty({ example: 2, description: 'Subscriptions made with this batch' })
+  subscriptionsCount: number;
+
+  @ApiProperty({ example: 1000, description: 'Total code discount granted' })
+  discountAmount: number;
+
+  @ApiProperty({ example: 9000, description: 'Total paid through this batch' })
+  revenue: number;
 }
 
 export class RevenueCourseInvoiceDto {
@@ -94,6 +137,12 @@ export class RevenueCourseInvoiceDto {
 
   @ApiProperty({ type: [RevenueLineItemDto] })
   lineItems: RevenueLineItemDto[];
+
+  @ApiProperty({
+    type: [RevenueCodeGroupBreakdownDto],
+    description: 'Revenue and discounts per code batch sold for this course',
+  })
+  codeGroups: RevenueCodeGroupBreakdownDto[];
 
   @ApiProperty({ type: RevenueSummaryDto })
   summary: RevenueSummaryDto;

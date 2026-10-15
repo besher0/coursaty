@@ -1957,6 +1957,7 @@ export class AdminsService {
       transactions,
       revenueFilters,
       selectedCourse ? [selectedCourse] : [],
+      await this.revenueService.findCodeGroupNames(transactions),
     );
 
     const round = (value: number) =>
@@ -2330,8 +2331,10 @@ export class AdminsService {
         id: true,
         createdAt: true,
         phone: true,
-        password: true,
         status: true,
+        loginDeviceId: true,
+        loginDeviceBoundAt: true,
+        loginDeviceExempt: true,
       },
     });
 
@@ -2398,9 +2401,15 @@ export class AdminsService {
         universityNumber: activeEnrollment?.universityNumber ?? null,
         phone: studentUser?.phone ?? null,
         password: null,
-        passwordHash: studentUser?.password ?? null,
         status: studentUser?.status ?? "active",
         hasUserAccount: !!studentUser,
+        // Single-device login: whether a phone is bound and since when. The
+        // device id itself is never sent.
+        loginDevice: {
+          bound: !!studentUser?.loginDeviceId,
+          boundAt: studentUser?.loginDeviceBoundAt ?? null,
+          exempt: studentUser?.loginDeviceExempt ?? false,
+        },
         academicYear: studentYear,
         year: studentYear,
         subscriptionsCount: student.subscriptions.length,
@@ -2521,17 +2530,41 @@ export class AdminsService {
     });
     if (!student) throw new NotFoundException("Student not found");
 
-    const reset = await this.prisma.user.updateMany({
+    const users = await this.prisma.user.findMany({
       where: { userableType: "STUDENT", userableId: student.id },
-      data: {
-        loginDeviceId: null,
-        loginDeviceBoundAt: null,
-        loginDeviceResetAt: new Date(),
-      },
+      select: { id: true },
     });
-    if (reset.count === 0) {
+    if (users.length === 0) {
       throw new NotFoundException("Student account not found");
     }
+    const userIds = users.map((user) => user.id);
+    const now = new Date();
+
+    // The old phone must stop working at once: its sign-in token is void
+    // (issued before loginDeviceResetAt), and so are its open video sessions,
+    // its video device and its offline licenses (they can no longer renew).
+    await this.prisma.$transaction([
+      this.prisma.user.updateMany({
+        where: { id: { in: userIds } },
+        data: {
+          loginDeviceId: null,
+          loginDeviceBoundAt: null,
+          loginDeviceResetAt: now,
+        },
+      }),
+      this.prisma.videoPlaybackSession.updateMany({
+        where: { userId: { in: userIds }, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+      this.prisma.studentDevice.updateMany({
+        where: { userId: { in: userIds }, revokedAt: null },
+        data: { revokedAt: now, replacedAt: now },
+      }),
+      this.prisma.offlineVideoLicense.updateMany({
+        where: { userId: { in: userIds }, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+    ]);
 
     return { studentId: student.id, loginDeviceReset: true };
   }
