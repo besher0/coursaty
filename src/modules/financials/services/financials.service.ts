@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { COURSE_PRINT_HEADER_SELECT, toCoursePrintHeader } from "../course-print-header";
 import { $Enums, Prisma } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
 import { HttpStatus } from "@nestjs/common";
@@ -464,14 +465,7 @@ export class FinancialsService {
       where: courseId ? { courseId } : undefined,
       include: {
         course: {
-          select: {
-            name: true,
-            teacher: {
-              select: {
-                name: true,
-              },
-            },
-          },
+          select: { name: true, ...COURSE_PRINT_HEADER_SELECT },
         },
         codes: {
           orderBy: {
@@ -742,12 +736,14 @@ export class FinancialsService {
   private mapCodeGroupForList(
     group: Prisma.CodeGroupGetPayload<{
       include: {
-        course: { select: { name: true; teacher: { select: { name: true } } } };
+        course: { select: { name: true } & typeof COURSE_PRINT_HEADER_SELECT };
         codes: true;
       };
     }>,
   ) {
     return {
+      // Printed at the top of every page of the batch.
+      ...toCoursePrintHeader(group.course),
       id: group.id,
       courseId: group.courseId,
       batchName: group.batchName,

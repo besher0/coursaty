@@ -1,4 +1,5 @@
 ﻿import { Injectable, BadRequestException } from '@nestjs/common';
+import { COURSE_PRINT_HEADER_SELECT, toCoursePrintHeader } from '@/modules/financials/course-print-header';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
   CreateCodeGroupDto,
@@ -277,7 +278,7 @@ export class CodeManagementService {
       where: { id: codeGroupId },
       include: {
         course: {
-          select: { id: true, name: true, price: true },
+          select: { id: true, name: true, price: true, ...COURSE_PRINT_HEADER_SELECT },
         },
         codes: {
           select: {
@@ -310,8 +311,13 @@ export class CodeManagementService {
     const inactiveCodes = codesWithPrintingFlag.filter((c) => c.status === 'INACTIVE').length;
     const totalUsage = codesWithPrintingFlag.reduce((sum, c) => sum + c.usageCount, 0);
 
+    const { teacher, university, college, department, subject, ...course } = codeGroup.course;
     return {
       ...codeGroup,
+      course,
+      courseName: course.name,
+      // Printed at the top of every page of the batch.
+      ...toCoursePrintHeader(codeGroup.course),
       codes: codesWithPrintingFlag,
       statistics: {
         totalCodes,

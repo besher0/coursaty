@@ -133,6 +133,37 @@ describe('LecturesService media links and question ordering', () => {
     });
   });
 
+  it('keeps offline downloads valid when only the video details change', async () => {
+    const prisma = {
+      video: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'video-1',
+          videoUrl: 'https://video.bunnycdn.com/play/123/11111111-1111-4111-8111-111111111111',
+          duration: 60,
+          lecture: { courseId: 'course-1' },
+        }),
+        update: jest.fn().mockResolvedValue({ id: 'video-1' }),
+      },
+    } as any;
+    const service = new LecturesService(prisma, { extractBunnyVideoId: jest.fn() } as any);
+
+    await service.updateVideo('video-1', {
+      videoName: 'اسم جديد',
+      description: 'وصف جديد',
+      isFree: true,
+      sortOrder: 3,
+    });
+
+    const { data } = prisma.video.update.mock.calls[0][0];
+    expect(data).toEqual({
+      videoName: 'اسم جديد',
+      description: 'وصف جديد',
+      isFree: true,
+      sortOrder: 3,
+    });
+    expect(data).not.toHaveProperty('contentVersion');
+  });
+
   it('updates a file URL without changing other file fields', async () => {
     const prisma = {
       lectureFile: {
