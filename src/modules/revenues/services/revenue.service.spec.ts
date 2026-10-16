@@ -182,6 +182,20 @@ describe('RevenueService', () => {
     });
   });
 
+  it('totals each Damascus calendar month, oldest first', () => {
+    const invoice = service.buildInvoiceFromTransactions([
+      // 22:30 UTC on 31 July is already 1 August in Damascus (UTC+3).
+      transaction({ id: 'revenue-3', purchasedAt: new Date('2026-07-31T22:30:00.000Z') }),
+      transaction({ id: 'revenue-1' }),
+      transaction({ id: 'revenue-2', type: 'RENEWAL', purchasedAt: new Date('2026-07-20T09:00:00.000Z') }),
+    ]);
+
+    expect(invoice.monthly).toEqual([
+      { year: 2026, month: 7, subscriptions: 2, totalRevenues: 144, teacherRevenue: 36, platformRevenue: 108 },
+      { year: 2026, month: 8, subscriptions: 1, totalRevenues: 72, teacherRevenue: 18, platformRevenue: 54 },
+    ]);
+  });
+
   it('includes seeded zero-revenue courses', () => {
     const invoice = service.buildInvoiceFromTransactions([], {}, [{ id: 'course-1', name: 'Course One' }]);
     expect(invoice.courses).toEqual([

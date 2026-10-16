@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, RevenueTransaction } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
-import { RevenueInvoiceDto, RevenuePeriodInput, RevenueSummaryDto } from '../dtos';
+import { RevenueInvoiceDto, RevenueMonthDto, RevenuePeriodInput, RevenueSummaryDto } from '../dtos';
 
 export const REVENUE_TIMEZONE = 'Asia/Damascus' as const;
 export const REVENUE_CURRENCY = 'SYP' as const;
@@ -128,6 +128,7 @@ export class RevenueService {
   ): RevenueInvoiceDto {
     const courses = new Map<string, MutableCourseInvoice>();
     const invoiceSummary = this.createMutableSummary();
+    const months = new Map<string, RevenueMonthDto>();
 
     for (const seed of courseSeeds) {
       courses.set(seed.id, this.createMutableCourse(seed));
@@ -219,6 +220,25 @@ export class RevenueService {
       };
       this.addToSummary(course.summary, amounts);
       this.addToSummary(invoiceSummary, amounts);
+
+      const { year, month } = this.damascusMonth(transaction.purchasedAt);
+      const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+      let monthTotals = months.get(monthKey);
+      if (!monthTotals) {
+        monthTotals = {
+          year,
+          month,
+          subscriptions: 0,
+          totalRevenues: 0,
+          teacherRevenue: 0,
+          platformRevenue: 0,
+        };
+        months.set(monthKey, monthTotals);
+      }
+      monthTotals.subscriptions += 1;
+      monthTotals.totalRevenues += finalPrice;
+      monthTotals.teacherRevenue += teacherRevenue;
+      monthTotals.platformRevenue += platformRevenue;
     }
 
     const serializedCourses = Array.from(courses.values())
@@ -281,7 +301,22 @@ export class RevenueService {
       },
       courses: serializedCourses,
       summary: this.serializeSummary(invoiceSummary),
+      monthly: Array.from(months.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([, totals]) => ({
+          ...totals,
+          totalRevenues: this.roundCurrency(totals.totalRevenues),
+          teacherRevenue: this.roundCurrency(totals.teacherRevenue),
+          platformRevenue: this.roundCurrency(totals.platformRevenue),
+        })),
     };
+  }
+
+  /** Calendar month of [date] in Asia/Damascus. */
+  private damascusMonth(date: Date): { year: number; month: number } {
+    const parts = this.damascusFormatter.formatToParts(date);
+    const value = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+    return { year: value('year'), month: value('month') };
   }
 
   resolvePeriod(filters: RevenuePeriodInput = {}): ResolvedRevenuePeriod {

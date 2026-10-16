@@ -148,6 +148,26 @@ export class RevenueCourseInvoiceDto {
   summary: RevenueSummaryDto;
 }
 
+export class RevenueMonthDto {
+  @ApiProperty({ example: 2026 })
+  year: number;
+
+  @ApiProperty({ example: 7, minimum: 1, maximum: 12, description: 'Month in Asia/Damascus' })
+  month: number;
+
+  @ApiProperty({ example: 2, description: 'Activations and renewals in the month' })
+  subscriptions: number;
+
+  @ApiProperty({ example: 18000, description: 'Amount paid after discounts' })
+  totalRevenues: number;
+
+  @ApiProperty({ example: 12600 })
+  teacherRevenue: number;
+
+  @ApiProperty({ example: 5400 })
+  platformRevenue: number;
+}
+
 export class RevenueInvoiceDto {
   @ApiProperty({ enum: ['SYP'], example: 'SYP' })
   currency: 'SYP';
@@ -163,5 +183,11 @@ export class RevenueInvoiceDto {
 
   @ApiProperty({ type: RevenueSummaryDto })
   summary: RevenueSummaryDto;
+
+  @ApiProperty({
+    type: [RevenueMonthDto],
+    description: 'Totals per calendar month (Asia/Damascus), oldest first; months without sales are omitted',
+  })
+  monthly: RevenueMonthDto[];
 }
 
