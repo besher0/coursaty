@@ -311,7 +311,8 @@ export class CodeManagementService {
     const inactiveCodes = codesWithPrintingFlag.filter((c) => c.status === 'INACTIVE').length;
     const totalUsage = codesWithPrintingFlag.reduce((sum, c) => sum + c.usageCount, 0);
 
-    const { teacher, university, college, department, subject, ...course } = codeGroup.course;
+    const { teacher, university, college, department, collegeYear, subject, ...course } =
+      codeGroup.course;
     return {
       ...codeGroup,
       course,

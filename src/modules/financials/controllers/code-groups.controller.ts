@@ -33,6 +33,9 @@ export class CodeGroupsController {
 
   @Get()
   @ApiOperation({ summary: 'List code groups' })
+  // Lists every code value: admins only.
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   @ApiQuery({ name: 'courseId', required: false })
   list(@Query('courseId') courseId?: string) {
     return this.financials.listCodeGroups(courseId);
