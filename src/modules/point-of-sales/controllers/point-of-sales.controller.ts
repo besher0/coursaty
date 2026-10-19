@@ -9,12 +9,16 @@ import {
   ParseUUIDPipe,
   Query,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { PointOfSalesService } from '../services/point-of-sales.service';
 import { CreatePointOfSaleDto } from '../dtos/create-point-of-sale.dto';
 import { UpdatePointOfSaleDto } from '../dtos/update-point-of-sale.dto';
 import { ListPointOfSalesQueryDto } from '../dtos/list-point-of-sales-query.dto';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/roles.decorator';
 
 @ApiTags('point-of-sales')
 @Controller('point-of-sales')
@@ -22,6 +26,9 @@ export class PointOfSalesController {
   constructor(private readonly pointOfSalesService: PointOfSalesService) {}
 
   @Post()
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   create(@Body() createPointOfSaleDto: CreatePointOfSaleDto) {
     return this.pointOfSalesService.create(createPointOfSaleDto);
   }
@@ -58,6 +65,9 @@ export class PointOfSalesController {
   }
 
   @Patch(':id')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   update(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() updatePointOfSaleDto: UpdatePointOfSaleDto,
@@ -66,6 +76,9 @@ export class PointOfSalesController {
   }
 
   @Delete(':id')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.pointOfSalesService.remove(id);
   }

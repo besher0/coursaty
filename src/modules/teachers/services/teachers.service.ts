@@ -145,16 +145,6 @@ export class TeachersService {
     return durationMap;
   }
 
-  private getMonthBounds(date: Date) {
-    const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-    const startOfNextMonth = new Date(
-      date.getFullYear(),
-      date.getMonth() + 1,
-      1,
-    );
-    return { startOfMonth, startOfNextMonth };
-  }
-
   private async getTeacherContext(user: {
     userId: string | number;
     type: string;
@@ -395,14 +385,15 @@ export class TeachersService {
       params?.pendingLimit,
     );
 
-    const now = new Date();
-    const monthNumber = now.getMonth() + 1;
-    const { startOfMonth, startOfNextMonth } = this.getMonthBounds(now);
+    // The month of the revenue screen (Asia/Damascus), so "this month" shows the
+    // same earnings on the home page and in the revenue report.
+    const currentMonth = this.revenueService.damascusMonth();
+    const monthNumber = currentMonth.month;
 
     const cacheKey = [
       "teacher-summary",
       teacher.id.toString(),
-      `${now.getFullYear()}-${monthNumber}`,
+      `${currentMonth.year}-${monthNumber}`,
       coursesPagination.page,
       coursesPagination.limit,
       pendingPagination.page,
@@ -413,26 +404,23 @@ export class TeachersService {
     if (cached) return cached;
 
     const [
-      monthlySubscriptions,
-      coursesCount,
-      studentsCount,
-      likesCount,
-      averageRating,
-      courses,
-      pendingNotificationsCount,
-      pendingNotifications,
-      coursesRatings,
-    ] = await this.prisma.$transaction([
-      this.prisma.studentSubscription.findMany({
-        where: {
-          createdAt: { gte: startOfMonth, lt: startOfNextMonth },
-          course: { teacherId: teacher.id },
-        },
-        select: {
-          finalPrice: true,
-          course: { select: { teacherPercentage: true } },
-        },
+      monthTotals,
+      [
+        coursesCount,
+        studentsCount,
+        likesCount,
+        averageRating,
+        courses,
+        pendingNotificationsCount,
+        pendingNotifications,
+        coursesRatings,
+      ],
+    ] = await Promise.all([
+      this.revenueService.sumTransactions({
+        teacherId: teacher.id,
+        ...currentMonth,
       }),
+      this.prisma.$transaction([
       this.prisma.course.count({ where: { teacherId: teacher.id } }),
       this.prisma.studentSubscription.count({
         where: { course: { teacherId: teacher.id } },
@@ -496,18 +484,13 @@ export class TeachersService {
           course: { teacherId: teacher.id },
         },
       }),
+      ]),
     ]);
 
-    const totalMonthlyEarnings = monthlySubscriptions.reduce(
-      (sum, subscription) => {
-        const finalPrice = this.toNumber(subscription.finalPrice);
-        const percentage = this.toNumber(
-          subscription.course?.teacherPercentage,
-        );
-        return sum + (finalPrice * percentage) / 100;
-      },
-      0,
-    );
+    // Stored teacher share of each subscription and renewal this month. Summing
+    // StudentSubscription rows instead missed renewals (they rewrite the row)
+    // and applied the course's current percentage to past sales.
+    const totalMonthlyEarnings = monthTotals.teacherRevenue;
     const avgRating = this.toNumber(coursesRatings._avg.rating);
     const durationMap = await this.getCourseDurationsMap(
       courses.map((course) => course.id),
@@ -888,6 +871,7 @@ export class TeachersService {
       ratingsByCourse,
       withdrawals,
       withdrawnAgg,
+      studentsCount,
     ] = await Promise.all([
       invoicePromise,
       allTimeInvoicePromise,
@@ -909,6 +893,11 @@ export class TeachersService {
           status: "APPROVED",
         },
         _sum: { amount: true },
+      }),
+      // Same count as the teacher's home page: subscription rows across their
+      // courses (a student in two courses counts twice, like the course cards).
+      this.prisma.studentSubscription.count({
+        where: { course: { teacherId } },
       }),
     ]);
 
@@ -985,6 +974,10 @@ export class TeachersService {
         grossRevenue: invoice.summary.totalRevenues,
         teacherRevenue: invoice.summary.teacherRevenue,
         adminRevenue: invoice.summary.platformRevenue,
+        studentsCount,
+        // Subscriptions in the period, renewals included; `subscribersCount`
+        // keeps this meaning for installed apps.
+        subscriptionsCount: invoice.summary.totalSubscribers,
         subscribersCount: invoice.summary.totalSubscribers,
       },
       withdrawals: {

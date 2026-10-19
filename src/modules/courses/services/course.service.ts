@@ -869,7 +869,7 @@ export class CourseService {
     });
     if (!course) throw new NotFoundException("الكورس غير موجود");
 
-    const [invoice, ratingsAgg] = await Promise.all([
+    const [invoice, ratingsAgg, studentsCount] = await Promise.all([
       this.revenueService.buildInvoice({ courseId: course.id, ...query }, [
         { id: course.id, name: course.name },
       ]),
@@ -878,6 +878,7 @@ export class CourseService {
         _avg: { rating: true },
         _count: { _all: true },
       }),
+      this.prisma.studentSubscription.count({ where: { courseId: course.id } }),
     ]);
 
     const grossRevenue = invoice.summary.totalRevenues;
@@ -895,6 +896,14 @@ export class CourseService {
         expiresAt: course.expiresAt,
         price: Number(coursePrice.toFixed(2)),
       },
+      // Students who ever subscribed: the "N طالب" shown on course cards and
+      // details (one subscription row per student and course).
+      studentsCount,
+      // Subscriptions in the period, renewals included. `subscribersCount` keeps
+      // this meaning for installed apps; it is not a student count.
+      subscriptionsCount: invoice.summary.totalSubscribers,
+      initialSubscriptions: invoice.summary.initialSubscriptions,
+      renewals: invoice.summary.renewals,
       subscribersCount: invoice.summary.totalSubscribers,
       rating: {
         average: Number(Number(ratingsAgg._avg.rating ?? 0).toFixed(2)),

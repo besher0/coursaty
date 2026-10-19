@@ -11,6 +11,8 @@ export interface RevenueReportFilters extends RevenuePeriodInput {
   teacherId?: string;
   universityId?: string;
   collegeId?: string;
+  /** Only subscriptions activated with a code (whatever its discount). */
+  withCode?: boolean;
 }
 
 export interface RevenueCourseSeed {
@@ -83,6 +85,39 @@ export class RevenueService {
   });
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Totals of the transactions matching [filters], summed by the database.
+   *
+   * Dashboards must read money and subscription counts from here (or from an
+   * invoice) rather than from StudentSubscription rows: a renewal rewrites the
+   * subscription row, and the teacher share is stored per transaction.
+   */
+  async sumTransactions(filters: RevenueReportFilters = {}): Promise<{
+    subscriptions: number;
+    codeDiscount: number;
+    totalRevenues: number;
+    teacherRevenue: number;
+    platformRevenue: number;
+  }> {
+    const result = await this.prisma.revenueTransaction.aggregate({
+      where: this.buildWhere(filters),
+      _count: { _all: true },
+      _sum: {
+        codeDiscountAmount: true,
+        finalPrice: true,
+        teacherRevenue: true,
+        platformRevenue: true,
+      },
+    });
+    return {
+      subscriptions: result._count._all,
+      codeDiscount: this.roundCurrency(this.toNumber(result._sum.codeDiscountAmount)),
+      totalRevenues: this.roundCurrency(this.toNumber(result._sum.finalPrice)),
+      teacherRevenue: this.roundCurrency(this.toNumber(result._sum.teacherRevenue)),
+      platformRevenue: this.roundCurrency(this.toNumber(result._sum.platformRevenue)),
+    };
+  }
 
   async findTransactions(filters: RevenueReportFilters = {}): Promise<RevenueTransaction[]> {
     return this.prisma.revenueTransaction.findMany({
@@ -312,8 +347,8 @@ export class RevenueService {
     };
   }
 
-  /** Calendar month of [date] in Asia/Damascus. */
-  private damascusMonth(date: Date): { year: number; month: number } {
+  /** Calendar month of [date] in Asia/Damascus: "this month" for every report. */
+  damascusMonth(date: Date = new Date()): { year: number; month: number } {
     const parts = this.damascusFormatter.formatToParts(date);
     const value = (type: string) => Number(parts.find((part) => part.type === type)?.value);
     return { year: value('year'), month: value('month') };
@@ -353,6 +388,7 @@ export class RevenueService {
       ...(filters.teacherId ? { teacherId: filters.teacherId } : {}),
       ...(filters.universityId ? { universityId: filters.universityId } : {}),
       ...(filters.collegeId ? { collegeId: filters.collegeId } : {}),
+      ...(filters.withCode ? { codeId: { not: null } } : {}),
       ...this.resolvePeriod(filters),
     };
   }
