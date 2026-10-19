@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { RevenueService } from '@/modules/revenues/services/revenue.service';
 import {
   AdminDashboardDto,
   AdminDashboardQueryDto,
@@ -14,7 +15,10 @@ import {
 
 @Injectable()
 export class AdminDashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly revenueService: RevenueService,
+  ) {}
 
   /**
    * Get start and end of month dates
@@ -58,25 +62,19 @@ export class AdminDashboardService {
       : [];
 
     const [
-      totalRevenueData,
+      monthRevenue,
       newStudentsData,
       totalVisitorsData,
       activeCoursesCount,
       totalTeachersCount,
       pendingTeachersCount,
     ] = await Promise.all([
-      this.prisma.studentSubscription.aggregate({
-        where: {
-          createdAt: { gte: monthStart, lte: monthEnd },
-          ...(universityId
-            ? {
-                course: {
-                  universityId,
-                },
-              }
-            : {}),
-        },
-        _sum: { finalPrice: true },
+      // This month's revenue as the revenue report computes it (Asia/Damascus,
+      // renewals included). Summing StudentSubscription rows missed renewals,
+      // which rewrite the row, and used the server's month.
+      this.revenueService.sumTransactions({
+        ...this.revenueService.damascusMonth(),
+        ...(universityId ? { universityId } : {}),
       }),
       this.prisma.student.count({
         where: {
@@ -134,7 +132,7 @@ export class AdminDashboardService {
     ]);
 
     return {
-      totalRevenue: Number(totalRevenueData._sum.finalPrice) || 0,
+      totalRevenue: monthRevenue.totalRevenues,
       newStudentsThisMonth: newStudentsData,
       totalVisitors: totalVisitorsData,
       activeCoursesCount,
@@ -147,58 +145,46 @@ export class AdminDashboardService {
    * Get code statistics
    */
   async getCodeStatistics(): Promise<CodeStatisticsDto> {
-    const { start: monthStart, end: monthEnd } = this.getMonthRange();
-
     const [
       totalCodesCreated,
       activeCodesCount,
       usedCodesCount,
       inactiveCodesCount,
-      subscriptionsData,
+      monthWithCodes,
     ] = await Promise.all([
       this.prisma.code.count(),
       this.prisma.code.count({ where: { status: 'ACTIVE' } }),
       this.prisma.code.count({ where: { status: 'USED' } }),
       this.prisma.code.count({ where: { status: 'INACTIVE' } }),
-      this.prisma.studentSubscription.findMany({
-        where: {
-          createdAt: { gte: monthStart, lte: monthEnd },
-          codeDiscountAmount: { gt: 0 },
-        },
-        select: {
-          basePrice: true,
-          codeDiscountAmount: true,
-          finalPrice: true,
-        },
-      }),
+      this.monthRevenueWithCodes(),
     ]);
-
-    const totalDiscountValueApplied = subscriptionsData.reduce(
-      (sum, sub) => sum + Number(sub.codeDiscountAmount),
-      0,
-    );
-
-    const totalRevenueFromCodes = subscriptionsData.reduce(
-      (sum, sub) => sum + Number(sub.finalPrice),
-      0,
-    );
 
     return {
       totalCodesCreated,
       activeCodesCount,
       usedCodesCount,
       inactiveCodesCount,
-      totalDiscountValueApplied: Number(totalDiscountValueApplied.toFixed(2)),
-      totalRevenueFromCodes: Number(totalRevenueFromCodes.toFixed(2)),
+      totalDiscountValueApplied: monthWithCodes.codeDiscount,
+      totalRevenueFromCodes: monthWithCodes.totalRevenues,
     };
+  }
+
+  /**
+   * This month's subscriptions and renewals activated with a code. Reading
+   * StudentSubscription rows with a code discount skipped every 0% code (the
+   * default batch discount) and renewals.
+   */
+  private monthRevenueWithCodes() {
+    return this.revenueService.sumTransactions({
+      ...this.revenueService.damascusMonth(),
+      withCode: true,
+    });
   }
 
   /**
    * Get detailed code statistics with breakdown by course
    */
   async getDetailedCodeStatistics() {
-    const { start: monthStart, end: monthEnd } = this.getMonthRange();
-
     // Basic statistics
     const basicStats = await this.getCodeStatistics();
 
@@ -262,27 +248,7 @@ export class AdminDashboardService {
       };
     });
 
-    // Get monthly trend data
-    const monthlyCodesUsageData = await this.prisma.studentSubscription.findMany({
-      where: {
-        createdAt: { gte: monthStart, lte: monthEnd },
-        codeDiscountAmount: { gt: 0 },
-      },
-      select: {
-        codeDiscountAmount: true,
-        finalPrice: true,
-      },
-    });
-
-    const totalDiscountAppliedMonth = monthlyCodesUsageData.reduce(
-      (sum, sub) => sum + Number(sub.codeDiscountAmount),
-      0,
-    );
-
-    const totalRevenueWithCodesMonth = monthlyCodesUsageData.reduce(
-      (sum, sub) => sum + Number(sub.finalPrice),
-      0,
-    );
+    const monthWithCodes = await this.monthRevenueWithCodes();
 
     return {
       summary: basicStats,
@@ -299,9 +265,9 @@ export class AdminDashboardService {
         status: code.status,
       })),
       monthlyMetrics: {
-        codesUsedCount: monthlyCodesUsageData.length,
-        totalDiscountApplied: Number(totalDiscountAppliedMonth.toFixed(2)),
-        totalRevenueWithCodes: Number(totalRevenueWithCodesMonth.toFixed(2)),
+        codesUsedCount: monthWithCodes.subscriptions,
+        totalDiscountApplied: monthWithCodes.codeDiscount,
+        totalRevenueWithCodes: monthWithCodes.totalRevenues,
       },
     };
   }
