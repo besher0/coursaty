@@ -19,6 +19,21 @@ export class SystemSettingsService {
     });
   }
 
+  /** Public settings the apps read before anyone signs in. */
+  async getAppConfig() {
+    const settings = await this.getSettings();
+    return { iosPaidContentVisible: settings.iosPaidContentVisible };
+  }
+
+  async updateAppConfig(dto: { iosPaidContentVisible: boolean }) {
+    await this.getSettings();
+    const settings = await this.prisma.systemSettings.update({
+      where: { id: SystemSettingsService.SETTINGS_ID },
+      data: { iosPaidContentVisible: dto.iosPaidContentVisible },
+    });
+    return { iosPaidContentVisible: settings.iosPaidContentVisible };
+  }
+
   async getPaymentQrUrl(): Promise<string | null> {
     const settings = await this.getSettings();
     return settings.paymentQrUrl ?? null;

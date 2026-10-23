@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -20,11 +21,28 @@ import { JwtAuthGuard } from '@/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/modules/auth/guards/roles.guard';
 import { Roles } from '@/modules/auth/roles.decorator';
 import { SystemSettingsService } from '../services/system-settings.service';
+import { UpdateAppConfigDto } from '../dtos/app-config.dto';
 
 @ApiTags('system-settings')
 @Controller('system-settings')
 export class SystemSettingsController {
   constructor(private readonly systemSettings: SystemSettingsService) {}
+
+  // Public: the apps read it before anyone signs in.
+  @Get('app-config')
+  @ApiOperation({ summary: 'App settings (e.g. whether the iPhone app shows paid content)' })
+  getAppConfig() {
+    return this.systemSettings.getAppConfig();
+  }
+
+  @Patch('app-config')
+  @ApiOperation({ summary: 'Change app settings (admin only)' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  updateAppConfig(@Body() dto: UpdateAppConfigDto) {
+    return this.systemSettings.updateAppConfig(dto);
+  }
 
   @Get('payment-qr')
   @ApiOperation({ summary: 'Get the global payment QR URL' })

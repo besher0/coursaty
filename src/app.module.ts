@@ -20,6 +20,7 @@ import { AdvertisementsModule } from './modules/advertisements/advertisements.mo
 import { AdminsModule } from './modules/admins/admins.module';
 import { CustomerServiceModule } from './modules/customer-service/customer-service.module';
 import { AppDescriptionModule } from './modules/app-description/app-description.module';
+import { AppUpdatesModule } from './modules/app-updates/app-updates.module';
 import { LoggerModule } from './shared/logger/logger.module';
 import { CorrelationIdMiddleware } from './shared/logger/correlation-id.middleware';
 import { AllExceptionsFilter } from './shared/filters/all-exceptions.filter';
@@ -56,6 +57,7 @@ import { VideosModule } from './modules/videos/videos.module';
     AdvertisementsModule,
     CustomerServiceModule,
     AppDescriptionModule,
+    AppUpdatesModule,
     LoggerModule,
     UploadsModule,
     NotificationsModule,

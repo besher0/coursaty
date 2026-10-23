@@ -2548,6 +2548,7 @@ export class AdminsService {
         where: { id: { in: userIds } },
         data: {
           loginDeviceId: null,
+          loginDeviceAltId: null,
           loginDeviceBoundAt: null,
           loginDeviceResetAt: now,
         },

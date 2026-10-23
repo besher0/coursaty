@@ -56,7 +56,10 @@ export class AuthService {
             status: userStatus,
             fcmToken: dto.fcmToken,
             gender: dto.gender,
-            ...this.loginDeviceBinding(loginDeviceId),
+            ...this.loginDeviceBinding(
+              loginDeviceId,
+              this.creationLoginDevice(dto.userableType, dto.loginDeviceAltId),
+            ),
           },
         });
 
@@ -124,7 +127,10 @@ export class AuthService {
             status: userStatus,
             fcmToken: dto.fcmToken,
             gender: dto.gender,
-            ...this.loginDeviceBinding(loginDeviceId),
+            ...this.loginDeviceBinding(
+              loginDeviceId,
+              this.creationLoginDevice(dto.userableType, dto.loginDeviceAltId),
+            ),
           },
         });
 
@@ -198,6 +204,7 @@ export class AuthService {
         ? await this.claimStudentLoginDevice(
             user,
             dto.loginDeviceId ?? headerDeviceId,
+            dto.loginDeviceAltId,
           )
         : null;
 
@@ -224,14 +231,17 @@ export class AuthService {
     user: {
       id: string;
       loginDeviceId?: string | null;
+      loginDeviceAltId?: string | null;
       loginDeviceExempt?: boolean;
     },
     requested?: string,
+    requestedAltId?: string,
   ) {
     // Exempt (test) accounts may sign in on any device and are never bound.
     if (user.loginDeviceExempt) return null;
 
     const deviceId = normalizeLoginDeviceId(requested);
+    const altId = normalizeLoginDeviceId(requestedAltId);
     const enforced = isStudentDeviceLockEnforced(this.config);
     if (!deviceId) {
       // Older app versions do not send a device id and cannot be bound.
@@ -243,7 +253,7 @@ export class AuthService {
     if (!boundDeviceId) {
       const claimed = await this.prisma.user.updateMany({
         where: { id: user.id, loginDeviceId: null },
-        data: this.loginDeviceBinding(deviceId),
+        data: this.loginDeviceBinding(deviceId, altId),
       });
       if (claimed.count === 1) return deviceId;
       // Another device bound the account at the same moment.
@@ -254,7 +264,34 @@ export class AuthService {
       boundDeviceId = current?.loginDeviceId ?? null;
     }
 
-    if (boundDeviceId === deviceId) return deviceId;
+    if (boundDeviceId === deviceId) {
+      // Accounts bound before the second id existed learn it here, so a later
+      // change of signing key is recognised.
+      if (altId && user.loginDeviceAltId !== altId) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { loginDeviceAltId: altId },
+        });
+      }
+      return deviceId;
+    }
+
+    // Same phone, new ANDROID_ID: the app was reinstalled with another signing
+    // key (e.g. an APK from outside the store, then the store version). The
+    // signing-independent id still matches, so move the binding to the new id.
+    if (altId && user.loginDeviceAltId && altId === user.loginDeviceAltId) {
+      const moved = await this.prisma.user.updateMany({
+        where: { id: user.id, loginDeviceId: boundDeviceId },
+        data: { loginDeviceId: deviceId, loginDeviceBoundAt: new Date() },
+      });
+      if (moved.count === 1) {
+        this.logger.log(
+          `student login device re-bound on the same phone (signing key changed) userId=${user.id}`,
+        );
+        return deviceId;
+      }
+    }
+
     if (enforced) throw studentDeviceLocked();
     this.logger.warn(
       `student login from a second device allowed (STUDENT_SINGLE_DEVICE_ENFORCE=false) userId=${user.id}`,
@@ -267,9 +304,16 @@ export class AuthService {
     return userableType === 'STUDENT' ? normalizeLoginDeviceId(requested) : null;
   }
 
-  private loginDeviceBinding(loginDeviceId: string | null) {
+  private loginDeviceBinding(
+    loginDeviceId: string | null,
+    loginDeviceAltId?: string | null,
+  ) {
     return loginDeviceId
-      ? { loginDeviceId, loginDeviceBoundAt: new Date() }
+      ? {
+          loginDeviceId,
+          loginDeviceBoundAt: new Date(),
+          ...(loginDeviceAltId ? { loginDeviceAltId } : {}),
+        }
       : {};
   }
 
@@ -293,6 +337,7 @@ export class AuthService {
     const {
       password: _password,
       loginDeviceId: _loginDeviceId,
+      loginDeviceAltId: _loginDeviceAltId,
       loginDeviceBoundAt: _loginDeviceBoundAt,
       loginDeviceResetAt: _loginDeviceResetAt,
       loginDeviceExempt: _loginDeviceExempt,

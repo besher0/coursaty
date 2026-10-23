@@ -23,4 +23,13 @@ export class LoginDto {
   @IsString()
   @MaxLength(200)
   loginDeviceId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Second id of the student device that survives a change of the app signing key (hashed Widevine id).',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  loginDeviceAltId?: string;
 }

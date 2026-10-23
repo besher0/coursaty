@@ -80,6 +80,11 @@ model User {
   deletedAt    DateTime?
   /// Students only: the single device allowed to sign in (see auth/student-device-lock.ts).
   loginDeviceId      String?
+  /// Students only: a second id of the bound phone that does not depend on the
+  /// app's signing key (hashed Widevine id). When ANDROID_ID changes because
+  /// the app was reinstalled with another signature (an APK from outside the
+  /// store, then the store version), it recognises the same phone.
+  loginDeviceAltId   String?
   loginDeviceBoundAt DateTime?
   /// Set by an admin reset: student tokens issued before it are void.
   loginDeviceResetAt DateTime?
@@ -431,9 +436,30 @@ model Course {
   @@index([approvedById])
 }
 
+/// Newest app release per platform, set by an admin (see modules/app-updates).
+model AppReleasePolicy {
+  /// "android" or "ios"
+  platform      String   @id
+  latestVersion String
+  /// Installs with a lower build number are out of date.
+  latestBuild   Int
+  /// FLEXIBLE: offered, the app stays usable. FORCE: the app is blocked until updated.
+  mode          String   @default("FLEXIBLE")
+  storeUrl      String?
+  /// Direct download for installs from outside the store (Android).
+  downloadUrl   String?
+  message       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
 model SystemSettings {
   id           Int      @id @default(1)
   paymentQrUrl String?
+  /// iPhone app only: show anything about paid content (prices, buying,
+  /// code activation, QR payment, points of sale, locked lessons). Hidden by
+  /// default, as App Store review expects.
+  iosPaidContentVisible Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }

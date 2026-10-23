@@ -26,6 +26,7 @@ describe('student single-device login', () => {
     const prisma = {
       user: {
         updateMany: jest.fn().mockResolvedValue({ count: options.claimCount ?? 1 }),
+        update: jest.fn().mockResolvedValue({}),
         findUnique: jest
           .fn()
           .mockResolvedValue({ loginDeviceId: options.raceWinner ?? null }),
@@ -81,6 +82,88 @@ describe('student single-device login', () => {
     expect(errorCodeOf(error)).toBe('AUTH_STUDENT_DEVICE_LOCKED');
     expect((error.getResponse() as any).message).toContain('جهاز آخر');
     expect(jwt.signAsync).not.toHaveBeenCalled();
+  });
+
+  describe('same phone after a change of signing key', () => {
+    // An APK from outside the store, then the store version: ANDROID_ID (and so
+    // loginDeviceId) changes, the signing-independent second id does not.
+    it('moves the binding to the new id when the second id matches', async () => {
+      const { service, prisma, jwt } = loginService({
+        loginDeviceId: 'device-A',
+        loginDeviceAltId: 'phone-1',
+      });
+
+      await service.login({
+        ...credentials,
+        loginDeviceId: 'device-A2',
+        loginDeviceAltId: 'phone-1',
+      });
+
+      expect(prisma.user.updateMany).toHaveBeenCalledWith({
+        where: { id: 'user-1', loginDeviceId: 'device-A' },
+        data: expect.objectContaining({ loginDeviceId: 'device-A2' }),
+      });
+      expect(jwt.signAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ did: 'device-A2' }),
+      );
+    });
+
+    it('still refuses another phone', async () => {
+      const { service, prisma } = loginService({
+        loginDeviceId: 'device-A',
+        loginDeviceAltId: 'phone-1',
+      });
+
+      const error = await service
+        .login({ ...credentials, loginDeviceId: 'device-B', loginDeviceAltId: 'phone-2' })
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe('AUTH_STUDENT_DEVICE_LOCKED');
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('refuses a new id when the account never learned a second id', async () => {
+      const { service } = loginService({ loginDeviceId: 'device-A' });
+
+      const error = await service
+        .login({ ...credentials, loginDeviceId: 'device-A2', loginDeviceAltId: 'phone-1' })
+        .catch((e) => e);
+
+      expect(errorCodeOf(error)).toBe('AUTH_STUDENT_DEVICE_LOCKED');
+    });
+
+    it('records the second id on a normal sign-in from the bound device', async () => {
+      const { service, prisma } = loginService({ loginDeviceId: 'device-A' });
+
+      await service.login({
+        ...credentials,
+        loginDeviceId: 'device-A',
+        loginDeviceAltId: 'phone-1',
+      });
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { loginDeviceAltId: 'phone-1' },
+      });
+    });
+
+    it('binds both ids on the first sign-in', async () => {
+      const { service, prisma } = loginService({ loginDeviceId: null });
+
+      await service.login({
+        ...credentials,
+        loginDeviceId: 'device-A',
+        loginDeviceAltId: 'phone-1',
+      });
+
+      expect(prisma.user.updateMany).toHaveBeenCalledWith({
+        where: { id: 'user-1', loginDeviceId: null },
+        data: expect.objectContaining({
+          loginDeviceId: 'device-A',
+          loginDeviceAltId: 'phone-1',
+        }),
+      });
+    });
   });
 
   it('binds an older account to the first device that signs in', async () => {
@@ -505,6 +588,7 @@ describe('admin login device reset', () => {
       where: { id: { in: ['user-1'] } },
       data: {
         loginDeviceId: null,
+        loginDeviceAltId: null,
         loginDeviceBoundAt: null,
         loginDeviceResetAt: expect.any(Date),
       },

@@ -67,6 +67,15 @@ export class RegisterDto {
   loginDeviceId?: string;
 
   @ApiPropertyOptional({
+    description:
+      'Second id of the student device that survives a change of the app signing key (hashed Widevine id).',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  loginDeviceAltId?: string;
+
+  @ApiPropertyOptional({
     type: [RegisterTeacherAffiliationDto],
     description: 'Optional affiliations to save at teacher account creation.',
   })
