@@ -23,20 +23,21 @@ export class UpdateAdvertisementDto {
 	@IsNotEmpty()
 	title?: string;
 
-	@ApiPropertyOptional()
-	@ValidateIf((_, value) => value !== undefined)
+	@ApiPropertyOptional({ nullable: true })
+	// null clears the field, e.g. the images when an image ad becomes a video ad.
+	@ValidateIf((_, value) => value !== undefined && value !== null)
 	@IsString()
 	@IsNotEmpty()
 	imageUrl?: string;
 
-	@ApiPropertyOptional({ description: 'Optional full-screen image URL for the advertisement' })
-	@ValidateIf((_, value) => value !== undefined)
+	@ApiPropertyOptional({ nullable: true, description: 'Optional full-screen image URL for the advertisement' })
+	@ValidateIf((_, value) => value !== undefined && value !== null)
 	@IsString()
 	@IsNotEmpty()
 	fullScreen_imageUrl?: string;
 
-	@ApiPropertyOptional({ description: 'Optional video URL for the advertisement' })
-	@ValidateIf((_, value) => value !== undefined)
+	@ApiPropertyOptional({ nullable: true, description: 'Optional video URL for the advertisement' })
+	@ValidateIf((_, value) => value !== undefined && value !== null)
 	@IsString()
 	@IsNotEmpty()
 	videoUrl?: string;
