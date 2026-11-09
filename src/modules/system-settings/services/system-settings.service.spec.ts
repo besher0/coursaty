@@ -29,6 +29,29 @@ describe('SystemSettingsService payment QR', () => {
     };
   }
 
+  it('returns the payment QR and a null help video until one is set', async () => {
+    const { service } = createService();
+
+    await expect(service.getPaymentSettings()).resolves.toEqual({
+      paymentQrUrl: 'https://cdn.example.com/uploads/payment-qr/old.webp',
+      paymentVideoUrl: null,
+    });
+  });
+
+  it('returns the payment help video once it is set', async () => {
+    const { service, prisma } = createService();
+    prisma.systemSettings.upsert.mockResolvedValueOnce({
+      id: 1,
+      paymentQrUrl: null,
+      paymentVideoUrl: 'https://t.me/coursaty/123',
+    });
+
+    await expect(service.getPaymentSettings()).resolves.toEqual({
+      paymentQrUrl: null,
+      paymentVideoUrl: 'https://t.me/coursaty/123',
+    });
+  });
+
   it('creates the singleton settings row when reading settings', async () => {
     const { service, prisma } = createService();
 

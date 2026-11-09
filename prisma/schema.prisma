@@ -456,6 +456,9 @@ model AppReleasePolicy {
 model SystemSettings {
   id           Int      @id @default(1)
   paymentQrUrl String?
+  /// Telegram video explaining payment and subscription, shown under the
+  /// steps on the app's payment page. Set directly in the database for now.
+  paymentVideoUrl String?
   /// iPhone app only: show anything about paid content (prices, buying,
   /// code activation, QR payment, points of sale, locked lessons). Hidden by
   /// default, as App Store review expects.

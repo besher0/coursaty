@@ -6,7 +6,11 @@ import { CourseService } from "./course.service";
 import { DashboardService } from "@/modules/academics/services/dashboard.service";
 import { CourseInterestsService } from "@/modules/students/services/course-interests.service";
 
-const systemSettings = { getPaymentQrUrl: jest.fn().mockResolvedValue(null) };
+const systemSettings = {
+  getPaymentSettings: jest
+    .fn()
+    .mockResolvedValue({ paymentQrUrl: null, paymentVideoUrl: null }),
+};
 
 function createPrisma() {
   return {

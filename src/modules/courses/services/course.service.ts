@@ -586,8 +586,10 @@ export class CourseService {
     const priceAfterCourseDiscount = Number.isNaN(basePrice)
       ? null
       : this.getCourseDiscountedPrice(basePrice, courseDiscountPct);
-    const systemPaymentQrUrl =
-      await this.systemSettingsService.getPaymentQrUrl();
+    const {
+      paymentQrUrl: systemPaymentQrUrl,
+      paymentVideoUrl: systemPaymentVideoUrl,
+    } = await this.systemSettingsService.getPaymentSettings();
 
     const totalVideos = course.lectures.reduce(
       (acc, lec) => acc + (lec._count?.videos ?? 0),
@@ -611,6 +613,7 @@ export class CourseService {
         discountedPrice: priceAfterCourseDiscount,
         isPriceVisible: course.isPriceVisible ?? true,
         paymentQrUrl: systemPaymentQrUrl,
+        paymentVideoUrl: systemPaymentVideoUrl,
         isFree: course.isFree,
         isCompleted: course.isCompleted ?? false,
         locked: !hasAccess,

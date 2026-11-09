@@ -34,6 +34,18 @@ export class SystemSettingsService {
     return { iosPaidContentVisible: settings.iosPaidContentVisible };
   }
 
+  /** What the app's payment page shows: the QR image and the help video. */
+  async getPaymentSettings(): Promise<{
+    paymentQrUrl: string | null;
+    paymentVideoUrl: string | null;
+  }> {
+    const settings = await this.getSettings();
+    return {
+      paymentQrUrl: settings.paymentQrUrl ?? null,
+      paymentVideoUrl: settings.paymentVideoUrl ?? null,
+    };
+  }
+
   async getPaymentQrUrl(): Promise<string | null> {
     const settings = await this.getSettings();
     return settings.paymentQrUrl ?? null;

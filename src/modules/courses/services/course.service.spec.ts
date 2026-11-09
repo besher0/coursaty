@@ -3,11 +3,10 @@ import { DomainException } from "@/common/errors/domain.exception";
 
 describe("CourseService academic identity immutability", () => {
   const systemSettings = {
-    getPaymentQrUrl: jest
-      .fn()
-      .mockResolvedValue(
-        "https://cdn.example.com/uploads/payment-qr/system.webp",
-      ),
+    getPaymentSettings: jest.fn().mockResolvedValue({
+      paymentQrUrl: "https://cdn.example.com/uploads/payment-qr/system.webp",
+      paymentVideoUrl: null,
+    }),
   };
 
   it("rejects academic identity overrides on create", async () => {
@@ -490,7 +489,7 @@ describe("CourseService course details global payment QR", () => {
       lecture: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const systemSettings = {
-      getPaymentQrUrl: jest.fn().mockResolvedValue(systemQrUrl),
+      getPaymentSettings: jest.fn().mockResolvedValue({ paymentQrUrl: systemQrUrl, paymentVideoUrl: null }),
     };
     const service = new CourseService(
       prisma,
@@ -504,7 +503,35 @@ describe("CourseService course details global payment QR", () => {
 
     expect(courseA.course.paymentQrUrl).toBe(systemQrUrl);
     expect(courseB.course.paymentQrUrl).toBe(systemQrUrl);
-    expect(systemSettings.getPaymentQrUrl).toHaveBeenCalledTimes(2);
+    expect(courseA.course.paymentVideoUrl).toBeNull();
+    expect(systemSettings.getPaymentSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns the payment help video URL next to the QR when it is set", async () => {
+    const videoUrl = "https://t.me/coursaty/123";
+    const prisma: any = {
+      course: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(createCourse("course-a", "Course A")),
+      },
+      lecture: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new CourseService(
+      prisma,
+      {} as any,
+      {} as any,
+      {
+        getPaymentSettings: jest.fn().mockResolvedValue({
+          paymentQrUrl: "https://cdn.example.com/uploads/payment-qr/system.webp",
+          paymentVideoUrl: videoUrl,
+        }),
+      } as any,
+    );
+
+    const result: any = await service.getCourseDetails("course-a");
+
+    expect(result.course.paymentVideoUrl).toBe(videoUrl);
   });
 
   it("returns a rounded discountedPrice from the stored discount percentage", async () => {
@@ -522,7 +549,7 @@ describe("CourseService course details global payment QR", () => {
       lecture: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const systemSettings = {
-      getPaymentQrUrl: jest.fn().mockResolvedValue(systemQrUrl),
+      getPaymentSettings: jest.fn().mockResolvedValue({ paymentQrUrl: systemQrUrl, paymentVideoUrl: null }),
     };
     const service = new CourseService(
       prisma,
@@ -562,7 +589,7 @@ describe("CourseService course details global payment QR", () => {
       prisma,
       {} as any,
       {} as any,
-      { getPaymentQrUrl: jest.fn().mockResolvedValue(systemQrUrl) } as any,
+      { getPaymentSettings: jest.fn().mockResolvedValue({ paymentQrUrl: systemQrUrl, paymentVideoUrl: null }) } as any,
     );
 
     const result: any = await service.getCourseDetails("course-a");
