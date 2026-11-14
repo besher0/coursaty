@@ -176,7 +176,7 @@ export class LecturesService {
       select: { id: true, courseId: true },
     });
     if (!lecture)
-      throw new NotFoundException("المحاضرة غير موجودة");
+      throw new NotFoundException("الدرس غير موجود");
 
     return this.prisma.$transaction(async (tx) => {
       const videos = await tx.video.findMany({
@@ -227,7 +227,7 @@ export class LecturesService {
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: String(lectureId) },
     });
-    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
+    if (!lecture) throw new NotFoundException("الدرس غير موجود");
     await this.assertCourseOwnership(user, lecture.courseId);
 
     const path = `lectures/${lectureId}/${file.originalname}`;
@@ -306,7 +306,7 @@ export class LecturesService {
     const file = await this.prisma.lectureFile.findUnique({
       where: { id: String(id) },
     });
-    if (!file) throw new NotFoundException("ملف المحاضرة غير موجود");
+    if (!file) throw new NotFoundException("ملف الدرس غير موجود");
     await this.assertLectureOwnership(user, file.lectureId);
 
     const data: any = {};
@@ -342,7 +342,7 @@ export class LecturesService {
     const file = await this.prisma.lectureFile.findUnique({
       where: { id: String(id) },
     });
-    if (!file) throw new NotFoundException("ملف المحاضرة غير موجود");
+    if (!file) throw new NotFoundException("ملف الدرس غير موجود");
     await this.assertLectureOwnership(user, file.lectureId);
     return this.prisma.lectureFile.delete({ where: { id: String(id) } });
   }
@@ -515,7 +515,7 @@ export class LecturesService {
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: String(lectureId) },
     });
-    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
+    if (!lecture) throw new NotFoundException("الدرس غير موجود");
     return this.assertCourseOwnership(user, lecture.courseId);
   }
 
@@ -641,7 +641,7 @@ export class LecturesService {
       });
     }
 
-    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
+    if (!lecture) throw new NotFoundException("الدرس غير موجود");
 
     const teacher = lecture.course.teacher
       ? {
@@ -754,7 +754,7 @@ export class LecturesService {
       where: { id: String(dto.lectureId) },
       select: { courseId: true },
     });
-    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
+    if (!lecture) throw new NotFoundException("الدرس غير موجود");
     await this.assertCourseOwnership(user, lecture.courseId);
     const sortOrder =
       dto.sortOrder ?? (await this.getNextVideoSortOrder(dto.lectureId));
@@ -791,7 +791,7 @@ export class LecturesService {
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: String(lectureId) },
     });
-    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
+    if (!lecture) throw new NotFoundException("الدرس غير موجود");
     await this.assertCourseOwnership(user, lecture.courseId);
 
     const title = dto.videoName || file.originalname || "video";
@@ -905,7 +905,7 @@ export class LecturesService {
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: String(lectureId) },
     });
-    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
+    if (!lecture) throw new NotFoundException("الدرس غير موجود");
     await this.assertCourseOwnership(user, lecture.courseId);
 
     const title = dto.videoName?.trim() || `lecture-${lectureId}-video`;
@@ -936,7 +936,7 @@ export class LecturesService {
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: String(lectureId) },
     });
-    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
+    if (!lecture) throw new NotFoundException("الدرس غير موجود");
     await this.assertCourseOwnership(user, lecture.courseId);
     await assertBunnyVideoWritableBy(this.prisma, bunnyVideoId, user);
 
@@ -1034,7 +1034,7 @@ export class LecturesService {
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: String(lectureId) },
     });
-    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
+    if (!lecture) throw new NotFoundException("الدرس غير موجود");
     await this.assertCourseOwnership(user, lecture.courseId);
     const bunnyVideoId = this.requireBunnyVideoGuid(dto.videoId);
     await assertBunnyVideoWritableBy(this.prisma, bunnyVideoId, user);
@@ -1338,7 +1338,7 @@ export class LecturesService {
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: String(dto.lectureId) },
     });
-    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
+    if (!lecture) throw new NotFoundException("الدرس غير موجود");
     await this.assertLectureOwnership(user, lecture.id);
 
     if (!dto.questionText && !dto.imageUrl) {
@@ -1406,7 +1406,7 @@ export class LecturesService {
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: String(lectureId) },
     });
-    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
+    if (!lecture) throw new NotFoundException("الدرس غير موجود");
     await this.assertStudentSubscription(user, lecture.courseId);
 
     return this.prisma.question.findMany({

@@ -567,6 +567,9 @@ export class CourseService {
     await this.assertCourseVisibleToRequester(course, user);
 
     const courseDuration = await this.getCourseDurationFromVideos(course.id);
+    const lectureDurations = await this.getLectureDurationsMap(
+      course.lectures.map((lec) => lec.id),
+    );
     const isOwnerOrAdmin = await this.isCourseOwnerOrAdmin(user, course.id);
     const isSubscribed = await this.hasStudentSubscription(user, course.id);
     const nowTs = Date.now();
@@ -671,6 +674,8 @@ export class CourseService {
         isCompleted: lec.isCompleted ?? false,
         sortOrder: lec.sortOrder ?? null,
         videosCount: lec._count?.videos ?? 0,
+        // Total length of the lesson's videos, in seconds (lesson card chip).
+        videosDurationSeconds: lectureDurations.get(lec.id) ?? 0,
         filesCount: lec._count?.files ?? 0,
         questionsCount: lec._count?.questions ?? 0,
       })),
@@ -733,6 +738,9 @@ export class CourseService {
 
     if (!course) throw new NotFoundException("الكورس غير موجود");
     const courseDuration = await this.getCourseDurationFromVideos(course.id);
+    const lectureDurations = await this.getLectureDurationsMap(
+      course.lectures.map((lec) => lec.id),
+    );
 
     const basePrice = Number(course.price);
     const courseDiscountPct = Number(course.courseDiscountPercentage ?? 0);
@@ -815,6 +823,8 @@ export class CourseService {
         isCompleted: lec.isCompleted ?? false,
         sortOrder: lec.sortOrder ?? null,
         videosCount: lec._count?.videos ?? 0,
+        // Total length of the lesson's videos, in seconds (lesson card chip).
+        videosDurationSeconds: lectureDurations.get(lec.id) ?? 0,
         filesCount: lec._count?.files ?? 0,
         questionsCount: lec._count?.questions ?? 0,
       })),
@@ -1037,7 +1047,7 @@ export class CourseService {
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: lectureId },
     });
-    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
+    if (!lecture) throw new NotFoundException("الدرس غير موجود");
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
 
     const title = options?.videoName || file.originalname || "video";
@@ -1154,7 +1164,7 @@ export class CourseService {
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: String(lectureId) },
     });
-    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
+    if (!lecture) throw new NotFoundException("الدرس غير موجود");
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
 
     const title = dto?.videoName?.trim() || `lecture-${lectureId}-video`;
@@ -1187,7 +1197,7 @@ export class CourseService {
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: String(lectureId) },
     });
-    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
+    if (!lecture) throw new NotFoundException("الدرس غير موجود");
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
     await assertBunnyVideoWritableBy(this.prisma, bunnyVideoId, user);
 
@@ -1287,7 +1297,7 @@ export class CourseService {
     const lecture = await this.prisma.lecture.findUnique({
       where: { id: String(lectureId) },
     });
-    if (!lecture) throw new NotFoundException("المحاضرة غير موجودة");
+    if (!lecture) throw new NotFoundException("الدرس غير موجود");
     await this.assertCourseOwnershipByCourseId(user, lecture.courseId);
     const bunnyVideoId = this.requireBunnyVideoGuid(dto.videoId);
     await assertBunnyVideoWritableBy(this.prisma, bunnyVideoId, user);
@@ -1476,6 +1486,21 @@ export class CourseService {
   private async getCourseDurationFromVideos(courseId: string): Promise<number> {
     const durations = await this.getCourseDurationsMap([courseId]);
     return durations.get(String(courseId)) ?? 0;
+  }
+
+  /** Seconds of video per lecture, for the lesson cards. */
+  private async getLectureDurationsMap(
+    lectureIds: string[],
+  ): Promise<Map<string, number>> {
+    if (!lectureIds.length) return new Map();
+    const sums = await this.prisma.video.groupBy({
+      by: ["lectureId"],
+      where: { lectureId: { in: lectureIds } },
+      _sum: { duration: true },
+    });
+    return new Map(
+      sums.map((row) => [row.lectureId, row._sum.duration ?? 0]),
+    );
   }
 
   private async getCourseDurationsMap(
